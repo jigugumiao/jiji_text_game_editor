@@ -36,9 +36,25 @@ build_inline.py       生成内联单文件离线包
 TEST/                 基于 jsdom 的回归测试
 ```
 
+## Sample project
+
+There is an importable sample adventure in [`examples/sample-adventure/`](examples/sample-adventure/) that demonstrates the editor's core features:
+
+- Background music `<召唤音乐:主题曲>`
+- Background switching `<召唤背景:...>`
+- Inline images `@image#1:...`
+- Floating titles `<标题:...>`
+- Variables `<变量:勇气=1>` / `{勇气}`
+- Chapter navigation `/// 第一章：冒险开始`
+- Click-to-continue `<停顿>`
+
+The folder contains the story text `story.txt`, the asset files (theme MP3 + two scene images), and import instructions in `README.md`.
+
 ## Local usage
 
 Just open `index.html` in a browser (no server, no dependencies). All data is stored in the browser's local storage.
+
+When you create your first project, the main story is automatically pre-filled with a concise sample text (see `DEFAULT_TEXT` in `js/editor.js`).
 
 ## Generate a single offline file
 

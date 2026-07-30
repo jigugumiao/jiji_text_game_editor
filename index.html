@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>剧情编辑器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?v=20260729-04">
+</head>
+<body>
+
+<!-- ===== SVG 图标 sprite（页内定义，离线可用；按钮用 <svg class="ico"><use href="#ic-x"/></svg> 引用） ===== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="ic-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-play" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="7 10 12 15 17 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-doc" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="14 2 14 8 20 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9h11a5 5 0 0 1 0 10h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 9H9a5 5 0 0 0 0 10h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-split" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="4" x2="12" y2="20" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="ic-type" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="9" y1="20" x2="15" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="4" x2="12" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M8 13h.01M12 13h.01M16 13h.01M7 17h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-clipboard" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-comment" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7a8.5 8.5 0 0 1-.9-3.8A8.38 8.38 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M23 4v6h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 20v-6h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-alert" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="9" x2="12" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="17" x2="12.01" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".9" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".9" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".9" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".9" fill="currentColor"/><path d="M12 2a10 10 0 0 0 0 20 2.5 2.5 0 0 0 2.5-2.5c0-.7-.3-1.3-.7-1.8-.4-.5-.7-1-.7-1.7A2.5 2.5 0 0 1 15.5 13H18a4 4 0 0 0 4-4 10 10 0 0 0-10-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-highlighter" viewBox="0 0 24 24"><path d="M9 11l-4 4v4h4l4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 7l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M15 5l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-align-left" viewBox="0 0 24 24"><line x1="17" y1="10" x2="3" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="21" y1="6" x2="3" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="21" y1="14" x2="3" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="17" y1="18" x2="3" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-align-right" viewBox="0 0 24 24"><line x1="16" y1="10" x2="3" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="21" y1="6" x2="3" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="21" y1="14" x2="3" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="16" y1="18" x2="3" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-corner-up-left" viewBox="0 0 24 24"><polyline points="9 14 4 9 9 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 20v-7a4 4 0 0 0-4-4H4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-bookmark" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-minus" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor"/><rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor"/></symbol>
+  <symbol id="ic-circle-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></symbol>
+  <symbol id="ic-pencil" viewBox="0 0 24 24"><path d="M12 20h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10.5 12.5L20 3M16 7l2 2M14 9l2 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-file-text" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="14 2 14 8 20 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-brain" viewBox="0 0 24 24"><path d="M12 5a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 1 5 3 3 0 0 0 5 2 3 3 0 0 0 3 1 3 3 0 0 0 3-1 3 3 0 0 0 2-2.5A2.5 2.5 0 0 0 17 14a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3-3 3 3 0 0 0-3-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-fish" viewBox="0 0 24 24"><path d="M6 12c2-3 6-4 10-4 0 0 3 0 3 4 0 4-3 4-3 4-4 0-8-1-10-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="12" r=".9" fill="currentColor"/></symbol>
+  <symbol id="ic-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="9" r="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M21 15l-5-5L5 21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-box" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.27 6.96L12 12l8.73-5.04M12 22V12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="18" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="ic-volume" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" fill="none" stroke="currentColor" stroke-width="2"/><line x1="21" y1="21" x2="16.65" y2="16.65" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-bulb" viewBox="0 0 24 24"><path d="M9 18h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10 22h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5.76.76 1.23 1.52 1.41 2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="17 8 12 3 7 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-gradient" viewBox="0 0 24 24"><path d="M3 18a9 9 0 0 1 18 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-noise" viewBox="0 0 24 24"><path d="M19 16.9A5 5 0 0 0 18 7h-1.26a8 8 0 1 0-11.48 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="3" x2="12" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-color" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="currentColor"/></symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor"/></symbol>
+  <symbol id="ic-play-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21a8 8 0 0 1 16 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-bili" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 3l3 4M16 3l-3 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 11.5v5M11 11.5v5M14.5 11.5v5M18 11.5v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="14" r=".6" fill="currentColor"/><circle cx="15" cy="14" r=".6" fill="currentColor"/></symbol>
+  <symbol id="ic-external" viewBox="0 0 24 24"><path d="M14 4h6v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4L10 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 14v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-eye-off" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-10-7-10-7a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 7 10 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="2" x2="12" y2="4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="19.5" x2="12" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="4.22" y1="4.22" x2="6" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="18" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="2" y1="12" x2="4.5" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="19.5" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="4.22" y1="19.78" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18" y1="6" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="ic-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="2"/><line x1="20" y1="4" x2="8.12" y2="15.88" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="14.47" y1="14.47" x2="20" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8.12" y1="8.12" x2="12" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="ic-select-all" viewBox="0 0 24 24"><path d="M4 8V4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 4h4v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 16v4h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 20H4v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="topbar">
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.2.84</span></div>
+  <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
+  <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
+  <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
+  <div class="top-actions">
+    <button id="btn-preview" class="btn"><svg class="ico" aria-hidden="true"><use href="#ic-play"/></svg>试玩</button>
+    <label class="cursor-start-toggle" title="勾选后从光标所在段落开始试玩，跳过开头">
+      <input type="checkbox" id="chk-preview-cursor"> 从光标开始
+    </label>
+    <div class="dropdown">
+      <button id="btn-export" class="btn btn-primary"><svg class="ico" aria-hidden="true"><use href="#ic-download"/></svg>导出成品 ▾</button>
+      <div class="dropdown-menu" id="export-menu">
+        <button data-export="single">单 HTML（双击即玩）</button>
+        <button data-export="zip">标准结构压缩包（可改）</button>
+        <div class="dropdown-sep"></div>
+        <button data-export="backup"><svg class="ico" aria-hidden="true"><use href="#ic-db"/></svg>工程备份（含素材/变量/线索）</button>
+      </div>
+    </div>
+    <button id="btn-docs" class="btn btn-ghost" title="查看使用文档"><svg class="ico" aria-hidden="true"><use href="#ic-doc"/></svg>文档</button>
+  </div>
+</header>
+
+<main class="workspace">
+  <!-- 左：导航（大纲），读取 // 与 /// 注释；/// 为更大层级 -->
+  <nav class="outline-col" id="outline-col">
+    <div class="outline-head"><span><svg class="ico" aria-hidden="true"><use href="#ic-compass"/></svg>导航</span><button id="outline-toggle" class="outline-toggle" title="折叠导航">«</button></div>
+    <div class="outline-list" id="outline-list"></div>
+  </nav>
+  <!-- 左：剧情脚本（极简纯文本编辑器） -->
+  <section class="editor-col">
+    <div class="col-head">
+      <span class="col-head-actions">
+        <span class="col-head-left">
+          <button id="outline-reopen" class="mini-btn hidden" title="展开导航"><svg class="ico" aria-hidden="true"><use href="#ic-compass"/></svg>导航</button>
+          <span id="current-block-chip" class="block-chip" title="当前正在编辑的剧情块，点击在右侧仓库切换">主剧情</span>
+          <button id="btn-undo" class="icon-btn" title="撤销 (Ctrl+Z)" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-undo"/></svg></button>
+          <button id="btn-redo" class="icon-btn" title="重做 (Ctrl+Y)" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-redo"/></svg></button>
+        </span>
+        <span class="col-head-right">
+          <button id="btn-split" class="mini-btn" title="左写右渲分屏预览" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-split"/></svg>分屏</button>
+          <button id="btn-bbcode-preview" class="mini-btn" title="切换 BBCode 预览模式" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>预览</button>
+          <button id="btn-bbcode-toggle" class="mini-btn" title="显示/隐藏文字工具栏"><svg class="ico" aria-hidden="true"><use href="#ic-type"/></svg>文字工具</button>
+          <button id="btn-ai-quick" class="mini-btn" title="AI 编剧：点击展开 AI 菜单（含全文助理、续写、扩写、润色等）" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-sparkles"/></svg>AI</button>
+          <button id="btn-review-panel" class="mini-btn" title="显示/隐藏右侧审阅面板"><svg class="ico" aria-hidden="true"><use href="#ic-comment"/></svg>审阅<span id="review-toggle-badge" class="review-toggle-badge" hidden>0</span></button>
+          <button id="ime-lock-btn" class="mini-btn ime-toggle" type="button" title="竖屏插入素材时禁用软键盘，仍可点选插入行"><svg class="ico" aria-hidden="true"><use href="#ic-keyboard"/></svg>禁输入法</button>
+        </span>
+      </span>
+    </div>
+    <div class="clue-bar" id="clue-bar">
+      <button id="btn-extract-clues-quick" class="mini-btn clue-btn hidden" title="手动提取关键线索（会消耗一些 AI 额度）"><svg class="ico" aria-hidden="true"><use href="#ic-search"/></svg>提取关键线索</button>
+      <span id="clue-update-hint" class="clue-update-hint hidden"></span>
+    </div>
+    <div class="editor-body" id="editor-body">
+      <div class="editor-text-wrap" id="editor-text-wrap">
+        <div id="ln-gutter" class="ln-gutter" aria-hidden="true"></div>
+        <textarea id="story-text" class="story-text" spellcheck="false" placeholder="在这里写剧情…&#10;// 以 // 开头的行为注释，游玩时不显示&#10;例如：&#10;<召唤背景:天空>&#10;主角抬头看了看。&#10;<停顿>（或 <停顿:2000> 自动停 2 秒）&#10;<召唤物品:宝箱>&#10;指令用尖括号 < >，BBCode 用方括号 [ ]"></textarea>
+        <div id="word-count" class="word-count">总字数：0</div>
+        <div id="block-review-line" class="block-review-line"></div>
+      </div>
+      <div id="story-preview" class="story-preview hidden"></div>
+      <button id="todo-fab" class="todo-fab" type="button" title="素材待办：查看文字里召唤、但素材库还没有的素材"><svg class="ico" aria-hidden="true"><use href="#ic-clipboard"/></svg><span class="todo-fab-txt">待办</span><span id="todo-badge" class="todo-badge" hidden>0</span></button>
+      <div id="todo-panel" class="todo-panel hidden">
+        <div class="todo-panel-head">
+          <span class="todo-panel-title">素材待办</span>
+          <span class="todo-panel-sub">召唤了但库里还没有</span>
+          <button id="todo-refresh" class="todo-icon-btn" type="button" title="刷新"><svg class="ico" aria-hidden="true"><use href="#ic-refresh"/></svg>刷新</button>
+          <button id="todo-close" class="todo-icon-btn" type="button" title="关闭"><svg class="ico" aria-hidden="true"><use href="#ic-x"/></svg>关闭</button>
+        </div>
+        <div id="todo-list" class="todo-list"></div>
+      </div>
+    </div>
+    <div id="compile-bar" class="compile-bar hidden">
+      <div class="compile-head">
+        <span id="compile-title"><svg class="ico" aria-hidden="true"><use href="#ic-alert"/></svg>编译检查</span>
+        <span class="compile-actions">
+          <button id="compile-cancel" class="btn btn-ghost">返回修改</button>
+          <button id="compile-continue" class="btn btn-primary">仍要预览/导出 <svg class="ico" aria-hidden="true"><use href="#ic-play"/></svg></button>
+        </span>
+      </div>
+      <div id="compile-list" class="compile-list"></div>
+    </div>
+  </section>
+
+  <!-- 右1：审阅面板（试玩中记录的修改意见），位于编辑器与素材库之间 -->
+  <aside class="review-col hidden" id="review-col">
+    <div class="review-head"><svg class="ico" aria-hidden="true"><use href="#ic-comment"/></svg>审阅<span class="review-head-sub">试玩中记录的修改意见</span></div>
+    <div class="review-list" id="review-list"></div>
+  </aside>
+
+  <!-- 右2：素材库 -->
+  <aside class="library-col">
+
+    <div class="tabs" id="lib-tabs">
+      <button data-lib="background" class="active">图片库</button>
+      <button data-lib="item">物品库</button>
+      <button data-lib="music">音乐库</button>
+      <button data-lib="sound">音效库</button>
+      <button data-lib="dialogueblock">剧情块库</button>
+      <button data-lib="variable">变量库</button>
+    </div>
+
+    <div class="lib-panel" id="lib-panel"></div>
+    <div class="lib-footer">
+      <button type="button" class="btn btn-danger-ghost" id="btn-clean-unused" title="扫描剧情（含所有子剧情块）与开场设置，删除其中未用到的素材">
+        <svg class="ico" aria-hidden="true"><use href="#ic-trash"/></svg> 清理未使用素材
+      </button>
+    </div>
+  </aside>
+
+</main>
+
+<!-- 预览弹层 -->
+<div id="preview-modal" class="modal hidden">
+  <div class="modal-bar">
+    <span>预览</span>
+    <button id="btn-review-play" class="btn btn-ghost review-play-btn" title="边玩边记修改意见"><svg class="ico" aria-hidden="true"><use href="#ic-comment"/></svg>审阅</button>
+    <button id="btn-close-preview" class="btn btn-ghost">关闭</button>
+  </div>
+  <iframe id="preview-frame" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>
+</div>
+
+<!-- 审阅输入弹窗 -->
+<div id="review-input-modal" class="modal hidden">
+  <div class="modal-box review-input-box">
+    <div class="modal-box-head">试玩审阅 · <span id="review-input-block"></span></div>
+    <div class="review-input-label">当前显示的剧情</div>
+    <div id="review-input-context" class="review-input-context"></div>
+    <div class="review-input-label">修改意见</div>
+    <textarea id="review-input-text" class="review-input-text" placeholder="例如：这段节奏太慢，建议加快；或主角不该这么轻易相信陌生人…（Ctrl+Enter 保存，Esc 取消）"></textarea>
+    <div class="modal-box-actions">
+      <button id="review-input-cancel" class="btn btn-ghost">取消</button>
+      <button id="review-input-save" class="btn btn-primary">保存审阅</button>
+    </div>
+  </div>
+</div>
+
+<!-- 项目页（启动优先显示） -->
+<div id="projects-screen" class="projects-screen hidden">
+  <div class="projects-inner">
+    <div class="projects-head">
+      <h2><svg class="ico" aria-hidden="true" style="width:1.4em;height:1.4em;vertical-align:-0.3em"><use href="#ic-book"/></svg>我的项目</h2>
+      <div class="projects-head-actions">
+        <button id="btn-import-project" class="btn btn-ghost"><svg class="ico" aria-hidden="true"><use href="#ic-upload"/></svg>导入工程备份</button>
+        <input type="file" id="file-import-project" accept="application/json,.json" hidden>
+        <button id="btn-new-project" class="btn btn-primary"><svg class="ico" aria-hidden="true"><use href="#ic-plus"/></svg>新建项目</button>
+      </div>
+    </div>
+    <div id="projects-list" class="projects-list"></div>
+  </div>
+</div>
+
+<!-- 新建项目弹层：选择 通用文章 / 剧情游戏 -->
+<div id="new-project-modal" class="modal hidden">
+  <div class="modal-box new-project-box">
+    <div class="new-project-head">
+      <svg class="ico" aria-hidden="true"><use href="#ic-plus"/></svg>
+      <span class="new-project-title">新建项目</span>
+      <button class="modal-x" id="new-project-x" title="取消">✕</button>
+    </div>
+    <div class="new-project-field">
+      <label class="new-project-label">项目名称</label>
+      <input type="text" id="new-project-name" class="new-project-input" placeholder="给项目起个名字…" maxlength="40">
+    </div>
+    <div class="new-project-field">
+      <label class="new-project-label">项目类型</label>
+      <div class="mode-cards">
+        <button class="mode-card" data-mode="article">
+          <div class="mode-card-ico"><svg class="ico" aria-hidden="true"><use href="#ic-clipboard"/></svg></div>
+          <div class="mode-card-title">通用文章</div>
+          <div class="mode-card-desc">写长文 / 专栏 / 随笔。保留大纲、简介、文风、上下文等 AI 能力，但不涉及指令、效果、分支，也不需素材与试玩。</div>
+        </button>
+        <button class="mode-card" data-mode="game">
+          <div class="mode-card-ico"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg></div>
+          <div class="mode-card-title">剧情游戏</div>
+          <div class="mode-card-desc">做可交互的剧情。支持素材库、指令、分支、BBCode 效果与试玩导出。</div>
+        </button>
+      </div>
+    </div>
+    <div class="modal-box-actions">
+      <button id="new-project-cancel" class="btn btn-ghost">取消</button>
+      <button id="new-project-create" class="btn btn-primary">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 生成器弹层（渐变 / 噪波） -->
+<div id="gen-modal" class="modal hidden">
+  <div class="modal-box" id="gen-box"></div>
+</div>
+
+<!-- 背景图处理面板（上传后弹出，可调参数） -->
+<div id="imgproc-modal" class="modal hidden">
+  <div class="modal-box imgproc-box">
+    <div class="imgproc-head">
+      <svg class="ico" aria-hidden="true"><use href="#ic-palette"/></svg>
+      <span class="imgproc-title">背景图处理</span>
+      <span class="imgproc-fname" id="imgproc-fname"></span>
+      <button class="imgproc-x" id="imgproc-x" title="取消">✕</button>
+    </div>
+    <div class="imgproc-previews">
+      <div class="imgproc-pv"><span class="imgproc-pv-label">原图</span><img id="imgproc-orig" alt="原图"></div>
+      <div class="imgproc-pv"><span class="imgproc-pv-label">处理后</span><canvas id="imgproc-res" class="imgproc-res"></canvas></div>
+    </div>
+    <div class="imgproc-size" id="imgproc-size">—</div>
+    <div class="imgproc-controls">
+      <div class="field"><label>分辨率</label>
+        <select id="ip-height">
+          <option value="0">原始尺寸</option>
+          <option value="360">360（高）</option>
+          <option value="540">540（高）</option>
+          <option value="720" selected>720（高·默认）</option>
+          <option value="1080">1080（高）</option>
+          <option value="1440">1440（高）</option>
+        </select>
+      </div>
+      <div class="field"><label>平滑缩放</label>
+        <label class="switch"><input type="checkbox" id="ip-smooth" checked><span class="switch-track"></span></label>
+        <span class="field-hint">关=像素硬边</span>
+      </div>
+      <div class="field"><label>像素量化</label>
+        <label class="switch"><input type="checkbox" id="ip-quant" checked><span class="switch-track"></span></label>
+        <span class="field-hint">关=保留原色</span>
+      </div>
+      <div class="field"><label>颜色级数</label>
+        <input type="range" id="ip-colors" min="2" max="64" step="1" value="16">
+        <span class="imgproc-val" id="ip-colors-val">16</span>
+      </div>
+      <div class="field"><label>亮度</label>
+        <input type="range" id="ip-bright" min="-100" max="100" step="1" value="0">
+        <span class="imgproc-val" id="ip-bright-val">0</span>
+      </div>
+      <div class="field"><label>对比度</label>
+        <input type="range" id="ip-contrast" min="-100" max="100" step="1" value="0">
+        <span class="imgproc-val" id="ip-contrast-val">0</span>
+      </div>
+      <div class="field"><label>饱和度</label>
+        <input type="range" id="ip-sat" min="-100" max="100" step="1" value="0">
+        <span class="imgproc-val" id="ip-sat-val">0</span>
+      </div>
+      <div class="field"><label>格式</label>
+        <select id="ip-format">
+          <option value="image/jpeg" selected>JPEG（体积小）</option>
+          <option value="image/png">PNG（无损）</option>
+        </select>
+      </div>
+      <div class="field" id="ip-quality-field"><label>质量</label>
+        <input type="range" id="ip-quality" min="0.4" max="0.95" step="0.05" value="0.85">
+        <span class="imgproc-val" id="ip-quality-val">0.85</span>
+      </div>
+    </div>
+    <div class="imgproc-actions">
+      <button class="btn btn-ghost" id="ip-reset">重置</button>
+      <button class="btn btn-ghost" id="ip-orig">用原图</button>
+      <button class="btn btn-ghost" id="ip-cancel">取消</button>
+      <button class="btn btn-primary" id="ip-apply">应用并保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 音频处理面板（导入音乐/音效后弹出，可裁切 + 压缩） -->
+<div id="audioproc-modal" class="modal hidden">
+  <div class="modal-box audioproc-box">
+    <div class="audioproc-head">
+      <svg class="ico" aria-hidden="true"><use href="#ic-music"/></svg>
+      <span class="audioproc-title">音频处理</span>
+      <span class="audioproc-fname" id="audioproc-fname"></span>
+      <button class="audioproc-x" id="audioproc-x" title="取消">✕</button>
+    </div>
+    <canvas id="audioproc-wave" class="audioproc-wave"></canvas>
+    <div class="audioproc-info" id="audioproc-info">—</div>
+    <div class="audioproc-controls">
+      <div class="field"><label>裁切起点</label>
+        <input type="range" id="ap-start" min="0" max="0" step="0.1" value="0">
+        <span class="audioproc-val" id="ap-start-val">0.0s</span>
+      </div>
+      <div class="field"><label>裁切终点</label>
+        <input type="range" id="ap-end" min="0" max="0" step="0.1" value="0">
+        <span class="audioproc-val" id="ap-end-val">0.0s</span>
+      </div>
+      <div class="field"><label>采样率</label>
+        <select id="ap-sr">
+          <option value="0" selected>原始采样率</option>
+          <option value="44100">44100 Hz</option>
+          <option value="32000">32000 Hz</option>
+          <option value="22050">22050 Hz</option>
+          <option value="16000">16000 Hz</option>
+          <option value="11025">11025 Hz</option>
+        </select>
+      </div>
+      <div class="field"><label>声道</label>
+        <select id="ap-channels">
+          <option value="2" selected>立体声</option>
+          <option value="1">单声道</option>
+        </select>
+      </div>
+      <div class="field"><label>格式</label>
+        <select id="ap-format">
+          <option value="mp3" selected>MP3（体积小）</option>
+          <option value="wav">WAV（无损）</option>
+        </select>
+      </div>
+      <div class="field" id="ap-kbps-field"><label>码率</label>
+        <select id="ap-kbps">
+          <option value="96">96 kbps</option>
+          <option value="128" selected>128 kbps</option>
+          <option value="192">192 kbps</option>
+        </select>
+      </div>
+    </div>
+    <div class="audioproc-actions">
+      <button class="btn btn-ghost" id="ap-reset">重置</button>
+      <button class="btn btn-ghost" id="ap-orig">用原文件</button>
+      <button class="btn btn-ghost" id="ap-preview"><svg class="ico" aria-hidden="true"><use href="#ic-play"/></svg>试听片段</button>
+      <button class="btn btn-ghost" id="ap-cancel">取消</button>
+      <button class="btn btn-primary" id="ap-apply">应用并保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 隐藏的文件选择器 -->
+<input type="file" id="file-bg" accept="image/*" multiple hidden>
+<input type="file" id="file-item" accept=".jgl" hidden>
+<input type="file" id="file-audio" accept="audio/*" multiple hidden>
+
+<script src="js/zip.js?v=20260722-60"></script>
+<script src="js/storage.js?v=20260726-01"></script>
+<script src="js/generators.js?v=20260722-60"></script>
+<script src="js/bbcode.js?v=20260722-60"></script>
+<script src="js/exporter.js?v=20260730-02"></script>
+<script src="js/ai.js?v=20260727-03"></script>
+<script src="js/lame.min.js?v=1"></script>
+<script src="js/editor.js?v=20260729-03"></script>
+<!-- 文字浮动工具栏 -->
+<div id="bbcode-float" class="bbcode-float hidden">
+  <div id="bbcode-drag" class="bbcode-drag-head">⋮⋮ 文字工具栏</div>
+  <div class="bbcode-btns">
+    <div class="bb-row">
+      <span class="bb-label">样式</span>
+      <button data-tag="b" class="bb"><b>B</b> 粗体</button>
+      <button data-tag="i" class="bb"><i>I</i> 斜体</button>
+      <button data-tag="u" class="bb"><u>U</u> 下划线</button>
+      <button data-tag="s" class="bb"><s>S</s> 删除线</button>
+      <button id="bb-color-btn" class="bb"><svg class="ico" aria-hidden="true"><use href="#ic-palette"/></svg>色</button>
+      <button data-tag="shadow" class="bb">阴影</button>
+      <button data-tag="glow" class="bb"><svg class="ico" aria-hidden="true"><use href="#ic-sparkles"/></svg>发光</button>
+      <button data-tag="instant" class="bb" title="选中文字直接整段出现（不逐字打字）"><svg class="ico" aria-hidden="true"><use href="#ic-zap"/></svg>瞬显</button>
+      <button data-tag="highlight" class="bb"><svg class="ico" aria-hidden="true"><use href="#ic-highlighter"/></svg>记号笔</button>
+    </div>
+    <div class="bb-row bb-row-size">
+      <span class="bb-label">字号</span>
+      <button data-tag="size" class="bb">字号</button>
+      <input type="range" id="bb-size" min="8" max="60" value="24">
+      <span id="bb-size-val" class="bb-size-val">24</span>
+      <span class="bb-label" style="width:auto;margin-left:4px">预设:</span>
+      <button class="bb bb-size-preset" data-size="14">14</button>
+      <button class="bb bb-size-preset" data-size="18">18</button>
+      <button class="bb bb-size-preset" data-size="24">24</button>
+      <button class="bb bb-size-preset" data-size="32">32</button>
+      <button class="bb bb-size-preset" data-size="48">48</button>
+    </div>
+    <div class="bb-row">
+      <span class="bb-label">排版</span>
+      <button data-tag="left" class="bb"><svg class="ico" aria-hidden="true"><use href="#ic-align-left"/></svg>左</button>
+      <button data-tag="center" class="bb">≡ 中</button>
+      <button data-tag="right" class="bb"><svg class="ico" aria-hidden="true"><use href="#ic-align-right"/></svg>右</button>
+      <button data-tag="br" class="bb"><svg class="ico" aria-hidden="true"><use href="#ic-corner-up-left"/></svg>换行</button>
+      <span style="flex:1"></span>
+      <button id="bb-clear" class="bb" style="color:#c0392b" title="清除光标所在行的所有 BBCode 标签"><svg class="ico" aria-hidden="true"><use href="#ic-trash"/></svg>清除</button>
+    </div>
+    <div class="bb-row">
+      <span class="bb-label">指令</span>
+      <button id="bb-title-btn" class="bb"><svg class="ico" aria-hidden="true"><use href="#ic-bookmark"/></svg>浮动标题</button>
+      <button id="bb-divider-btn" class="bb" title="插入分割线（<分割线:备注>，备注可空）；游戏中显示并停顿"><svg class="ico" aria-hidden="true"><use href="#ic-minus"/></svg>分割线</button>
+      <button id="bb-pause-btn" class="bb" title="插入停顿（<停顿> 等点击继续；<停顿:2000> 自动停 2 秒）"><svg class="ico" aria-hidden="true"><use href="#ic-pause"/></svg>停顿</button>
+      <button id="bb-option-btn" class="bb" title='插入空选项 <选项:"">，光标自动落在引号内；输入按钮文字，需要分支跳转时补上「,块名」'><svg class="ico" aria-hidden="true"><use href="#ic-circle-dot"/></svg>添加选项</button>
+    </div>
+  </div>
+  <div id="color-pop" class="color-pop hidden">
+    <div class="color-pop-row">
+      <input type="color" id="color-pop-input" value="#ffcc00">
+      <input type="text" id="color-pop-hex" class="color-pop-hex" value="#ffcc00" maxlength="7" spellcheck="false">
+    </div>
+    <div class="color-pop-row common-colors-row">
+      <span class="cc-label">常用色</span>
+      <div id="common-colors" class="common-colors"></div>
+    </div>
+    <div class="cc-hint">左键套用 · 右键自定义该格</div>
+    <div class="color-pop-actions">
+      <button id="color-pop-cancel" class="btn btn-ghost">取消</button>
+      <button id="color-pop-ok" class="btn btn-primary">套用</button>
+    </div>
+    <input type="color" id="cc-edit-input" class="cc-edit-input" value="#ffffff">
+  </div>
+</div>
+
+<!-- 设置抽屉（右侧滑出）：AI 编剧 与 通用 的统一入口 -->
+<div id="settings-drawer" class="modal hidden">
+  <div class="settings-box">
+    <div class="ai-drawer-head">
+      <span><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</span>
+      <button id="settings-close" class="ai-x" title="关闭">×</button>
+    </div>
+    <div class="settings-body">
+    <div class="settings-nav">
+      <button class="settings-subnav active" data-sub="ai"><svg class="ico" aria-hidden="true"><use href="#ic-sparkles"/></svg>AI 编剧</button>
+      <button class="settings-subnav" data-sub="general"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>通用</button>
+      <button class="settings-subnav" data-sub="about"><svg class="ico" aria-hidden="true"><use href="#ic-user"/></svg>关于作者</button>
+    </div>
+    <div class="settings-content">
+      <!-- 子项：AI 编剧 -->
+      <div class="settings-sub" data-sub="ai">
+        <div class="ai-section">
+          <h4><svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg>创作设定 <span class="ai-sub-tip">AI 写作会参考这里</span></h4>
+          <div class="ai-hint">创作设定是剧情的“基因”，AI 编剧会读取它来保持风格统一。仅存本机，不进导出的游戏成品。</div>
+          <div class="field"><label>简介</label><textarea id="c-intro" class="creation-ta" placeholder="一句话或一段故事简介"></textarea></div>
+          <div class="field"><label>大纲</label><textarea id="c-outline" class="creation-ta" placeholder="故事主线 / 章节走向"></textarea></div>
+          <div class="field"><label>世界观</label><textarea id="c-world" class="creation-ta" placeholder="世界设定 / 规则 / 背景"></textarea></div>
+          <div class="field"><label>文风</label><textarea id="c-style" class="creation-ta" placeholder="叙述文风（如：零度、冷峻、温馨、诙谐）"></textarea></div>
+        </div>
+        <div class="ai-section">
+          <h4><svg class="ico" aria-hidden="true"><use href="#ic-search"/></svg>关键线索 <span class="ai-sub-tip">可能影响整体剧情的伏笔</span></h4>
+          <div class="ai-hint">记录贯穿全文、可能影响走向的线索（人物特征 / 性格 / 创伤、未揭秘角色、未用 / 强力物件、未解 / 余波事件、隐患等）。点「提取关键线索」会综合大纲、简介与全部正文重新梳理，对现有线索做增删改。</div>
+          <div class="field"><label>关键线索</label><textarea id="ai-clues" class="creation-ta clues-ta" placeholder="每条一行，可用 [类别] 前缀（如 [人物特征] / [未解角色] / [隐患]）&#10;留空则点「提取关键线索」从零生成"></textarea></div>
+          <div class="clues-actions">
+            <button id="btn-extract-clues" class="btn btn-primary">提取关键线索</button>
+            <span id="clues-status" class="ai-status"></span>
+          </div>
+          <div id="clues-change-note" class="clues-note hidden"></div>
+        </div>
+        <div class="ai-section">
+          <h4><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg>模型与密钥</h4>
+          <div class="field"><label>Deepseek API Key</label><input type="password" id="ai-key" placeholder="sk-..." autocomplete="off"></div>
+          <div class="field"><label>Base URL</label><input type="text" id="ai-base" placeholder="https://api.deepseek.com"></div>
+          <div class="field"><label>模型</label><input type="text" id="ai-model" placeholder="deepseek-v4-flash"></div>
+          <div class="field"><label>演出强度</label>
+            <select id="ai-intensity"><option value="轻">轻</option><option value="中" selected>中</option><option value="重">重</option></select>
+          </div>
+          <div class="field"><label>温度 <span id="ai-temp-val">0.8</span></label><input type="range" id="ai-temp" min="0" max="1.5" step="0.1" value="0.8"></div>
+          <div class="field ai-check"><label><input type="checkbox" id="ai-selfcheck"> 自检精修（每次多调一次，更慢更贵）</label></div>
+          <div class="ai-hint" id="ai-key-hint"></div>
+        </div>
+        <div class="ai-section">
+          <h4><svg class="ico" aria-hidden="true"><use href="#ic-eye-off"/></svg>界面精简</h4>
+          <div class="ai-hint">打开后，除「设置」里的 AI 配置外，编辑器与素材待办中的所有 AI 按钮（如 AI 编剧、提示词、提取关键线索）都会被隐藏。</div>
+          <div class="field ai-check"><label><input type="checkbox" id="ai-hide-all"> 隐藏所有 AI 功能</label></div>
+        </div>
+      </div>
+      <!-- 子项：通用 -->
+      <div class="settings-sub hidden" data-sub="general">
+        <div class="ai-section" id="settings-general"></div>
+      </div>
+      <!-- 子项：关于作者 -->
+      <div class="settings-sub hidden" data-sub="about">
+        <div class="ai-section">
+          <div class="about-author">
+            <div class="about-avatar">叽</div>
+            <div class="about-meta">
+              <div class="about-name">叽咕</div>
+              <div class="about-role">「剧情编辑器」作者</div>
+            </div>
+          </div>
+          <div class="about-bio">一个用代码做互动叙事的小创作者，平时在 B 站分享作品与制作过程，也欢迎大家来催更、提需求～</div>
+          <a class="about-bili" href="https://space.bilibili.com/679874" target="_blank" rel="noopener noreferrer">
+            <svg class="ico" aria-hidden="true"><use href="#ic-bili"/></svg> 访问我的 B 站主页
+            <svg class="ico ico-sm" aria-hidden="true"><use href="#ic-external"/></svg>
+          </a>
+          <div class="about-divider"></div>
+          <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
+          <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
+          <div class="about-version">当前版本 <span id="about-version">v25.2.74</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- 编辑器列头 🤖 快捷菜单 -->
+<div id="ai-quick-menu" class="ai-quick-menu hidden"></div>
+
+<!-- AI 生成结果审阅窗 -->
+<div id="ai-review-modal" class="modal hidden">
+  <div class="ai-review-box">
+    <div class="ai-review-head">
+      <span id="ai-review-title">审阅 · AI 生成（将插入此处）</span>
+      <button id="ai-review-close" class="ai-x" title="关闭">×</button>
+    </div>
+    <div class="ai-review-body">
+      <div id="ai-status" class="ai-status"></div>
+      <div class="ai-review-ctx ai-review-before hidden" id="ai-review-before"></div>
+      <!-- 大纲生成模式专用预览：大纲与已写前文并排，下方提示 + 开始按钮 -->
+      <div class="ai-review-outline hidden" id="ai-review-outline">
+        <div class="ai-review-outline-cols">
+          <div class="ai-review-outline-col">
+            <div class="ai-review-outline-h"><svg class="ico" aria-hidden="true"><use href="#ic-clipboard"/></svg>创作设定（大纲 / 简介 / 世界观 / 文风）</div>
+            <pre id="ai-outline-creation" class="ai-review-outline-body"></pre>
+          </div>
+          <div class="ai-review-outline-col">
+            <div class="ai-review-outline-h"><svg class="ico" aria-hidden="true"><use href="#ic-file-text"/></svg>已写好的前文（不会被修改）</div>
+            <pre id="ai-outline-existing" class="ai-review-outline-body"></pre>
+          </div>
+        </div>
+        <p class="ai-review-outline-hint">提示：已写的原文不会被修改，AI 只会在其后接续。</p>
+      </div>
+      <!-- 重写/润色模式专用预览：只显示选中文字，不显示上下文 -->
+      <div class="ai-review-selection hidden" id="ai-review-selection">
+        <div class="ai-review-outline-h"><svg class="ico" aria-hidden="true"><use href="#ic-file-text"/></svg>选中的文字（AI 只处理它，不会改动上下文）</div>
+        <pre id="ai-review-selection-text" class="ai-review-outline-body"></pre>
+      </div>
+      <!-- 输出区：预览态浮「开始」按钮、生成态浮旋转提示、结果态显示文字，三者共用同一块区域，使上下文获得更多空间 -->
+      <div class="ai-review-mid" id="ai-review-mid">
+        <textarea id="ai-review-text" class="ai-review-text" spellcheck="false"></textarea>
+        <div class="ai-review-start hidden" id="ai-review-start">
+          <p class="ai-review-start-note" id="ai-start-note-text">请确认上下文后点击开始续写。</p>
+          <div class="ai-note-chips" id="ai-note-chips"></div>
+          <textarea id="ai-note" class="ai-note-input" rows="5" placeholder="生成方向备注（内容方向，大概行数等）"></textarea>
+          <div class="ai-genparams hidden" id="ai-genparams-wrap">
+            <label class="ai-param-check">
+              <input type="checkbox" id="ai-deepthink"> <svg class="ico" aria-hidden="true"><use href="#ic-brain"/></svg>深度思考（先规划再一次性铺开多个场景的大段，起稿 / 中段续写皆可用，更慢更贵；不勾选则快速顺势续写一段）
+            </label>
+            <div class="ai-param-row" data-ai-param="puzzle">
+              <label>谜题设计数量 <span id="ai-puzzle-val">0</span></label>
+              <input type="range" id="ai-puzzle" min="0" max="20" step="1" value="0">
+              <span class="ai-sub-tip">安排这么多「召唤物体」谜题（0 = 不强制）</span>
+            </div>
+            <div class="ai-param-row" data-ai-param="branches">
+              <label>对话分支数量 <span id="ai-branches-val">0</span></label>
+              <input type="range" id="ai-branches" min="0" max="20" step="1" value="0">
+              <span class="ai-sub-tip">安排这么多「对话 / 选择」分支（&gt;0 会自动拆成「主剧情 + 分支剧情块」；0 = 不强制）</span>
+            </div>
+          </div>
+          <button id="ai-start-gen" class="btn btn-primary btn-lg">开始续写</button>
+        </div>
+        <div class="ai-review-spinner hidden" id="ai-review-spinner">
+          <div class="spinner"></div>
+          <p id="ai-spinner-text">AI 生成中…</p>
+        </div>
+        <div class="ai-gen-live hidden" id="ai-gen-live">
+          <div class="ai-gen-live-bar">
+            <button id="ai-stop-keep" class="btn btn-ghost btn-sm" type="button">停止并采纳已有</button>
+            <button id="ai-redirect-toggle" class="btn btn-ghost btn-sm" type="button">插话改方向</button>
+          </div>
+          <div class="ai-redirect-box hidden" id="ai-redirect-box">
+            <input id="ai-redirect-input" class="ai-redirect-input" type="text" placeholder="输入新方向，如：别写对话了，直接进下个场景">
+            <button id="ai-redirect-send" class="btn btn-sm" type="button">发送</button>
+          </div>
+        </div>
+      </div>
+      <div class="ai-review-ctx ai-review-after hidden" id="ai-review-after"></div>
+      <div class="ai-review-req hidden" id="ai-review-req">
+        <div class="ai-review-req-head">
+          <span><svg class="ico" aria-hidden="true"><use href="#ic-clipboard"/></svg>AI 需求素材（待你制作/寻找，不插入剧本）</span>
+          <button id="ai-req-copy" class="btn btn-ghost btn-sm" title="复制到剪贴板">复制</button>
+        </div>
+        <pre id="ai-review-req-text" class="ai-review-req-text"></pre>
+      </div>
+      <div id="ai-hook-chooser" class="ai-hook-chooser hidden">
+        <div class="ai-hook-head"><svg class="ico" aria-hidden="true"><use href="#ic-fish"/></svg>挑选一个开头（共生成 6 个，点击「选用」即插入）</div>
+        <div id="ai-hook-list" class="ai-hook-list"></div>
+        <div class="ai-hook-foot">
+          <button id="ai-hook-regen" class="btn" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-refresh"/></svg>重新生成 6 个</button>
+        </div>
+      </div>
+      <div class="ai-blocksum hidden" id="ai-blocksum"></div>
+    </div>
+    <div class="ai-review-actions" id="ai-review-actions">
+      <button id="ai-accept" class="btn btn-primary">接受并插入</button>
+      <button id="ai-revise" class="btn">重提要求</button>
+      <button id="ai-discard" class="btn btn-ghost">丢弃</button>
+    </div>
+  </div>
+</div>
+
+  <!-- 背景提示词生成窗（排版模仿「从大纲生成」）：为素材待办里的背景生成 AI 生图提示词 -->
+  <div id="bg-prompt-modal" class="modal hidden">
+    <div class="ai-review-box">
+      <div class="ai-review-head">
+        <span id="bgp-title">背景提示词</span>
+        <button id="bgp-close" class="ai-x" title="关闭">×</button>
+      </div>
+      <div class="ai-review-body">
+        <div id="bgp-status" class="ai-status"></div>
+        <div class="ai-review-outline">
+          <div class="ai-review-outline-cols">
+            <div class="ai-review-outline-col">
+              <div class="ai-review-outline-h"><svg class="ico" aria-hidden="true"><use href="#ic-clipboard"/></svg>创作设定（简介 / 大纲 / 世界观 / 文风）</div>
+              <pre id="bgp-creation" class="ai-review-outline-body"></pre>
+            </div>
+            <div class="ai-review-outline-col">
+              <div class="ai-review-outline-h"><svg class="ico" aria-hidden="true"><use href="#ic-file-text"/></svg>该背景召唤处上下文（上下各 15 行）</div>
+              <pre id="bgp-context" class="ai-review-outline-body"></pre>
+            </div>
+          </div>
+          <p class="ai-review-outline-hint">AI 会揣摩此场景的画面内容、打光与氛围，生成用于 AI 生图的提示词，并自动追加常用画质优化词。</p>
+        </div>
+        <div class="ai-review-mid" id="bgp-mid">
+          <textarea id="bgp-text" class="ai-review-text" spellcheck="false" placeholder="生成的图片提示词会显示在这里，可自行编辑（编辑后复制/关闭会一并保存）"></textarea>
+          <div class="ai-review-start hidden" id="bgp-start">
+            <div class="bgp-params">
+              <div class="bgp-params-title">补充画面参数（可选，越具体越好，将优先体现在提示词中）</div>
+              <div class="field">
+                <label>场景时间</label>
+                <input id="bgp-time" type="text" placeholder="如 白天 / 夜晚 / 黄昏 / 雨夜" autocomplete="off">
+              </div>
+              <div class="field">
+                <label>画面风格</label>
+                <input id="bgp-style" type="text" placeholder="如 写实 / 卡通 / 油画 / 赛博朋克" autocomplete="off">
+              </div>
+              <div class="field">
+                <label>补充信息</label>
+                <input id="bgp-extra" type="text" placeholder="其他自定义补充，如 广角镜头、雾气、霓虹灯" autocomplete="off">
+              </div>
+            </div>
+            <p class="ai-review-start-note" id="bgp-start-note">填写或确认补充参数后，点击「生成提示词」生成该背景的图片提示词。</p>
+            <button id="bgp-gen" class="btn btn-primary btn-lg"><svg class="ico" aria-hidden="true"><use href="#ic-sparkles"/></svg>生成提示词</button>
+          </div>
+          <div class="ai-review-spinner hidden" id="bgp-spinner">
+            <div class="spinner"></div>
+            <p>AI 揣摩场景中…</p>
+          </div>
+        </div>
+      </div>
+      <div class="ai-review-actions" id="bgp-actions">
+        <button id="bgp-copy" class="btn btn-primary"><svg class="ico" aria-hidden="true"><use href="#ic-clipboard"/></svg>复制提示词</button>
+        <button id="bgp-regen" class="btn"><svg class="ico" aria-hidden="true"><use href="#ic-refresh"/></svg>重新生成</button>
+        <button id="bgp-done" class="btn btn-ghost">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 全文助理：对话框（把全文/大纲/简介/文风/线索一次性喂给 AI，之后持续对话，可全文改写） -->
+  <div id="fulltext-assistant" class="modal hidden">
+    <div class="fta-box modal-box">
+      <div class="fta-head">
+        <span class="fta-title"><svg class="ico" aria-hidden="true"><use href="#ic-brain"/></svg> 全文助理</span>
+        <button id="fta-close" class="modal-x" type="button" title="关闭">×</button>
+      </div>
+      <div id="fta-messages" class="fta-messages"></div>
+      <div class="fta-start-wrap" id="fta-start-wrap">
+        <p class="fta-start-tip">点击下方按钮，把<b>全文、大纲、简介、文风、线索</b>一次性喂给助理（不显示）。之后可随时对话，不必再重复喂全文；如需同步最新改动，点「重新喂全文」。</p>
+        <button id="fta-start" class="btn btn-primary btn-lg"><svg class="ico" aria-hidden="true"><use href="#ic-brain"/></svg>启动全文助理</button>
+      </div>
+      <div class="fta-input-row" id="fta-input-row">
+        <textarea id="fta-input" class="fta-input" placeholder="和助理聊一句…（Enter 发送，Shift+Enter 换行）" rows="3"></textarea>
+        <button id="fta-send" class="btn btn-primary" type="button">发送</button>
+      </div>
+      <div class="fta-actions" id="fta-actions">
+        <label class="cursor-start-toggle" id="fta-thinking-wrap" title="开启后 AI 先思考推理再回答（更准，但更慢、更费 token）；关闭则轻量直答">
+          <input type="checkbox" id="fta-thinking"><span>思考模式</span>
+        </label>
+        <button id="fta-refeed" class="btn" type="button" title="把当前最新全文重新喂给助理"><svg class="ico" aria-hidden="true"><use href="#ic-refresh"/></svg>重新喂全文</button>
+        <button id="fta-clear" class="btn btn-ghost" type="button" title="清空当前对话（不清空已喂的上下文）"><svg class="ico" aria-hidden="true"><use href="#ic-trash"/></svg>清空对话</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 音频归类询问弹窗：拖入 10~30 秒音频时让用户选择归入音乐库或音效库 -->
+  <div id="audio-ask" class="audio-ask-overlay hidden">
+    <div class="audio-ask-card">
+      <div class="audio-ask-title">这段音频归入哪个库？</div>
+      <div class="audio-ask-file" id="audio-ask-file"></div>
+      <div class="audio-ask-sub">时长 10~30 秒，请选择归类</div>
+      <div class="audio-ask-btns">
+        <button class="btn" id="audio-ask-music" type="button">归入音乐库</button>
+        <button class="btn" id="audio-ask-sound" type="button">归入音效库</button>
+        <button class="btn btn-ghost" id="audio-ask-cancel" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
+<!-- 背景大图预览 -->
+<div id="bg-lightbox" class="bg-lightbox hidden">
+  <button id="bg-lightbox-close" class="bg-lightbox-close" type="button" title="关闭">×</button>
+  <div class="bg-lightbox-inner">
+    <img id="bg-lightbox-img" class="bg-lightbox-img" alt="背景预览">
+    <div id="bg-lightbox-swatch" class="bg-lightbox-swatch" style="display:none"></div>
+    <div id="bg-lightbox-name" class="bg-lightbox-name"></div>
+  </div>
+</div>
+
+  <!-- 自定义右键菜单（接管浏览器原生右键，仅编辑器工作区；输入框/弹窗/设置抽屉保留原生） -->
+  <div id="ctx-menu" class="ctx-menu hidden" role="menu"></div>
+
+  <!-- 音频保存浮动窗（后台编码进度提示） -->
+  <div id="save-float" class="save-float hidden">
+    <div class="sf-spinner"><span class="sf-dot"></span></div>
+    <div class="sf-body">
+      <div class="sf-title">正在处理音频…</div>
+      <div class="sf-sub" id="save-float-name"></div>
+      <div class="sf-bar"><div class="sf-fill" id="save-float-fill"></div></div>
+    </div>
+  </div>
+
+</body>
+</html>

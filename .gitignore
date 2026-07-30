@@ -1,0 +1,23 @@
+# 依赖
+node_modules/
+TEST/node_modules/
+
+# 构建产物（由 build_inline.py 生成，可重建）
+dist/
+
+# 项目内部记忆与工作日志
+.workbuddy/
+
+# 临时/过期备份
+*.bak-*
+nul
+
+# 浏览器自动化测试遗留日志（非项目资源，deploy.py 也已排除）
+.playwright-cli/
+
+# 系统/编辑器缓存
+.DS_Store
+Thumbs.db
+
+# 本地部署状态文件（含 htmlto.link 部署 token，勿入库）
+.htmltolink.json

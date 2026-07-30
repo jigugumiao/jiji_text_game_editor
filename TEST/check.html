@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>CHECK</title></head>
+<body>
+<div id="out">pending</div>
+<script src="../js/storage.js"></script>
+<script>
+(async () => {
+  await Storage.migrateLegacyIfNeeded();
+  Storage.setCurrentProject(localStorage.getItem('story-editor:current'));
+  const bg = await Storage.getAllAssets('background');
+  const it = await Storage.getAllAssets('item');
+  const mu = await Storage.getAllAssets('music');
+  const so = await Storage.getAllAssets('sound');
+  const out = document.getElementById('out');
+  out.textContent = 'bg=' + bg.length + ' it=' + it.length + ' mu=' + mu.length + ' so=' + so.length
+    + ' | bgNames=' + bg.map(x => x.name + (x.lib ? '' : '(无lib)')).join(',');
+  document.title = 'CHECK_DONE';
+})().catch(e => { document.getElementById('out').textContent = 'ERR:' + e.message; document.title = 'CHECK_ERR'; });
+</script>
+</body>
+</html>

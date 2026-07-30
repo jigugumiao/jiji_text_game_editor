@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>SEED</title></head>
+<body>
+<script src="../js/storage.js"></script>
+<script>
+(async () => {
+  await Storage.migrateLegacyIfNeeded();
+  Storage.setCurrentProject(localStorage.getItem('story-editor:current'));
+  // A: 新格式（saveAsset 写入，带前缀/lib/id）
+  await Storage.saveAsset('background', { name: '新格式背景', kind: 'image', src: 'data:image/png;base64,iVBORw0KGgo=' });
+  // B: 老格式（原生直接写无前缀 key、无 lib 无 id），模拟「多项目架构」前的历史数据
+  const db = await new Promise((res, rej) => {
+    const r = indexedDB.open('story-editor', 1);
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  await new Promise((res, rej) => {
+    const tx = db.transaction('assets', 'readwrite');
+    tx.objectStore('assets').put({ key: 'background:oldbg', name: '老格式背景', kind: 'image', src: 'data:image/png;base64,iVBORw0KGgo=' });
+    tx.objectStore('assets').put({ key: 'item:olditem', name: '老格式物品', glb: 'data:model/glb;base64,AAAA' });
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+  document.title = 'SEED_DONE';
+})().catch(e => { document.title = 'SEED_ERR:' + e.message; });
+</script>
+</body>
+</html>

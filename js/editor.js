@@ -1698,14 +1698,14 @@
   }
 
   // 把拖入右侧库的文件按内容智能归类（不依赖当前激活库）：
-  //  - 场景包（GLB/.json/.gltf）→ 物品库
+  //  - 场景包（GLB/.json/.gltf/.jgl/.zip）→ 物品库（.jgl 为 3D交互制作器新导出格式）
   //  - 图片 → 背景库
   //  - 音频按时长：<10s 音效库、>30s 音乐库、10~30s 询问
   async function handleDroppedFiles(files) {
     const arr = Array.from(files);
     if (!arr.length) return;
     const bundles = [], images = [], audios = [];
-    const isBundle = (f) => /\.(json|glb|gltf)$/i.test(f.name) || /json|gltf/.test(f.type || '');
+    const isBundle = (f) => /\.(json|glb|gltf|jgl|zip)$/i.test(f.name) || /json|gltf|zip/.test(f.type || '');
     const isImage = (f) => (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(f.name);
     const isAudio = (f) => (f.type || '').startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|aac|wma)$/i.test(f.name);
     for (const f of arr) {

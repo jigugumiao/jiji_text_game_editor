@@ -4,11 +4,11 @@
 
 A **pure front-end** (vanilla HTML + JavaScript, zero dependencies, zero build step) **interactive fiction / text-adventure game** editor. Write your story, manage assets (images / items / music / sound effects), get AI-assisted generation, then export a playable interactive novel that runs in the browser — or deploy it as a shareable web page.
 
-> Project name 「剧情编辑器」, English repo name `text-adventure-editor`. This page is statically hosted on GitHub Pages.
+> Project name 「剧情编辑器」, English repo name `jiji_text_game_editor`. This page is statically hosted on GitHub Pages.
 
 ## ▶ Use online
 **Want to start right away? Open the web editor here (no install; your data is saved in your browser's local storage):**
-👉 **https://jigugumiao.github.io/text-adventure-editor/**
+👉 **https://jigugumiao.github.io/jiji_text_game_editor/**
 
 ## Features
 

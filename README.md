@@ -4,11 +4,11 @@
 
 ## ▶ 在线使用 / Use online
 **想直接上手？点这里打开网页版编辑器（无需安装，数据存在你的浏览器本地）：**
-👉 **https://jigugumiao.github.io/text-adventure-editor/**
+👉 **https://jigugumiao.github.io/jiji_text_game_editor/**
 
 一个**纯前端**（原生 HTML + JavaScript，零依赖、零构建步骤）的**互动剧情 / 文字冒险游戏**编辑器。写剧情、配素材（图片 / 物品 / 音乐 / 音效）、用 AI 辅助生成，一键导出成可在浏览器里玩的互动小说，也能直接部署成可分享的网页。
 
-> 项目名「剧情编辑器」，英文仓库名 `text-adventure-editor`。本页由 GitHub Pages 静态托管。
+> 项目名「剧情编辑器」，英文仓库名 `jiji_text_game_editor`。本页由 GitHub Pages 静态托管。
 
 ## 功能特性
 

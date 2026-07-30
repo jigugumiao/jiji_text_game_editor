@@ -1719,11 +1719,11 @@ __STORY_DATA__
       lastTextContent = n.content || '';
       const d = document.createElement('div');
       d.className = 'message';
-      d.innerHTML = bbcodeToHtml(n.content || '');
+      d.innerHTML = bbcodeToHtml(interpolateVars(n.content || ''));
       msgList.appendChild(d);
     } else if (n.type === 'divider'){
       const d = document.createElement('div'); d.className = 'message divider';
-      if (n.text){ const t=document.createElement('span'); t.className='divider-text'; t.innerHTML=bbcodeToHtml(n.text); const l1=document.createElement('span'); l1.className='divider-line'; const l2=document.createElement('span'); l2.className='divider-line'; d.appendChild(l1); d.appendChild(t); d.appendChild(l2); }
+      if (n.text){ const t=document.createElement('span'); t.className='divider-text'; t.innerHTML=bbcodeToHtml(interpolateVars(n.text)); const l1=document.createElement('span'); l1.className='divider-line'; const l2=document.createElement('span'); l2.className='divider-line'; d.appendChild(l1); d.appendChild(t); d.appendChild(l2); }
       else { const l=document.createElement('span'); l.className='divider-line'; d.appendChild(l); }
       msgList.appendChild(d);
     } else if (n.type === 'summon'){

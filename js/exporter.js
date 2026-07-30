@@ -184,10 +184,10 @@ function triggerMeshInteraction(meshName, hitObj) {
   const respond = (typeof entry === 'string') ? true : (entry.respond !== false);
   if (respond === false) return false;
   // 交互链门禁：同链上后一个部位需前一个已触发（成品运行时生效，便于做顺序解谜）
-  if (!_chainUnlocked(meshName)) { chainToast('请先触发前一个部位（见交互链顺序）'); return false; }
+  if (!_chainUnlocked(meshName)) { return false; } // 链未解锁：静默拦截，不出戏（不再弹提示）
   // 仅响应一次：默认只响应一次点击；勾选「允许多次点击」(once===false) 才允许重复
   const once = (typeof entry === 'string') ? true : (entry.once !== false);
-  if (once && _triggered[meshName]) { chainToast('该部位只能触发一次'); return false; }
+  if (once && _triggered[meshName]) { return false; } // 已触发过且 once：静默拦截，不出戏
   doPop(hitObj);
   _triggered[meshName] = true; // 标记已触发（推进链 / 限制 once）
   let did = false;
@@ -235,8 +235,9 @@ function initInteraction() {
     if (hits.length === 0) return;
     const hit = hits[0].object;
     const meshName = hit.name;
-    if (EMBED && meshName && EXIT_MESHES.indexOf(meshName) >= 0) notifyExit(meshName);
-    triggerMeshInteraction(meshName, hit);
+    // 先走交互链门禁（结束物体也是触发部位，顺序未满足则拦下，不提前结束场景）
+    const triggered = triggerMeshInteraction(meshName, hit);
+    if (EMBED && meshName && EXIT_MESHES.indexOf(meshName) >= 0 && triggered) notifyExit(meshName);
   });
 }
 window.addEventListener('resize', () => {
@@ -1705,6 +1706,7 @@ __STORY_DATA__
       if (n.type === 'block'){ callBlock(n.name); continue; }
       if (n.type === 'return'){ doReturn(); continue; }
       if (n.type === 'returnrechoose'){ doReturn(); continue; }   // 重放阶段无 UI，退化为普通跳回
+      if (n.type === 'varop'){ applyVarOps(n.ops); curIdx++; continue; }  // 重放阶段必须重建变量状态，否则读档后 {名} 变回字面量
       fastApply(n);   // text / pause / title / divider / summon / stopmusic
       curIdx++;
     }

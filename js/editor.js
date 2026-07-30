@@ -1194,13 +1194,19 @@
       doExport(mode);
     });
 
-    // 文档查看：新窗口打开使用文档
+    // 文档查看：新窗口打开使用文档（弹窗被拦截时改用新标签页，避免"打不开"假死）
     $('#btn-docs').addEventListener('click', (e) => {
       e.stopPropagation();
       const url = new URL('docs.html', location.href).href;
-      const w = window.open(url, 'story_docs', 'width=980,height=820,resizable=yes,scrollbars=yes');
+      let w = null;
+      try { w = window.open(url, 'story_docs', 'width=980,height=820,resizable=yes,scrollbars=yes'); } catch (e2) {}
       if (w) { try { w.focus(); } catch (e2) {} }
-      else { toast('文档窗口被浏览器拦截，请允许弹出窗口'); }
+      else {
+        const a = document.createElement('a');
+        a.href = url; a.target = '_blank'; a.rel = 'noopener';
+        document.body.appendChild(a); a.click(); a.remove();
+        toast('已在新标签页打开文档（弹窗被拦截）');
+      }
     });
 
     // 预览

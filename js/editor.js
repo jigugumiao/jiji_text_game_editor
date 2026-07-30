@@ -95,7 +95,6 @@
     '<标题:异世界之门>\n\n' +
     '你站在一座古老的石拱门前。\n' +
     '阳光穿透云层，远处浮空岛缓缓旋转。\n' +
-    '@image#1:Clipboard_Screenshot.png\n\n' +
     '<停顿>\n\n' +
     '这就是你踏上旅程的地方。\n' +
     '深吸一口气，迈出了第一步。\n' +
@@ -106,13 +105,12 @@
     '<标题:史莱姆来袭>\n\n' +
     '一只圆滚滚的史莱姆挡住了去路。\n' +
     '它半透明的身体在阳光下闪着诡异的光。\n' +
-    '@image#2:Clipboard_Screenshot-1.png\n\n' +
     '<停顿>\n\n' +
     '你握紧手中的剑，准备迎战。\n\n' +
     '<变量:勇气=1>\n\n' +
     '你的勇气值现在是 {勇气}。\n' +
     '\n' +
-    '// 小提示：在右侧素材库上传对应图片/音乐后，点击右上角「试玩」即可看到完整效果。';
+    '// 小提示：示例素材（冒险开始 / 史莱姆平原 / 主题曲）首次打开时已自动加入右侧素材库，点击右上角「试玩」即可看到完整效果。';
 
   // ============ 文本 ↔ 剧情数组 ============
   function parseStory(src) {
@@ -890,7 +888,26 @@
   function showProjectsScreen(show) {
     $('#projects-screen').classList.toggle('hidden', !show);
   }
-  function openProject(id) {
+  // 首次打开（默认项目为空库）时，把示例素材预置进素材库，使默认示例剧情能正确显示图片/音乐。
+  // 仅播种一次（localStorage 标记），避免污染后续新建的工程；素材 src 用相对路径指向 examples 目录（GitHub Pages 可达）。
+  async function seedSampleAssetsIfNeeded() {
+    if (!window.Storage || !window.Storage.getAllAssets || !window.Storage.saveAsset) return;
+    try {
+      if (localStorage.getItem('storyeditor:seededSample')) return;
+      const bgs = await window.Storage.getAllAssets('background');
+      if (bgs.some(function (a) { return a.name === '冒险开始'; })) {
+        localStorage.setItem('storyeditor:seededSample', '1');
+        return; // 已播种（或用户已上传同名素材）
+      }
+      const base = 'examples/sample-adventure/assets/';
+      await window.Storage.saveAsset('background', { name: '冒险开始', kind: 'image', src: base + 'Clipboard_Screenshot.png' });
+      await window.Storage.saveAsset('background', { name: '史莱姆平原', kind: 'image', src: base + 'Clipboard_Screenshot-1.png' });
+      await window.Storage.saveAsset('music', { name: '主题曲', src: base + 'atlasaudio-adventure-518065.mp3' });
+      localStorage.setItem('storyeditor:seededSample', '1');
+    } catch (e) { console.error('默认示例素材播种失败', e); }
+  }
+
+  async function openProject(id) {
     window.Storage.setCurrentProject(id);
     currentProjectMode = window.Storage.getProjectMode(id); // 'article' | 'game'
     applyProjectMode();
@@ -910,6 +927,7 @@
     updateWordCount();
     history = []; histIndex = -1;
     showProjectsScreen(false);
+    await seedSampleAssetsIfNeeded();
     renderLibrary();
     updateBlockChip();
     renderOutline();

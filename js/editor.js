@@ -4122,6 +4122,7 @@ self.onmessage = function (e) {
         exitMesh: m.exitMesh || (m.exitMeshes && m.exitMeshes[0]) || null,
         exitMeshes: m.exitMeshes || (m.exitMesh ? [m.exitMesh] : []),
         interactions: m.interactions || {},
+        chains: m.chains || [],
         sounds: m.sounds || {},
         defaultView: m.defaultView || null,
         lockRotation: !!m.lockRotation,

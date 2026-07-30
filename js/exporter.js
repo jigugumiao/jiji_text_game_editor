@@ -4,7 +4,7 @@
 
 // ============ 物品查看器源码（来自 3D交互制作器 exporter.js，embed 模式） ============
 // 占位符：__MODEL_NAME__ __MODEL_BLOB__ __SCENE_BG__ __INTERACTIONS__ __SOUNDS__
-//         __DEFAULT_VIEW__ __EMBED__ __EXIT_MESHES__ __MODEL_ID__
+//         __DEFAULT_VIEW__ __EMBED__ __EXIT_MESHES__ __MODEL_ID__ __CHAINS__
 const ITEM_VIEWER_SOURCE = String.raw`import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -76,6 +76,27 @@ let downX = 0, downY = 0;
 let popObj = null, popBase = null, popActive = false;
 let deleteFlag = {};
 let triggerObj = {};
+// 交互链 + 仅响应一次（成品运行时门禁）
+let chains = __CHAINS__;             // [{ id, name, order:[meshName] }]
+let _triggered = {};                 // meshName -> true：已被触发过（链推进与 once 限制）
+function chainToast(msg) {
+  if (typeof window.toast === 'function') { window.toast(msg, 'warn'); return; }
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);background:rgba(20,24,33,.92);color:#ffd479;padding:8px 14px;border-radius:8px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;z-index:9999;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .4s'; setTimeout(() => t.remove(), 400); }, 1400);
+}
+// 链门禁：不在任何链上→允许；在链上且非链首→需前一个已触发
+function _chainUnlocked(meshName) {
+  if (!chains || !chains.length) return true;
+  for (let ci = 0; ci < chains.length; ci++) {
+    const ch = chains[ci]; if (!ch || !ch.order) continue;
+    const idx = ch.order.indexOf(meshName);
+    if (idx > 0 && !_triggered[ch.order[idx - 1]]) return false;
+  }
+  return true;
+}
 
 function notifyExit(meshName) {
   try {
@@ -162,7 +183,13 @@ function triggerMeshInteraction(meshName, hitObj) {
   const soundId = (typeof entry === 'string') ? '' : (entry.sound || '');
   const respond = (typeof entry === 'string') ? true : (entry.respond !== false);
   if (respond === false) return false;
+  // 交互链门禁：同链上后一个部位需前一个已触发（成品运行时生效，便于做顺序解谜）
+  if (!_chainUnlocked(meshName)) { chainToast('请先触发前一个部位（见交互链顺序）'); return false; }
+  // 仅响应一次：默认只响应一次点击；勾选「允许多次点击」(once===false) 才允许重复
+  const once = (typeof entry === 'string') ? true : (entry.once !== false);
+  if (once && _triggered[meshName]) { chainToast('该部位只能触发一次'); return false; }
   doPop(hitObj);
+  _triggered[meshName] = true; // 标记已触发（推进链 / 限制 once）
   let did = false;
   const ping = (typeof entry === 'object') && (!!entry.pingpong);
   const auto = (typeof entry === 'object') && (!!entry.autoReturn);
@@ -740,6 +767,7 @@ __STORY_DATA__
       viewer = rep(viewer, '__MODEL_BLOB__', JSON.stringify(model.glb || ''));
       viewer = rep(viewer, '__SCENE_BG__', bgCode);
       viewer = rep(viewer, '__INTERACTIONS__', JSON.stringify(model.interactions || {}).replace(/</g, '\\u003c'));
+      viewer = rep(viewer, '__CHAINS__', JSON.stringify(model.chains || []).replace(/</g, '\\u003c'));
       viewer = rep(viewer, '__SOUNDS__', JSON.stringify(model.sounds || {}).replace(/</g, '\\u003c'));
       viewer = rep(viewer, '__DEFAULT_VIEW__', JSON.stringify(model.defaultView || null));
       viewer = rep(viewer, '__LOCK_ROTATION__', model.lockRotation ? 'true' : 'false');
@@ -774,6 +802,9 @@ __STORY_DATA__
     // 旧格式兜底：仅有 story 时视其为主剧情块
     blocks: RAW.blocks || (RAW.story ? { [RAW.start || '__MAIN__']: RAW.story } : {}),
     start: RAW.start || (RAW.blocks ? Object.keys(RAW.blocks)[0] : '__MAIN__'),
+    // 变量库默认值：collectRuntimeData 已把变量库初值注入 STORY_DATA.variables，
+    // 必须显式透传到 DATA，否则运行时 vars 初始为空、{名} 读取不到默认值（只有 <变量:名=值> 赋值才生效）。
+    variables: RAW.variables || {},
     // 预览「从光标开始」起点：data.__previewFrom 已正确设置，但 DATA 是重建对象，
     // 必须显式透传，否则运行时读不到 —— 会导致标题屏照常出现、从头开始。
     __previewFrom: RAW.__previewFrom || null,
@@ -2122,7 +2153,7 @@ async function collectRuntimeData(inline) {
           name: a.name, glb: a.glb || '', exitMesh: a.exitMesh || null,
           interactions: a.interactions || {}, sounds: a.sounds || {},
           defaultView: a.defaultView || null, bg: a.bg || null,
-          lockRotation: !!a.lockRotation,
+          lockRotation: !!a.lockRotation, chains: a.chains || [],
         };
       } else {
         if (a.kind === 'solid') {

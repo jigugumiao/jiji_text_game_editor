@@ -83,6 +83,8 @@
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
   const RE_OPTION = /<选项:\s*"([^"]*)"\s*(?:,\s*([^>]*?))?\s*>/g;
+  // 变量操作：<变量:名=值> / <变量:名+数> / <变量:名-数>（独占一行；一行可含多个，按 <变量:...> 逐个提取）
+  const RE_VAR_OP = /<变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*([=+\-])\s*([^<>]*?)\s*>/g;
 
   const DEFAULT_TEXT =
     '// 欢迎来到剧情编辑器！这段示例文字会带你快速了解核心功能。\n' +
@@ -161,6 +163,15 @@
       } else if (RE_RETURN_RECHOOSE.test(t)) {
         flush();
         story.push({ type: 'returnrechoose' });
+      } else if (t.indexOf('<变量:') === 0) {
+        // 提取整行内所有 <变量:...> 操作，合并为一个 varop 节点（与导出端 parseStoryForExport 一致）
+        const ops = [];
+        let vm; RE_VAR_OP.lastIndex = 0;
+        while ((vm = RE_VAR_OP.exec(t)) !== null) {
+          ops.push({ name: vm[1], op: vm[2], val: vm[3].trim() });
+        }
+        if (ops.length) { flush(); story.push({ type: 'varop', ops: ops }); }
+        else buf.push(line); // 形如 <变量:...> 但格式无法识别 → 当普通文本
       } else if (t.indexOf('<选项:') >= 0) {
         flush();
         const options = [];
@@ -197,6 +208,7 @@
       else if (n.type === 'block') out.push('<剧情块:' + (n.name || '') + '>');
       else if (n.type === 'return') out.push('<跳回>');
       else if (n.type === 'returnrechoose') out.push('<跳回重选>');
+      else if (n.type === 'varop') out.push(n.ops.map(o => '<变量:' + o.name + (o.op === '=' ? '=' : o.op) + o.val + '>').join(''));
       else if (n.type === 'options') out.push(n.options.map(o => '<选项:"' + (o.text || '') + '"' + (o.block ? ',' + o.block : '') + '>').join(' '));
     }
     return out.join('\n');
@@ -268,8 +280,16 @@
           html += '<div class="pv-line"><span class="pv-cmd return"><svg class="ico" aria-hidden="true"><use href="#ic-corner-up-left"/></svg> 跳回（返回上一层对话）</span></div>';
         } else if (RE_RETURN_RECHOOSE.test(t)) {
           html += '<div class="pv-line"><span class="pv-cmd return"><svg class="ico" aria-hidden="true"><use href="#ic-corner-up-left"/></svg> 跳回重选（返回上一步，重新做出选择）</span></div>';
-        } else if ((m = t.match(RE_BLOCK))) {
+        }         else if ((m = t.match(RE_BLOCK))) {
           html += '<div class="pv-line"><span class="pv-cmd block"><svg class="ico" aria-hidden="true"><use href="#ic-box"/></svg> 进入剧情块：' + escapeHtml(m[1]) + '</span></div>';
+        } else if (t.indexOf('<变量:') === 0) {
+          const ops = [];
+          let vm; RE_VAR_OP.lastIndex = 0;
+          while ((vm = RE_VAR_OP.exec(t)) !== null) {
+            const sym = vm[2] === '=' ? '=' : vm[2];
+            ops.push(escapeHtml(vm[1] + ' ' + sym + ' ' + vm[3].trim()));
+          }
+          html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 变量：' + (ops.join('，') || '（格式有误）') + '</span></div>';
         } else if (t.indexOf('<选项:') >= 0) {
           const opts = [];
           let om; RE_OPTION.lastIndex = 0;

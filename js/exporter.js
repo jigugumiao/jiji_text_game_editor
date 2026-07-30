@@ -2073,7 +2073,7 @@ function computeStartNode(src, charOffset) {
     const isCmd =
       RE_PAUSE.test(t) || RE_SUMMON.test(t) || RE_TITLE.test(t) || RE_DIVIDER.test(t) ||
       t === '<停止音乐>' || RE_BLOCK.test(t) || RE_RETURN.test(t) || RE_RETURN_RECHOOSE.test(t) ||
-      t.indexOf('<选项:') >= 0;
+      t.indexOf('<选项:') >= 0 || t.indexOf('<变量:') === 0;
     if (isCmd) { flush(); nodeStartLines.push(i); }
     else { if (bufStart == null) bufStart = i; }
   }

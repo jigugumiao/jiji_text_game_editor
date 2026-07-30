@@ -1286,6 +1286,9 @@ __STORY_DATA__
     const targetIdx = (typeof save.idx === 'number') ? save.idx : null;
     scrollToBottom();
     scheduleContrast();
+    // 读档重建变量：先从变量库默认值重置，再由 fastReplay 沿重放路径精确应用一次 <变量> 操作。
+    // 否则 vars 会叠加在「当前运行时值」之上，导致多次读档时变量变动被重复累加。
+    vars = Object.assign({}, (DATA.variables) || {});
     fastReplay(recordedChoices.slice(), targetBlock, targetIdx);
   }
   if (tbSave) tbSave.addEventListener('click', function(e){ e.stopPropagation(); saveMenu.classList.contains('open') ? closeMenus() : openSaveMenu(); });

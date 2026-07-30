@@ -888,23 +888,34 @@
   function showProjectsScreen(show) {
     $('#projects-screen').classList.toggle('hidden', !show);
   }
-  // 首次打开（默认项目为空库）时，把示例素材预置进素材库，使默认示例剧情能正确显示图片/音乐。
-  // 仅播种一次（localStorage 标记），避免污染后续新建的工程；素材 src 用相对路径指向 examples 目录（GitHub Pages 可达）。
+  // 把示例素材按需预置进「当前项目」的素材库，使默认示例剧情能正确显示图片/音乐。
+  // 改为按项目按需补充（不再用全局一次性 localStorage 标记）：
+  //   - 库里没有该示例素材 → 新增（新建的空项目首次打开会自动获得一套 starter 素材）；
+  //   - 已有但 src 是旧版本（不含最新 assetVer）→ 更新 src（升级后能看到新图，不产生重复卡片）；
+  //   - 用户自己上传的同名素材（src 非 examples 路径）→ 不碰，避免覆盖用户素材。
+  // 素材 src 用相对路径指向 examples 目录（GitHub Pages 可达）；每个项目命名空间独立。
   async function seedSampleAssetsIfNeeded() {
     if (!window.Storage || !window.Storage.getAllAssets || !window.Storage.saveAsset) return;
     try {
-      if (localStorage.getItem('storyeditor:seededSample')) return;
-      const bgs = await window.Storage.getAllAssets('background');
-      if (bgs.some(function (a) { return a.name === '冒险开始'; })) {
-        localStorage.setItem('storyeditor:seededSample', '1');
-        return; // 已播种（或用户已上传同名素材）
-      }
       const base = 'examples/sample-adventure/assets/';
-      const assetVer = '?v=20260731-05';
-      await window.Storage.saveAsset('background', { name: '冒险开始', kind: 'image', src: base + 'Clipboard_Screenshot.png' + assetVer });
-      await window.Storage.saveAsset('background', { name: '史莱姆平原', kind: 'image', src: base + 'Clipboard_Screenshot-1.png' + assetVer });
-      await window.Storage.saveAsset('music', { name: '主题曲', src: base + 'atlasaudio-adventure-518065.mp3' + assetVer });
-      localStorage.setItem('storyeditor:seededSample', '1');
+      const assetVer = '?v=20260731-06';
+      const bgs = await window.Storage.getAllAssets('background');
+      const mus = await window.Storage.getAllAssets('music');
+      async function ensure(lib, list, name, file) {
+        const cur = list.find(function (a) { return a.name === name; });
+        const src = base + file + assetVer;
+        if (!cur) {
+          const asset = { name: name, src: src };
+          if (lib === 'background') asset.kind = 'image';
+          await window.Storage.saveAsset(lib, asset); // 无 id → 新增
+        } else if (cur.src && cur.src.indexOf(base) === 0 && cur.src.indexOf(assetVer) === -1) {
+          // 是示例素材且版本旧 → 借原 id upsert 更新，避免重复卡片
+          await window.Storage.saveAsset(lib, Object.assign({}, cur, { src: src }));
+        }
+      }
+      await ensure('background', bgs, '冒险开始', 'Clipboard_Screenshot.png');
+      await ensure('background', bgs, '史莱姆平原', 'Clipboard_Screenshot-1.png');
+      await ensure('music', mus, '主题曲', 'atlasaudio-adventure-518065.mp3');
     } catch (e) { console.error('默认示例素材播种失败', e); }
   }
 

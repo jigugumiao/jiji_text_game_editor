@@ -2150,6 +2150,16 @@
       return;
     }
     list.innerHTML = '';
+    // 表头：标识 名称 / 类型 / 值 三列（与 .var-row 列对齐）
+    const header = document.createElement('div');
+    header.className = 'var-row var-header';
+    header.innerHTML =
+      '<div class="var-th-handle"></div>' +
+      '<div class="var-th var-th-name">名称</div>' +
+      '<div class="var-th var-th-type">类型</div>' +
+      '<div class="var-th var-th-val">值</div>' +
+      '<div class="var-th-del"></div>';
+    list.appendChild(header);
     vars.forEach((v, idx) => {
       const row = document.createElement('div'); row.className = 'var-row';
       const handle = document.createElement('div'); handle.className = 'var-handle'; handle.title = '拖到正文插入，或点击弹出语句菜单'; handle.textContent = '⠿'; handle.draggable = true;

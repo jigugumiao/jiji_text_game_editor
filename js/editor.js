@@ -112,7 +112,7 @@
     '<变量:勇气=1>\n\n' +
     '你的勇气值现在是 {勇气}。\n' +
     '\n' +
-    '// 小提示：示例素材（冒险开始 / 史莱姆平原 / 主题曲）首次打开时已自动加入右侧素材库，点击右上角「试玩」即可看到完整效果。';
+    '// 小提示：点右上角「试玩」即可预览效果；右侧素材库可上传你自己的图片 / 音乐 / 3D 模型。';
 
   // ============ 文本 ↔ 剧情数组 ============
   function parseStory(src) {
@@ -912,35 +912,36 @@
   function showProjectsScreen(show) {
     $('#projects-screen').classList.toggle('hidden', !show);
   }
-  // 把示例素材按需预置进「当前项目」的素材库，使默认示例剧情能正确显示图片/音乐。
-  // 改为按项目按需补充（不再用全局一次性 localStorage 标记）：
-  //   - 库里没有该示例素材 → 新增（新建的空项目首次打开会自动获得一套 starter 素材）；
-  //   - 已有但 src 是旧版本（不含最新 assetVer）→ 更新 src（升级后能看到新图，不产生重复卡片）；
-  //   - 用户自己上传的同名素材（src 非 examples 路径）→ 不碰，避免覆盖用户素材。
-  // 素材 src 用相对路径指向 examples 目录（GitHub Pages 可达）；每个项目命名空间独立。
-  async function seedSampleAssetsIfNeeded() {
-    if (!window.Storage || !window.Storage.getAllAssets || !window.Storage.saveAsset) return;
+  // 新建项目时，把内置「示例冒险」工程一次性灌入该项目。
+  // 仅在「新建项目」流程中调用（见新建按钮 handler），打开已有项目时绝不执行，
+  // 因此不会再出现「所有项目打开时都被塞入默认素材」的情况。
+  async function seedExampleProjectInto(pid) {
+    const json = window.SAMPLE_PROJECT_JSON;
+    if (!json || json.format !== 'story-editor-project') return;
+    const prev = window.Storage.getCurrentProjectId();
+    window.Storage.setCurrentProject(pid); // 切到目标项目命名空间，确保写入落在正确项目
     try {
-      const base = 'examples/sample-adventure/assets/';
-      const assetVer = '?v=20260731-06';
-      const bgs = await window.Storage.getAllAssets('background');
-      const mus = await window.Storage.getAllAssets('music');
-      async function ensure(lib, list, name, file) {
-        const cur = list.find(function (a) { return a.name === name; });
-        const src = base + file + assetVer;
-        if (!cur) {
-          const asset = { name: name, src: src };
-          if (lib === 'background') asset.kind = 'image';
-          await window.Storage.saveAsset(lib, asset); // 无 id → 新增
-        } else if (cur.src && cur.src.indexOf(base) === 0 && cur.src.indexOf(assetVer) === -1) {
-          // 是示例素材且版本旧 → 借原 id upsert 更新，避免重复卡片
-          await window.Storage.saveAsset(lib, Object.assign({}, cur, { src: src }));
-        }
+      const d = json.data || {};
+      if (d.blocks) {
+        try { window.Storage.saveBlocks(JSON.parse(d.blocks)); } catch (e) { console.warn('示例 blocks 解析失败', e); }
       }
-      await ensure('background', bgs, '冒险开始', 'Clipboard_Screenshot.png');
-      await ensure('background', bgs, '史莱姆平原', 'Clipboard_Screenshot-1.png');
-      await ensure('music', mus, '主题曲', 'atlasaudio-adventure-518065.mp3');
-    } catch (e) { console.error('默认示例素材播种失败', e); }
+      if (d.vars) {
+        try { window.Storage.saveVars(JSON.parse(d.vars || '[]')); } catch (e) { console.warn('示例 vars 解析失败', e); }
+      }
+      if (d.meta) {
+        try { window.Storage.saveMeta(JSON.parse(d.meta || '{}')); } catch (e) { console.warn('示例 meta 解析失败', e); }
+      }
+      const assets = Array.isArray(d.assets) ? d.assets : [];
+      for (const a of assets) {
+        if (!a || !a.lib || !a.id) continue;
+        const rec = Object.assign({}, a);
+        delete rec.key; // 去掉旧 key，让 saveAsset 按当前项目命名空间重写
+        try { await window.Storage.saveAsset(a.lib, rec); }
+        catch (e) { console.warn('示例素材写入失败', (a.name || a.id), e); }
+      }
+    } finally {
+      if (prev) window.Storage.setCurrentProject(prev); // 还原此前命名空间，避免错乱
+    }
   }
 
   async function openProject(id) {
@@ -963,7 +964,7 @@
     updateWordCount();
     history = []; histIndex = -1;
     showProjectsScreen(false);
-    await seedSampleAssetsIfNeeded();
+    // 注意：示例工程只在「新建项目」时灌入，此处不再自动播种，避免改动已有项目
     renderLibrary();
     updateBlockChip();
     renderOutline();
@@ -1058,10 +1059,13 @@
     $('#new-project-name').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') $('#new-project-create').click();
     });
-    $('#new-project-create').addEventListener('click', () => {
+    $('#new-project-create').addEventListener('click', async () => {
       const name = ($('#new-project-name').value || '').trim();
       const id = window.Storage.createProject(name, _npSelectedMode);
       closeNewProjectModal();
+      // 新建项目：灌入内置「示例冒险」工程（含剧情 / 变量 / 素材），仅此一次，之后不再改动该项目
+      try { await seedExampleProjectInto(id); }
+      catch (e) { console.error('示例工程播种失败', e); }
       openProject(id);
     });
   }

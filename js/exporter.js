@@ -1574,7 +1574,7 @@ __STORY_DATA__
     else if (n.type === 'block') { callBlock(n.name); execCur(); }
     else if (n.type === 'return') { doReturn(); }
     else if (n.type === 'returnrechoose') { doReturnRechoose(); }
-    else if (n.type === 'varop') { applyVarOps(n.ops); execCur(); }
+    else if (n.type === 'varop') { applyVarOps(n.ops); advance(); }
     else if (n.type === 'options') { presentOptions(n); }
     else advance();
   }

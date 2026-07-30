@@ -18,7 +18,6 @@ A **pure front-end** (vanilla HTML + JavaScript, zero dependencies, zero build s
 - **AI assistant** (`js/ai.js`): a full-text assistant with continuation, outlining, rewriting, note-based control of line count / style, etc. (bring your own LLM API).
 - **Playtest / export runtime** (`js/exporter.js`): generates a playable runtime — typewriter effect, branching options, save / load, opening background & music, **auto-play** (continues automatically after a 2.5s pause), and contrast backplates (auto-adapts for light/dark backgrounds to stay readable).
 - **Settings**: game title, subtitle, author info; opening background / music configuration.
-- **One-click deploy**: `deploy.py` packages and publishes the whole site to [htmlto.link](https://htmlto.link) into a shareable link; `build_inline.py` produces a single-file offline bundle `dist/index.html`.
 
 ## Directory structure
 
@@ -33,7 +32,6 @@ js/bbcode.js          文本标记解析
 js/generators.js      素材生成器
 js/lame.min.js        MP3 编码（音频导出）
 js/zip.js             压缩
-deploy.py             部署到 htmlto.link
 build_inline.py       生成内联单文件离线包
 TEST/                 基于 jsdom 的回归测试
 ```
@@ -41,14 +39,6 @@ TEST/                 基于 jsdom 的回归测试
 ## Local usage
 
 Just open `index.html` in a browser (no server, no dependencies). All data is stored in the browser's local storage.
-
-## Deploy as a shareable web page
-
-```bash
-python deploy.py        # first time / update: package and publish to htmlto.link (creates/updates .htmltolink.json)
-```
-
-> `.htmltolink.json` contains a deploy token and is already in `.gitignore`, so it will not enter the repository.
 
 ## Generate a single offline file
 

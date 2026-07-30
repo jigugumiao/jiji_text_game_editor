@@ -18,7 +18,6 @@
 - **AI 助理**（`js/ai.js`）：全文助理，支持续写、大纲、重写、按备注控制行数 / 文风等（需自备大模型 API）。
 - **试玩 / 导出运行时**（`js/exporter.js`）：生成可玩 runtime——打字机效果、选项分支、存档 / 读档、开场背景与音乐、**自动播放**（停顿 2.5s 自动继续）、文字对比底板（深 / 浅背景自动适配保证可读）。
 - **设置**：游戏名、副标题、作者等信息；开场背景 / 音乐配置。
-- **一键部署**：`deploy.py` 将整站打包发布到 [htmlto.link](https://htmlto.link) 生成可分享链接；`build_inline.py` 生成单文件离线包 `dist/index.html`。
 
 ## 目录结构
 
@@ -33,7 +32,6 @@ js/bbcode.js          文本标记解析
 js/generators.js      素材生成器
 js/lame.min.js        MP3 编码（音频导出）
 js/zip.js             压缩
-deploy.py             部署到 htmlto.link
 build_inline.py       生成内联单文件离线包
 TEST/                 基于 jsdom 的回归测试
 ```
@@ -41,14 +39,6 @@ TEST/                 基于 jsdom 的回归测试
 ## 本地使用
 
 直接用浏览器打开 `index.html` 即可（无需服务器、无需安装依赖）。所有数据保存在浏览器本地存储。
-
-## 部署成可分享网页
-
-```bash
-python deploy.py        # 首次/更新：打包并发布到 htmlto.link（生成/更新 .htmltolink.json）
-```
-
-> `.htmltolink.json` 含部署 token，已加入 `.gitignore`，不会进入版本库。
 
 ## 生成离线单文件
 

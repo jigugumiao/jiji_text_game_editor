@@ -900,9 +900,10 @@
         return; // 已播种（或用户已上传同名素材）
       }
       const base = 'examples/sample-adventure/assets/';
-      await window.Storage.saveAsset('background', { name: '冒险开始', kind: 'image', src: base + 'Clipboard_Screenshot.png' });
-      await window.Storage.saveAsset('background', { name: '史莱姆平原', kind: 'image', src: base + 'Clipboard_Screenshot-1.png' });
-      await window.Storage.saveAsset('music', { name: '主题曲', src: base + 'atlasaudio-adventure-518065.mp3' });
+      const assetVer = '?v=20260731-05';
+      await window.Storage.saveAsset('background', { name: '冒险开始', kind: 'image', src: base + 'Clipboard_Screenshot.png' + assetVer });
+      await window.Storage.saveAsset('background', { name: '史莱姆平原', kind: 'image', src: base + 'Clipboard_Screenshot-1.png' + assetVer });
+      await window.Storage.saveAsset('music', { name: '主题曲', src: base + 'atlasaudio-adventure-518065.mp3' + assetVer });
       localStorage.setItem('storyeditor:seededSample', '1');
     } catch (e) { console.error('默认示例素材播种失败', e); }
   }

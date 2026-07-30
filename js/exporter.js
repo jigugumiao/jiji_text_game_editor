@@ -1942,8 +1942,24 @@ __STORY_DATA__
       advance();
     }, 300);
   }
+  // 结束物体点击：若该结束物体绑定了剧情块则跳转过去，否则按原逻辑关闭并继续
+  function handleItemExit(id, mesh){
+    const item = (DATA.assets.item && DATA.assets.item[id]) || null;
+    const bindings = (item && item.exitBindings) || {};
+    if (mesh && bindings[mesh] && DATA.blocks[bindings[mesh]]){
+      // 绑定了剧情块：关闭查看器后跳转到该块开头（压栈，原位置可由 <跳回> 返回）
+      itemHint.classList.remove('show');
+      overlay.classList.remove('open');
+      setTimeout(function(){
+        frame.srcdoc = ''; itemOpen = false;
+        callBlock(bindings[mesh]); execCur();
+      }, 300);
+    } else {
+      closeItem(); // 未绑定：原逻辑，关闭并继续
+    }
+  }
   window.addEventListener('message', function(ev){
-    if (ev.data && ev.data.type === 'glb-scene-exit' && itemOpen) closeItem();
+    if (ev.data && ev.data.type === 'glb-scene-exit' && itemOpen) handleItemExit(ev.data.id, ev.data.mesh);
     else if (ev.data && ev.data.type === 'get-review-context') {
       // 编辑器「试玩审阅」：回传当前块名与最近显示的文字，供用户写修改意见
       try { parent.postMessage({ type: 'review-context', block: curBlock, text: lastTextContent }, '*'); } catch (e) {}
@@ -2156,6 +2172,7 @@ async function collectRuntimeData(inline) {
           interactions: a.interactions || {}, sounds: a.sounds || {},
           defaultView: a.defaultView || null, bg: a.bg || null,
           lockRotation: !!a.lockRotation, chains: a.chains || [],
+          exitBindings: a.exitBindings || {},
         };
       } else {
         if (a.kind === 'solid') {

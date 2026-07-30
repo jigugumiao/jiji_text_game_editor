@@ -364,6 +364,7 @@ async function importSceneBundle(json) {
       exitMeshes: m.exitMeshes || (m.exitMesh ? [m.exitMesh] : []),
       interactions: m.interactions || {},
       chains: m.chains || [],
+      exitBindings: m.exitBindings || {},
       sounds: m.sounds || {},
       defaultView: m.defaultView || null,
       lockRotation: !!m.lockRotation,

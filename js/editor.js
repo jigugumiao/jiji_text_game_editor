@@ -567,6 +567,10 @@
     ];
     if (ds.kind && ds.id != null) {
       items.push({ label: '重命名素材', icon: 'ic-pencil', action: function () { handleRenameAsset(ds.kind, ds.id, ds.name); } });
+      // 物品库：设置结束物体 → 剧情块的绑定（右键进入设置面板）
+      if (ds.kind === 'item') {
+        items.push({ label: '设置结束物体绑定', icon: 'ic-link', action: function () { openItemExitSettings(ds.kind, ds.id); } });
+      }
       // 纯色背景：再编辑改为「重选颜色」（纯色无图可压缩，复用纯色生成器并预填当前色）
       if (ds.kind === 'background' && ds.solid === '1') {
         items.push({ label: '重选颜色', icon: 'ic-color', action: function () { openSolidRePick(ds.kind, ds.id); } });
@@ -2639,7 +2643,8 @@
       const ico = document.createElement('div'); ico.className = 'asset-ico'; ico.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-box"/></svg>';
       const sub = document.createElement('div'); sub.className = 'asset-sub';
       const exitList = (a.exitMeshes && a.exitMeshes.length) ? a.exitMeshes : (a.exitMesh ? [a.exitMesh] : []);
-      sub.textContent = exitList.length ? ('结束物体: ' + exitList.join('、')) : '无结束物体';
+      const boundCount = (a.exitBindings && typeof a.exitBindings === 'object') ? Object.keys(a.exitBindings).filter(function(k){ return a.exitBindings[k]; }).length : 0;
+      sub.textContent = exitList.length ? ('结束物体: ' + exitList.join('、') + (boundCount ? (' · 已绑' + boundCount) : '')) : '无结束物体';
       card.querySelector('.asset-meta').appendChild(sub);
       card.insertBefore(ico, card.querySelector('.asset-meta'));
       list.appendChild(card);
@@ -3762,6 +3767,59 @@ self.onmessage = function (e) {
     if (!asset) { toast('素材不存在'); return; }
     if (asset.kind !== 'solid') { openReEditModal(lib, id); return; } // 非纯色走原再编辑
     openSolidGen(null, asset);
+  }
+  // ============ 物品：设置结束物体 → 剧情块绑定 ============
+  // 右键物品卡 → 设置结束物体绑定：为每个结束物体选择要跳转的剧情块（或不绑定）。
+  async function openItemExitSettings(lib, id) {
+    const asset = await window.Storage.getAsset(lib, id);
+    if (!asset) { toast('素材不存在'); return; }
+    const exitMeshes = (asset.exitMeshes && asset.exitMeshes.length) ? asset.exitMeshes
+                     : (asset.exitMesh ? [asset.exitMesh] : []);
+    const bindings = (asset.exitBindings && typeof asset.exitBindings === 'object') ? asset.exitBindings : {};
+    const blockNames = (window.Storage.listBlockNames && window.Storage.listBlockNames()) || [];
+    const box = $('#gen-box');
+    let html = '<h3><svg class="ico" aria-hidden="true"><use href="#ic-link"/></svg> 设置结束物体绑定</h3>';
+    html += '<div class="gen-note">为物品 <b>' + escapeHtml(asset.name || '') + '</b> 的每个「结束物体」选择要跳转的剧情块。'
+          + '未绑定的结束物体点击后仍按原逻辑关闭查看器并继续剧情。</div>';
+    if (!exitMeshes.length) {
+      html += '<div class="gen-note" style="color:#ffb4b4">该物品没有「结束物体」（导出场景包时未设置），无法绑定。'
+            + '请在 3D交互制作器里设置结束物体后重新导入。</div>';
+    } else {
+      html += '<div id="exit-binding-rows">';
+      exitMeshes.forEach(function(mesh){
+        const cur = bindings[mesh] || '';
+        const opts = ['<option value="">（不绑定，原逻辑）</option>'].concat(
+          blockNames.map(function(b){
+            return '<option value="' + escapeHtml(b) + '"' + (b === cur ? ' selected' : '') + '>' + escapeHtml(b) + '</option>';
+          })
+        ).join('');
+        html += '<div class="field"><label>' + escapeHtml(mesh) + '</label>'
+              + '<select class="exit-bind-select" data-mesh="' + escapeHtml(mesh) + '">' + opts + '</select></div>';
+      });
+      html += '</div>';
+    }
+    html += '<div style="display:flex;gap:8px;margin-top:12px">'
+          + '<button class="btn btn-primary" id="exit-bind-save">保存绑定</button>'
+          + '<button class="btn" id="exit-bind-cancel">取消</button></div>';
+    box.innerHTML = html;
+    $('#gen-modal').classList.remove('hidden');
+    $('#exit-bind-cancel').onclick = function () { closeGen(); };
+    $('#exit-bind-save').onclick = function () {
+      const newBindings = {};
+      Array.prototype.forEach.call(document.querySelectorAll('.exit-bind-select'), function (sel) {
+        const mesh = sel.getAttribute('data-mesh');
+        const val = sel.value;
+        if (val) newBindings[mesh] = val;
+      });
+      asset.exitBindings = newBindings;
+      window.Storage.saveAsset('item', asset).then(function () {
+        closeGen(); renderLibrary(); saveNow();
+        const n = Object.keys(newBindings).length;
+        toast(n ? ('已保存 ' + n + ' 个结束物体绑定') : '已清除所有绑定');
+      }).catch(function (err) {
+        closeGen(); alert('保存失败：' + (err && err.message ? err.message : err));
+      });
+    };
   }
   function openSolidGen(presetName, editAsset) {
     const box = $('#gen-box');

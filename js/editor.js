@@ -915,8 +915,47 @@
   // 新建项目时，把内置「示例冒险」工程一次性灌入该项目。
   // 仅在「新建项目」流程中调用（见新建按钮 handler），打开已有项目时绝不执行，
   // 因此不会再出现「所有项目打开时都被塞入默认素材」的情况。
-  // 图片/音乐素材按「正常导入」流程处理：fetch 示例文件 → dataURL → 带 size 保存，
-  // 这样编辑器里会显示真实容量，也支持再编辑；fetch 失败时回退到相对路径 + 烘焙 size。
+  // sample-project.js 内含内联示例素材 data URL（约 9MB），改为按需懒加载：
+  // 平时打开编辑器不加载它；仅当用户点「新建项目」或打开的项目需要修复示例素材时才动态 import。
+  let _sampleProjectPromise = null;
+  function ensureSampleProject() {
+    if (_sampleProjectPromise) return _sampleProjectPromise;
+    _sampleProjectPromise = import(new URL('./js/sample-project.js?v=20260731-21', location.href).href)
+      .then(() => { return window.SAMPLE_PROJECT_JSON || null; })
+      .catch((e) => { console.error('示例工程脚本加载失败', e); return null; });
+    return _sampleProjectPromise;
+  }
+  // 修复旧版示例素材：v25.2.99 曾把图片/音乐以「相对路径 + 无 size」直接入库，
+  // 导致编辑器显示 <0.01MB、再编辑解码失败、运行时（尤其离线/本地）加载不到图而采不到色值。
+  // 打开项目时若发现示例资产仍是相对路径，则就地替换为内联 data URL + 正确 size（按 id 匹配 SAMPLE）。
+  async function repairExampleAssetsIfNeeded() {
+    let broken = [];
+    for (const lib of ['background', 'music']) {
+      let assets;
+      try { assets = await window.Storage.getAllAssets(lib); } catch (e) { continue; }
+      for (const a of (assets || [])) {
+        if (a && typeof a.src === 'string' && a.src.indexOf('examples/') === 0) {
+          broken.push({ lib: lib, rec: a });
+        }
+      }
+    }
+    if (!broken.length) return; // 无需修复：不触发 9MB 下载
+    const json = await ensureSampleProject();
+    if (!json || !json.data || !Array.isArray(json.data.assets)) return;
+    const byId = {};
+    for (const s of json.data.assets) { if (s && s.id) byId[s.id] = s; }
+    let fixed = 0;
+    for (const b of broken) {
+      const s = byId[b.rec.id];
+      if (!s || !s.src || s.src.indexOf('data:') !== 0) continue;
+      const rec = Object.assign({}, b.rec);
+      rec.src = s.src;
+      rec.size = s.size || b.rec.size || 0;
+      try { await window.Storage.saveAsset(b.lib, rec); fixed++; }
+      catch (e) { console.warn('修复示例素材失败', b.rec.name, e); }
+    }
+    if (fixed) { console.log('已修复示例素材', fixed, '个'); renderLibrary(); }
+  }
   async function fetchAsDataUrlAndSize(url) {
     try {
       const res = await fetch(url);
@@ -997,6 +1036,7 @@
 
   async function openProject(id) {
     window.Storage.setCurrentProject(id);
+    await repairExampleAssetsIfNeeded(); // 就地修复旧版相对路径示例素材（按需触发 9MB 懒加载）
     currentProjectMode = window.Storage.getProjectMode(id); // 'article' | 'game'
     applyProjectMode();
     const meta = window.Storage.loadMeta() || {};
@@ -1118,7 +1158,7 @@
       const id = window.Storage.createProject(name, _npSelectedMode);
       closeNewProjectModal();
       // 新建项目：灌入内置「示例冒险」工程（含剧情 / 变量 / 素材），仅此一次，之后不再改动该项目
-      try { await seedExampleProjectInto(id); }
+      try { await ensureSampleProject(); await seedExampleProjectInto(id); }
       catch (e) { console.error('示例工程播种失败', e); }
       openProject(id);
     });

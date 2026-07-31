@@ -341,6 +341,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   #bg-layer-a, #bg-layer-b { position: fixed; inset: 0; background-size: auto 100%; background-position: center; background-repeat: no-repeat; transition: opacity 0.5s ease; pointer-events: none; image-rendering: pixelated; }
   #bg-layer-a { opacity: 1; z-index: 0; }
   #bg-layer-b { opacity: 0; z-index: 1; }
+  #bg-overlay { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: rgba(255,255,255,0.35); opacity: 0; transition: opacity .28s ease; }
   #message-list { flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 18vh 0 14vh; scroll-behavior: smooth; scrollbar-width: none; -ms-overflow-style: none; }
   #message-list::-webkit-scrollbar { width: 0; height: 0; }
   .message { max-width: 780px; width: 88%; margin: 0 auto 12px; padding: 16px 24px; background: none; border: 0; border-radius: 0; font-size: 20px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; opacity: 0; animation: msgIn 0.3s ease forwards; }
@@ -351,17 +352,16 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   .message u { text-decoration: underline; }
   .message s { text-decoration: line-through; }
   /* 自动对比色：亮背景→黑字，暗背景→白字（整行一个颜色，由运行时按背景亮度动态切换） */
-  /* 给每行文字加一层半透明底板：黑字配白底、白字配黑底，保证局部深/浅色区域文字始终可读 */
-  .message.auto-dark { color: #14181f; background: rgba(255,255,255,0.66); border-radius: 12px; box-shadow: 0 2px 16px rgba(0,0,0,0.14); }
+  /* 不再给每段文字加独立背板，统一靠全屏白色半透明蒙版保证可读，剧情更连续 */
+  .message.auto-dark { color: #14181f; }
   .message.auto-dark b, .message.auto-dark strong { color: #14181f; }
-  .message.auto-light { color: #f5f7fb; background: rgba(0,0,0,0.45); border-radius: 12px; box-shadow: 0 2px 16px rgba(0,0,0,0.22); }
+  .message.auto-light { color: #f5f7fb; }
   .message.auto-light b, .message.auto-light strong { color: #f5f7fb; }
-  /* 长按 1 秒：隐藏文字、还原背景原图（去掉智能对比的调暗/调亮），便于欣赏背景；松手恢复 */
+  /* 长按 1 秒：隐藏文字与白色蒙版，还原背景原图，便于欣赏背景；松手恢复 */
   body.reveal-bg #message-list { opacity: 0; transition: opacity .28s ease; pointer-events: none; }
   body.reveal-bg #options-bar { opacity: 0; transition: opacity .28s ease; pointer-events: none; }
   body.reveal-bg #hint { opacity: 0 !important; transition: opacity .28s ease; }
-  #bg-layer-a, #bg-layer-b { transition: opacity 0.5s ease, filter .28s ease; }
-  body.reveal-bg #bg-layer-a, body.reveal-bg #bg-layer-b { filter: none !important; }
+  body.reveal-bg #bg-overlay { opacity: 0 !important; transition: opacity .28s ease; }
   body.reveal-bg { user-select: none; -webkit-user-select: none; }
   /* 分割线：横线 + 居中备注文字（备注留空则为普通横线）；显示后停顿等点击继续 */
   .message.divider { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 18px auto; opacity: 1; padding: 8px 24px; }
@@ -514,6 +514,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
 <div id="black-fade"></div>
 <div id="bg-layer-a"></div>
 <div id="bg-layer-b"></div>
+<div id="bg-overlay"></div>
 <div id="stage">
   <div id="message-list"></div>
   <div id="hint">▼ 点击继续</div>
@@ -1111,6 +1112,7 @@ __STORY_DATA__
   const toastEl = document.getElementById('toast');
   const bgA = document.getElementById('bg-layer-a');
   const bgB = document.getElementById('bg-layer-b');
+  const bgOverlay = document.getElementById('bg-overlay');
   let activeBg = bgA; // 当前显示的背景层
   let altBg = bgB;    // 备用层（用于叠化）
   let bgFadeTimer = null; // 当前未完成的背景叠化定时器（快速切换时取消上一个）
@@ -1373,7 +1375,7 @@ __STORY_DATA__
   const _bgCtx = _bgCanvas.getContext('2d', { willReadFrequently: true });
   let _bgData = null, _bgReady = false;
   let _bgDx = 0, _bgDy = 0, _bgDw = 0, _bgDh = 0; // 背景图在屏幕上的渲染矩形（用于识别黑边）
-  let _bgContrastRes = null; // 缓存的对比方案 { textLight, filter }，仅在背景变化/尺寸变化时重算
+  let _bgContrastRes = null; // 缓存的对比方案 { textLight }，仅在背景变化/尺寸变化时重算
   const _BODY_LUM = 0.023; // 黑边（body 背景 #0a0c12）的相对亮度近似值
   function _rebuildBgSample(){
     const w = window.innerWidth, h = window.innerHeight;
@@ -1430,7 +1432,7 @@ __STORY_DATA__
     return _relLum(d[i], d[i + 1], d[i + 2]);
   }
   // 计算整张背景的对比度调整方案：决定全局字色（黑/白）+ 背景亮度调整因子。
-  // 返回 { textLight, filter } 或 null（关闭 / 无背景）。
+  // 返回 { textLight } 或 null（关闭 / 无背景）。
   function _computeBgContrast(){
     if (TEXT_CONTRAST === 'off') return null;
     if (!_bgReady || !_bgData) return null;
@@ -1466,19 +1468,7 @@ __STORY_DATA__
     // 亮像素图里常有深蓝/深绿或深色轮廓，sRGB 亮度会被拉低；示例截图 avg≈0.45
     // 但视觉上很亮，medianV 通常 > 0.5，正确识别为亮背景 → 黑字。
     const textLight = medianV < 0.5; // 感知偏暗 → 白字；偏亮 → 黑字
-    let f;
-    if (textLight){
-      // 白字：把最亮处压到 ~0.183 以下，保证最差对比 ≥ 4.5；过暗不超过 0.30
-      f = Math.max(0.30, Math.min(1, 0.183 / (maxL || 1)));
-    } else {
-      // 黑字：把最暗处抬到 ~0.175 以上；过亮不超过 1.80
-      f = Math.max(1, Math.min(1.8, 0.175 / (minL || 0.01)));
-    }
-    return { textLight: textLight, filter: f };
-  }
-  function _applyBgFilter(f){
-    bgA.style.filter = f || '';
-    bgB.style.filter = f || '';
+    return { textLight: textLight };
   }
   function _updateContrastFor(msg, textLight){
     if (!msg.classList.contains('message') || msg.classList.contains('divider')) return;
@@ -1494,8 +1484,13 @@ __STORY_DATA__
   // 应用已缓存的对比方案（不再每帧重采样整张背景：O(消息数) 而非整屏计算，避免打字卡顿）
   function updateAllContrast(){
     const res = _bgContrastRes;
-    if (!res){ _applyBgFilter(''); for (let i = 0; i < msgList.children.length; i++){ _updateContrastFor(msgList.children[i], null); } return; }
-    _applyBgFilter('brightness(' + res.filter.toFixed(3) + ')');
+    if (!res){
+      if (bgOverlay) bgOverlay.style.opacity = '0';
+      for (let i = 0; i < msgList.children.length; i++){ _updateContrastFor(msgList.children[i], null); }
+      return;
+    }
+    // 亮背景（黑字）时显示半透明白色蒙版，提升黑字可读性；暗背景（白字）时不加蒙版，避免冲掉白字
+    if (bgOverlay) bgOverlay.style.opacity = res.textLight ? '0' : '1';
     for (let i = 0; i < msgList.children.length; i++){ _updateContrastFor(msgList.children[i], res.textLight); }
   }
   // 兼容旧调用点：对比方案已缓存，这里直接套用即可（不再每帧重采样整张背景）

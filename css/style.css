@@ -757,6 +757,20 @@ body.ai-hidden #clue-bar { display: none !important; }
 .bgp-params .field { margin-bottom: 10px; }
 .bgp-params .field label { width: 76px; color: var(--text-2); }
 .bgp-params .field input { width: 100%; }
+/* 下拉预设表单：两列网格，整行用于补充信息 */
+#bgp-start .bgp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-bottom: 4px; }
+#bgp-start .bgp-grid .field { margin-bottom: 0; display: block; }
+#bgp-start .bgp-grid .field label { display: block; width: auto; margin-bottom: 4px; font-size: 12px; color: var(--text-2); }
+#bgp-start .bgp-grid .field select,
+#bgp-start .bgp-grid .field textarea { width: 100%; box-sizing: border-box; background: #fff; border: 1px solid var(--border-strong); color: var(--text); border-radius: var(--radius-sm); padding: 7px 9px; font-size: 13px; font-family: inherit; }
+#bgp-start .bgp-grid .field select:focus,
+#bgp-start .bgp-grid .field textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#bgp-start .bgp-field-wide { grid-column: 1 / -1; }
+#bgp-start .bgp-special { resize: vertical; min-height: 56px; line-height: 1.5; }
+body.dark #bgp-start .bgp-grid .field select,
+body.dark #bgp-start .bgp-grid .field textarea { background: var(--bg-sunken); color: var(--text); border-color: var(--border-strong); }
+body.dark #bgp-start .bgp-grid .field select::placeholder,
+body.dark #bgp-start .bgp-grid .field textarea::placeholder { color: var(--text-3); }
 #bgp-start .ai-review-start-note { text-align: left; margin: 4px 0 12px; }
 .ai-review-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; font-size: 14px; color: var(--text); border-bottom: 1px solid var(--border); }
 .ai-review-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px 16px; gap: 8px; overflow: auto; }

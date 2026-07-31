@@ -901,8 +901,15 @@
   }
 
   // ---------- 背景图片提示词生成（素材待办里的「💡 提示词」按钮） ----------
-  // 固定追加的通用画质优化词（由系统统一追加，模型只负责场景/打光/氛围）
-  const BG_PROMPT_SUFFIX = 'cinematic composition, highly detailed, intricate details, ultra detailed, 8k, ultra high resolution, sharp focus, professional color grading, volumetric lighting, masterpiece, best quality, 16:9';
+  // 固定追加的通用画质优化词（由系统统一追加，模型只负责场景/打光/氛围）。比例不在此处，由所选预设单独追加
+  const BG_PROMPT_SUFFIX = 'cinematic composition, highly detailed, intricate details, ultra detailed, 8k, ultra high resolution, sharp focus, professional color grading, volumetric lighting, masterpiece, best quality';
+  // 预设画面参数 → 中文标签（与 editor.js 弹层下拉选项一一对应，原样传达给 agent，由其翻译为英文）
+  const BG_RATIO_LABEL = { landscape: '横屏 16:9', portrait: '竖屏 9:16' };
+  const BG_RATIO_TOKEN = { landscape: '16:9', portrait: '9:16' };
+  const BG_STYLE_LABEL = { '3d': '3D 渲染风', ghibli: '吉卜力动漫', doodle: '手绘涂鸦', realistic: '写实风格化', custom: '自定义（从补充信息取）' };
+  const BG_LIGHTING_LABEL = { 'dim-indoor': '昏暗室内', 'bright-indoor': '明亮室内', 'natural-indoor': '自然光室内', 'outdoor-dawn': '户外清晨', 'outdoor-day': '户外白天', 'outdoor-dusk': '户外傍晚', custom: '自定义（从补充信息取）' };
+  const BG_COMPOSITION_LABEL = { 'extreme-long': '超远景', 'long': '远景', 'medium': '中景', 'close': '近景', 'extreme-close': '特写', 'macro': '微距' };
+  const BG_LENS_LABEL = { 'none': '无', 'dof': '景深', 'motion-blur': '运动模糊', 'caustics': '焦散', 'fisheye': '鱼眼相机', 'tilt-shift': '移轴效果', 'isometric': '等轴' };
 
   // opts: { name, contextText, creation, onStatus, signal }
   async function generateBackgroundPrompt(opts) {
@@ -927,18 +934,26 @@
       + '2. 明确描述打光（光源、方向、明暗对比、色温）与整体氛围情绪。\n'
       + '3. 这是背景板 / 环境镜头，聚焦环境与空间气氛，尽量不要出现主要人物角色。\n'
       + '4. 只输出英文、逗号分隔的标签，按「主体场景 → 环境细节 → 光照 → 氛围」由主到次排列。\n'
-      + '5. 不要输出画质增强词（如 masterpiece、8k、best quality 等），这些会由系统统一追加。\n'
+      + '5. 不要输出画质增强词（如 masterpiece、8k、best quality 等），也不要输出画面比例 / 长宽比（如 16:9），这些会由系统统一追加。\n'
       + '6. 不要输出任何解释、引号、编号或换行，只有一行标签。\n'
-      + '7. 若用户补充了【场景时间 / 画面风格 / 其他补充】，请严格据此生成，不要与之冲突（例如指定夜晚就不要出现强烈日光、指定油画风格就用笔触质感描述）。'
+      + '7. 若提供了【预设画面参数】或【用户补充信息】，请严格据此生成、不得与之冲突（例如风格选吉卜力就不要写实笔触、光照选夜晚就不要强烈日光、构图选特写就不要出现大全景）。自定义风格 / 光照请以补充信息中的描述为准。'
     );
     userParts.push('这是一个视觉小说里的【背景场景】素材，名称为「' + name + '」。请为它生成一段用于 AI 生图的英文提示词。');
     if (creationLines.length) userParts.push('【作品设定】\n' + creationLines.join('\n'));
     userParts.push('【该背景在剧情中被召唤处的上下文（上下各约 15 行）】\n' + (ctxText || '（未提供上下文，请仅依据素材名称与作品设定揣摩这个场景）'));
+    const p = params || {};
+    const ratioToken = BG_RATIO_TOKEN[p.ratio] || '16:9';
+    // 预设画面参数：作为硬性约束原样传达给 agent（中文标签 + 比例 token），由其翻译为英文并落实
+    const presetLines = [];
+    presetLines.push('比例：' + (BG_RATIO_LABEL[p.ratio] || '横屏 16:9') + '（画面宽高比，务必为 ' + ratioToken + '）');
+    presetLines.push('画面风格：' + (BG_STYLE_LABEL[p.style] || '—') + (p.style === 'custom' ? '（自定义，请从下方补充信息中提取具体风格描述并据此生成）' : ''));
+    presetLines.push('场景光照：' + (BG_LIGHTING_LABEL[p.lighting] || '—') + (p.lighting === 'custom' ? '（自定义，请从下方补充信息中提取具体光照描述并据此生成）' : ''));
+    presetLines.push('场景构图：' + (BG_COMPOSITION_LABEL[p.composition] || '—'));
+    presetLines.push('镜头效果：' + (BG_LENS_LABEL[p.lens] || '无'));
+    if (presetLines.length) userParts.push('【预设画面参数（硬性约束，必须直接体现在提示词中，不得与之冲突）】\n' + presetLines.join('\n'));
     const extraParts = [];
-    if (params.time) extraParts.push('场景时间：' + params.time);
-    if (params.style) extraParts.push('画面风格：' + params.style);
-    if (params.extra) extraParts.push('其他补充：' + params.extra);
-    if (extraParts.length) userParts.push('【用户补充参数（请优先采纳并直接体现在提示词中）】\n' + extraParts.join('\n'));
+    if (p.special) extraParts.push('补充信息 / 特殊效果：' + p.special + '（自定义风格 / 光照的具体描述也写在这里，请据此落实）');
+    if (extraParts.length) userParts.push('【用户补充信息（请优先采纳并直接体现在提示词中）】\n' + extraParts.join('\n'));
     const messages = [
       { role: 'system', content: sys },
       { role: 'user', content: userParts.join('\n\n') },
@@ -954,7 +969,7 @@
       .replace(/^["'`]+|["'`]+$/g, '')
       .trim();
     if (!out) throw new Error('AI 返回内容为空，请重试。');
-    return out + ', ' + BG_PROMPT_SUFFIX;
+    return out + ', ' + ratioToken + ', ' + BG_PROMPT_SUFFIX;
   }
 
   // ---------- 修饰符剥离（提取线索时，把演出标记去掉以节省 token，仅留叙事文本） ----------

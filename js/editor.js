@@ -1539,9 +1539,13 @@
     // 重新生成：不直接执行，先返回到用户补充输入界面，允许修改/补充参数后再确认生成
     $('#bgp-regen').addEventListener('click', () => {
       if (bgpName) {
-        $('#bgp-time').value = bgpParams.time || '';
-        $('#bgp-style').value = bgpParams.style || '';
-        $('#bgp-extra').value = bgpParams.extra || '';
+        const setSel = (id, val) => { const el = document.getElementById(id); if (el && el.querySelector('option[value="' + val + '"]')) el.value = val; };
+        setSel('bgp-ratio', bgpParams.ratio || 'landscape');
+        setSel('bgp-style', bgpParams.style || '3d');
+        setSel('bgp-lighting', bgpParams.lighting || 'dim-indoor');
+        setSel('bgp-composition', bgpParams.composition || 'long');
+        setSel('bgp-lens', (bgpParams.lens != null ? bgpParams.lens : 'none'));
+        $('#bgp-special').value = bgpParams.special || '';
       }
       setBgpPhase('preview');
       setBgpStatus('已回到补充参数界面，可修改或补充后再次点击「生成提示词」重新生成。', '');
@@ -5363,7 +5367,7 @@ self.onmessage = function (e) {
   // 每个背景素材生成一次即缓存到 meta.assetPrompts[name]，再点不重复生成（除非「重新生成」）
   let bgpName = null;      // 当前处理的背景素材名
   let bgpCtxText = '';     // 当前召唤处上下文缓存
-  let bgpParams = { time: '', style: '', extra: '' }; // 用户补充的画面参数（场景时间/风格/其他）
+  let bgpParams = { ratio: 'landscape', style: '3d', lighting: 'dim-indoor', composition: 'long', lens: 'none', special: '' }; // 用户选择的画面预设参数
   function loadAssetPrompts() {
     const meta = window.Storage.loadMeta() || {};
     return meta.assetPrompts || {};
@@ -5384,15 +5388,27 @@ self.onmessage = function (e) {
   function loadLastBgParams() {
     try {
       const raw = localStorage.getItem(BGP_LAST_KEY);
-      if (!raw) return { time: '', style: '', extra: '' };
+      if (!raw) return null;
       const o = JSON.parse(raw) || {};
-      return { time: o.time || '', style: o.style || '', extra: o.extra || '' };
-    } catch (e) { return { time: '', style: '', extra: '' }; }
+      return {
+        ratio: o.ratio || 'landscape',
+        style: o.style || '3d',
+        lighting: o.lighting || 'dim-indoor',
+        composition: o.composition || 'long',
+        lens: (o.lens != null ? o.lens : 'none'),
+        special: o.special || '',
+      };
+    } catch (e) { return null; }
   }
   function saveLastBgParams(p) {
     try {
       localStorage.setItem(BGP_LAST_KEY, JSON.stringify({
-        time: (p && p.time) || '', style: (p && p.style) || '', extra: (p && p.extra) || '',
+        ratio: (p && p.ratio) || 'landscape',
+        style: (p && p.style) || '3d',
+        lighting: (p && p.lighting) || 'dim-indoor',
+        composition: (p && p.composition) || 'long',
+        lens: (p && p.lens != null ? p.lens : 'none'),
+        special: (p && p.special) || '',
       }));
     } catch (e) { /* 隐私模式等忽略 */ }
   }
@@ -5432,12 +5448,23 @@ self.onmessage = function (e) {
     if (!settings.key) { toast('请先在「设置 → AI 编剧 → 模型与密钥」填写 Deepseek API Key'); openSettings('ai'); return; }
     bgpName = name;
     bgpCtxText = collectBgContext(name);
-    // 记忆上一次填的补充参数（跨素材持久化），重开窗口自动回填
-    const lastP = loadLastBgParams();
-    bgpParams = lastP;
-    $('#bgp-time').value = lastP.time;
-    $('#bgp-style').value = lastP.style;
-    $('#bgp-extra').value = lastP.extra;
+    // 记忆上一次选的画面预设（跨素材持久化），重开窗口自动回填
+    const lastP = loadLastBgParams() || {};
+    const ratio = lastP.ratio || 'landscape';
+    const style = lastP.style || '3d';
+    const lighting = lastP.lighting || 'dim-indoor';
+    const composition = lastP.composition || 'long';
+    const lens = (lastP.lens != null ? lastP.lens : 'none');
+    const special = lastP.special || '';
+    bgpParams = { ratio, style, lighting, composition, lens, special };
+    // 下拉框若存的是旧版自由文本（不匹配选项），保持默认首项
+    const setSel = (id, val) => { const el = document.getElementById(id); if (el && el.querySelector('option[value="' + val + '"]')) el.value = val; };
+    setSel('bgp-ratio', ratio);
+    setSel('bgp-style', style);
+    setSel('bgp-lighting', lighting);
+    setSel('bgp-composition', composition);
+    setSel('bgp-lens', lens);
+    $('#bgp-special').value = special;
     const c = loadCreation();
     const cLines = [
       c.intro ? ('简介：' + c.intro) : '',
@@ -5465,11 +5492,14 @@ self.onmessage = function (e) {
     if (bgpName) {
       const v = ($('#bgp-text').value || '').trim();
       if (v) saveAssetPrompt(bgpName, v);
-      // 记忆本次补充参数（上一次填的内容），供下次重开窗口自动回填
+      // 记忆本次画面预设（上一次选的内容），供下次重开窗口自动回填
       saveLastBgParams({
-        time: ($('#bgp-time').value || '').trim(),
-        style: ($('#bgp-style').value || '').trim(),
-        extra: ($('#bgp-extra').value || '').trim(),
+        ratio: $('#bgp-ratio').value,
+        style: $('#bgp-style').value,
+        lighting: $('#bgp-lighting').value,
+        composition: $('#bgp-composition').value,
+        lens: $('#bgp-lens').value,
+        special: ($('#bgp-special').value || '').trim(),
       });
     }
     $('#bg-prompt-modal').classList.add('hidden');
@@ -6171,11 +6201,14 @@ self.onmessage = function (e) {
   function runBgPromptGen() {
     if (!bgpName || !window.AI) return;
     const name = bgpName;
-    // 读取并暂存用户补充参数，供「重新生成」返回时回填；同时记忆为「上一次填的内容」
+    // 读取并暂存用户选的画面预设，供「重新生成」返回时回填；同时记忆为「上一次选的内容」
     bgpParams = {
-      time: ($('#bgp-time').value || '').trim(),
-      style: ($('#bgp-style').value || '').trim(),
-      extra: ($('#bgp-extra').value || '').trim(),
+      ratio: $('#bgp-ratio').value,
+      style: $('#bgp-style').value,
+      lighting: $('#bgp-lighting').value,
+      composition: $('#bgp-composition').value,
+      lens: $('#bgp-lens').value,
+      special: ($('#bgp-special').value || '').trim(),
     };
     saveLastBgParams(bgpParams);
     setBgpPhase('generating');

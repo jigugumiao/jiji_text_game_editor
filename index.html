@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260731-11">
+<link rel="stylesheet" href="css/style.css?v=20260731-12">
 </head>
 <body>
 
@@ -76,7 +76,7 @@
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.3.5</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.3.6</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -405,10 +405,10 @@
 <script src="js/generators.js?v=20260722-60"></script>
 <script src="js/bbcode.js?v=20260722-60"></script>
 <script src="js/exporter.js?v=20260731-23"></script>
-<script src="js/ai.js?v=20260727-03"></script>
+<script src="js/ai.js?v=20260731-24"></script>
 <script src="js/lame.min.js?v=1"></script>
 <!-- sample-project.js 改为按需懒加载（内含压缩后内联示例素材 data URL，约 1.5MB，避免拖慢编辑器日常启动），见 editor.js ensureSampleProject() -->
-<script src="js/editor.js?v=20260731-21"></script>
+<script src="js/editor.js?v=20260731-24"></script>
 <!-- 文字浮动工具栏 -->
 <div id="bbcode-float" class="bbcode-float hidden">
   <div id="bbcode-drag" class="bbcode-drag-head">⋮⋮ 文字工具栏</div>
@@ -546,7 +546,7 @@
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.3.5</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.3.6</span></div>
         </div>
       </div>
     </div>
@@ -676,18 +676,64 @@
           <textarea id="bgp-text" class="ai-review-text" spellcheck="false" placeholder="生成的图片提示词会显示在这里，可自行编辑（编辑后复制/关闭会一并保存）"></textarea>
           <div class="ai-review-start hidden" id="bgp-start">
             <div class="bgp-params">
-              <div class="bgp-params-title">补充画面参数（可选，越具体越好，将优先体现在提示词中）</div>
-              <div class="field">
-                <label>场景时间</label>
-                <input id="bgp-time" type="text" placeholder="如 白天 / 夜晚 / 黄昏 / 雨夜" autocomplete="off">
-              </div>
-              <div class="field">
-                <label>画面风格</label>
-                <input id="bgp-style" type="text" placeholder="如 写实 / 卡通 / 油画 / 赛博朋克" autocomplete="off">
-              </div>
-              <div class="field">
-                <label>补充信息</label>
-                <input id="bgp-extra" type="text" placeholder="其他自定义补充，如 广角镜头、雾气、霓虹灯" autocomplete="off">
+              <div class="bgp-params-title">画面参数（下拉选择预设；风格 / 光照选「自定义」时，具体描述请写在下方「补充信息」里）</div>
+              <div class="bgp-grid">
+                <div class="field">
+                  <label>比例</label>
+                  <select id="bgp-ratio">
+                    <option value="landscape">横屏 16:9</option>
+                    <option value="portrait">竖屏 9:16</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>画面风格</label>
+                  <select id="bgp-style">
+                    <option value="3d">3D 渲染风</option>
+                    <option value="ghibli">吉卜力动漫</option>
+                    <option value="doodle">手绘涂鸦</option>
+                    <option value="realistic">写实风格化</option>
+                    <option value="custom">自定义（写补充信息）</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>场景光照</label>
+                  <select id="bgp-lighting">
+                    <option value="dim-indoor">昏暗室内</option>
+                    <option value="bright-indoor">明亮室内</option>
+                    <option value="natural-indoor">自然光室内</option>
+                    <option value="outdoor-dawn">户外清晨</option>
+                    <option value="outdoor-day">户外白天</option>
+                    <option value="outdoor-dusk">户外傍晚</option>
+                    <option value="custom">自定义（写补充信息）</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>场景构图</label>
+                  <select id="bgp-composition">
+                    <option value="extreme-long">超远景</option>
+                    <option value="long">远景</option>
+                    <option value="medium">中景</option>
+                    <option value="close">近景</option>
+                    <option value="extreme-close">特写</option>
+                    <option value="macro">微距</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>镜头效果</label>
+                  <select id="bgp-lens">
+                    <option value="none">无（默认）</option>
+                    <option value="dof">景深</option>
+                    <option value="motion-blur">运动模糊</option>
+                    <option value="caustics">焦散</option>
+                    <option value="fisheye">鱼眼相机</option>
+                    <option value="tilt-shift">移轴效果</option>
+                    <option value="isometric">等轴</option>
+                  </select>
+                </div>
+                <div class="field bgp-field-wide">
+                  <label>补充信息 / 特殊效果</label>
+                  <textarea id="bgp-special" class="bgp-special" spellcheck="false" placeholder="自定义风格 / 光照的具体描述、特殊效果、其他补充，如：赛博朋克霓虹、体积雾、下雨、魔法光效"></textarea>
+                </div>
               </div>
             </div>
             <p class="ai-review-start-note" id="bgp-start-note">填写或确认补充参数后，点击「生成提示词」生成该背景的图片提示词。</p>

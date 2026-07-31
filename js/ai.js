@@ -906,7 +906,7 @@
   // 预设画面参数 → 中文标签（与 editor.js 弹层下拉选项一一对应，原样传达给 agent，由其翻译为英文）
   const BG_RATIO_LABEL = { landscape: '横屏 16:9', portrait: '竖屏 9:16' };
   const BG_RATIO_TOKEN = { landscape: '16:9', portrait: '9:16' };
-  const BG_STYLE_LABEL = { '3d': '3D 渲染风', ghibli: '吉卜力动漫', doodle: '手绘涂鸦', realistic: '写实风格化', photo: '写实', custom: '自定义（从补充信息取）' };
+  const BG_STYLE_LABEL = { '3d': '3D 渲染风', ghibli: '吉卜力动漫', doodle: '手绘涂鸦', realistic: '半写实风格化', photo: '写实', custom: '自定义（从补充信息取）' };
   const BG_LIGHTING_LABEL = { 'dim-indoor': '昏暗室内', 'bright-indoor': '明亮室内', 'natural-indoor': '自然光室内', 'outdoor-dawn': '户外清晨', 'outdoor-day': '户外白天', 'outdoor-dusk': '户外傍晚', custom: '自定义（从补充信息取）' };
   const BG_COMPOSITION_LABEL = { 'extreme-long': '超远景', 'long': '远景', 'medium': '中景', 'close': '近景', 'extreme-close': '特写', 'macro': '微距' };
   const BG_LENS_LABEL = { 'none': '无', 'dof': '景深', 'motion-blur': '运动模糊', 'caustics': '焦散', 'fisheye': '鱼眼相机', 'tilt-shift': '移轴效果', 'isometric': '等轴' };

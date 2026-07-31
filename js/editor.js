@@ -1038,8 +1038,11 @@
     const list = $('#projects-list');
     list.innerHTML = '';
     const projects = window.Storage.listProjects();
-    for (const p of projects) {
-      const stats = await window.Storage.getProjectStats(p.id);
+    // 并行读取全部项目统计，避免卡片逐张 await 串行弹出
+    const statsList = await Promise.all(projects.map(p => window.Storage.getProjectStats(p.id)));
+    for (let i = 0; i < projects.length; i++) {
+      const p = projects[i];
+      const stats = statsList[i];
       const isArticle = p.mode === 'article';
       const modeLabel = isArticle ? '通用文章' : '剧情游戏';
       const card = document.createElement('div');

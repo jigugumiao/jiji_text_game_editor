@@ -1441,22 +1441,31 @@ __STORY_DATA__
     const x0 = Math.max(0, _bgDx | 0), x1 = Math.min(W, (_bgDx + _bgDw) | 0);
     const y0 = Math.max(0, _bgDy | 0), y1 = Math.min(H, (_bgDy + _bgDh) | 0);
     let n = 0, sum = 0, minL = 1, maxL = 0, valid = false;
+    const vs = []; // HSV Value（max channel）采样集合，用于判断人眼感知的整体明暗
     const step = 4; // 隔点采样，足够刻画亮度分布
     for (let y = y0; y < y1; y += step){
       const row = y * W;
       for (let x = x0; x < x1; x += step){
         const i = (row + x) * 4;
-        const L = _relLum(d[i], d[i + 1], d[i + 2]);
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        const L = _relLum(r, g, b);
         if (!(L >= 0)) continue; // 跳过 NaN / 异常像素
         valid = true;
         sum += L; n++;
+        const V = Math.max(r, g, b) / 255;
+        vs.push(V);
         if (L < minL) minL = L;
         if (L > maxL) maxL = L;
       }
     }
     if (!valid || n === 0) return null;
+    vs.sort(function (a, b) { return a - b; });
+    const medianV = vs[Math.floor(vs.length / 2)];
     const avg = sum / n;
-    const textLight = avg < 0.5; // 平均偏暗 → 白字；偏亮 → 黑字
+    // 用人眼感知的亮度（HSV Value 中位数）判定整体明暗，而非 sRGB 相对亮度。
+    // 亮像素图里常有深蓝/深绿或深色轮廓，sRGB 亮度会被拉低；示例截图 avg≈0.45
+    // 但视觉上很亮，medianV 通常 > 0.5，正确识别为亮背景 → 黑字。
+    const textLight = medianV < 0.5; // 感知偏暗 → 白字；偏亮 → 黑字
     let f;
     if (textLight){
       // 白字：把最亮处压到 ~0.183 以下，保证最差对比 ≥ 4.5；过暗不超过 0.30

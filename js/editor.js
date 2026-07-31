@@ -915,6 +915,43 @@
   // 新建项目时，把内置「示例冒险」工程一次性灌入该项目。
   // 仅在「新建项目」流程中调用（见新建按钮 handler），打开已有项目时绝不执行，
   // 因此不会再出现「所有项目打开时都被塞入默认素材」的情况。
+  // 图片/音乐素材按「正常导入」流程处理：fetch 示例文件 → dataURL → 带 size 保存，
+  // 这样编辑器里会显示真实容量，也支持再编辑；fetch 失败时回退到相对路径 + 烘焙 size。
+  async function fetchAsDataUrlAndSize(url) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      const dataUrl = await new Promise((resolve) => {
+        const r = new FileReader();
+        r.onload = function () { resolve(r.result); };
+        r.onerror = function () { resolve(null); };
+        r.readAsDataURL(blob);
+      });
+      if (!dataUrl) return null;
+      return { dataUrl: dataUrl, size: blob.size };
+    } catch (e) { return null; }
+  }
+  async function importExampleAsset(lib, a) {
+    const rec = { name: a.name };
+    if (a.id) rec.id = a.id;
+    if (lib === 'background') rec.kind = a.kind || 'image';
+    const canInline = (lib === 'background' || lib === 'music') && a.src && a.src.indexOf('data:') !== 0;
+    if (canInline) {
+      const fetched = await fetchAsDataUrlAndSize(a.src);
+      if (fetched && fetched.dataUrl) {
+        rec.src = fetched.dataUrl;
+        rec.size = fetched.size || a.size || 0;
+      } else {
+        rec.src = a.src;
+        rec.size = a.size || 0;
+      }
+    } else {
+      rec.src = a.src;
+      rec.size = a.size || 0;
+    }
+    return rec;
+  }
   async function seedExampleProjectInto(pid) {
     const json = window.SAMPLE_PROJECT_JSON;
     if (!json || json.format !== 'story-editor-project') return;
@@ -934,10 +971,24 @@
       const assets = Array.isArray(d.assets) ? d.assets : [];
       for (const a of assets) {
         if (!a || !a.lib || !a.id) continue;
-        const rec = Object.assign({}, a);
-        delete rec.key; // 去掉旧 key，让 saveAsset 按当前项目命名空间重写
-        try { await window.Storage.saveAsset(a.lib, rec); }
-        catch (e) { console.warn('示例素材写入失败', (a.name || a.id), e); }
+        try {
+          let rec;
+          if (a.lib === 'item') {
+            // 物品字段较多且 GLB 已是 dataURL，直接整份迁移并补全缺省字段
+            rec = {
+              id: a.id, name: a.name, glb: a.glb || '',
+              exitMesh: a.exitMesh || (a.exitMeshes && a.exitMeshes[0]) || null,
+              exitMeshes: a.exitMeshes || (a.exitMesh ? [a.exitMesh] : []),
+              interactions: a.interactions || {}, sounds: a.sounds || {},
+              defaultView: a.defaultView || null, bg: a.bg || null,
+              lockRotation: !!a.lockRotation, chains: a.chains || [],
+              exitBindings: a.exitBindings || {}
+            };
+          } else {
+            rec = await importExampleAsset(a.lib, a);
+          }
+          await window.Storage.saveAsset(a.lib, rec);
+        } catch (e) { console.warn('示例素材写入失败', (a.name || a.id), e); }
       }
     } finally {
       if (prev) window.Storage.setCurrentProject(prev); // 还原此前命名空间，避免错乱

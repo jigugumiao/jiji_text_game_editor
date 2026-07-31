@@ -936,7 +936,7 @@
       + '4. 只输出英文、逗号分隔的标签，按「主体场景 → 环境细节 → 光照 → 氛围」由主到次排列。\n'
       + '5. 不要输出画质增强词（如 masterpiece、8k、best quality 等），也不要输出画面比例 / 长宽比（如 16:9），这些会由系统统一追加。\n'
       + '6. 不要输出任何解释、引号、编号或换行，只有一行标签。\n'
-      + '7. 若提供了【预设画面参数】或【用户补充信息】，请严格据此生成、不得与之冲突（例如风格选吉卜力就不要写实笔触、光照选夜晚就不要强烈日光、构图选特写就不要出现大全景）。自定义风格 / 光照请以补充信息中的描述为准。'
+      + '7. 若提供了【预设画面参数】或【用户补充信息】，请严格据此生成、不得与之冲突（例如风格选吉卜力就不要写实笔触、光照选夜晚就不要强烈日光、景别选特写就不要出现大全景）。自定义风格 / 光照请以补充信息中的描述为准。'
     );
     userParts.push('这是一个视觉小说里的【背景场景】素材，名称为「' + name + '」。请为它生成一段用于 AI 生图的英文提示词。');
     if (creationLines.length) userParts.push('【作品设定】\n' + creationLines.join('\n'));
@@ -948,7 +948,7 @@
     presetLines.push('比例：' + (BG_RATIO_LABEL[p.ratio] || '横屏 16:9') + '（画面宽高比，务必为 ' + ratioToken + '）');
     presetLines.push('画面风格：' + (BG_STYLE_LABEL[p.style] || '—') + (p.style === 'custom' ? '（自定义，请从下方补充信息中提取具体风格描述并据此生成）' : ''));
     presetLines.push('场景光照：' + (BG_LIGHTING_LABEL[p.lighting] || '—') + (p.lighting === 'custom' ? '（自定义，请从下方补充信息中提取具体光照描述并据此生成）' : ''));
-    presetLines.push('场景构图：' + (BG_COMPOSITION_LABEL[p.composition] || '—'));
+    presetLines.push('景别：' + (BG_COMPOSITION_LABEL[p.composition] || '—'));
     presetLines.push('镜头效果：' + (BG_LENS_LABEL[p.lens] || '无'));
     if (presetLines.length) userParts.push('【预设画面参数（硬性约束，必须直接体现在提示词中，不得与之冲突）】\n' + presetLines.join('\n'));
     const extraParts = [];

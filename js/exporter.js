@@ -341,7 +341,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   #bg-layer-a, #bg-layer-b { position: fixed; inset: 0; background-size: auto 100%; background-position: center; background-repeat: no-repeat; transition: opacity 0.5s ease; pointer-events: none; image-rendering: pixelated; }
   #bg-layer-a { opacity: 1; z-index: 0; }
   #bg-layer-b { opacity: 0; z-index: 1; }
-  #bg-overlay { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: rgba(255,255,255,0.35); opacity: 0; transition: opacity .28s ease; }
+  #bg-overlay { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: rgba(255,255,255,0.45); opacity: 0; transition: opacity .28s ease; }
   #message-list { flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 18vh 0 14vh; scroll-behavior: smooth; scrollbar-width: none; -ms-overflow-style: none; }
   #message-list::-webkit-scrollbar { width: 0; height: 0; }
   .message { max-width: 780px; width: 88%; margin: 0 auto 12px; padding: 16px 24px; background: none; border: 0; border-radius: 0; font-size: 20px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; opacity: 0; animation: msgIn 0.3s ease forwards; }
@@ -1489,8 +1489,19 @@ __STORY_DATA__
       for (let i = 0; i < msgList.children.length; i++){ _updateContrastFor(msgList.children[i], null); }
       return;
     }
-    // 亮背景（黑字）时显示半透明白色蒙版，提升黑字可读性；暗背景（白字）时不加蒙版，避免冲掉白字
-    if (bgOverlay) bgOverlay.style.opacity = res.textLight ? '0' : '1';
+    // 亮背景（黑字）时显示半透明白色蒙版，提升黑字在深色区域的 readability；
+    // 暗背景（白字）时显示半透明黑色蒙版，避免浅色区域冲掉白字。两者都用 0.45 强度。
+    if (!res){
+      if (bgOverlay) bgOverlay.style.opacity = '0';
+    } else if (res.textLight){
+      // 暗背景 + 白字：半透明黑色蒙版
+      bgOverlay.style.background = 'rgba(0,0,0,0.45)';
+      bgOverlay.style.opacity = '1';
+    } else {
+      // 亮背景 + 黑字：半透明白色蒙版
+      bgOverlay.style.background = 'rgba(255,255,255,0.45)';
+      bgOverlay.style.opacity = '1';
+    }
     for (let i = 0; i < msgList.children.length; i++){ _updateContrastFor(msgList.children[i], res.textLight); }
   }
   // 兼容旧调用点：对比方案已缓存，这里直接套用即可（不再每帧重采样整张背景）

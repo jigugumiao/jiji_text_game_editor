@@ -918,7 +918,7 @@
     'caustics': 'caustics, refracted light patterns, light ripples on surfaces, underwater light',
     'fisheye': 'fisheye lens, extreme wide angle, spherical barrel distortion, curved horizon',
     'tilt-shift': 'tilt-shift photography, miniature effect, selective focus, small-scale model look, toy diorama',
-    'isometric': 'isometric view, isometric projection, 30 degree angle, axonometric, orthographic projection, parallel lines, no perspective, miniature diorama, clean flat geometry, game asset style'
+    'isometric': "isometric view, isometric projection, 25 to 40 degree fixed bird's-eye angle, top-down oblique view, orthographic projection, parallel lines remain parallel, axis-aligned 3D geometry, no perspective, no vanishing points, no foreshortening, miniature diorama, clean flat geometry, game asset style"
   };
 
   // opts: { name, contextText, creation, onStatus, signal }
@@ -963,7 +963,9 @@
       const en = BG_LENS_EN[p.lens] || '';
       let note = '（务必在提示词中落实以下镜头效果：' + en + '）';
       if (p.lens === 'isometric') {
-        note += ' 等轴必须呈现无透视的等距平行投影、30 度固定俯视角、微型立体模型（diorama）观感；严禁出现近大远小、透视畸变、foreshortening、wrong perspective。';
+        note += ' 等轴必须呈现 25–40 度固定俯视角的等距平行投影（orthographic projection）：相机从斜上方俯视，地面与墙面保持平行、无透视、无消失点、无近大远小，呈现微型立体模型（diorama）的等距立体观感。'
+          + '严禁出现平视/仰视（eye-level view / low angle）、透视畸变、foreshortening、wrong perspective、vanishing point。'
+          + '请在提示词中显式加入排除/负向约束词：perspective, foreshortening, vanishing point, eye-level view, realistic camera lens distortion。';
       }
       presetLines.push('镜头效果：' + (BG_LENS_LABEL[p.lens] || '—') + note);
     } else {

@@ -910,6 +910,16 @@
   const BG_LIGHTING_LABEL = { 'dim-indoor': '昏暗室内', 'bright-indoor': '明亮室内', 'natural-indoor': '自然光室内', 'outdoor-dawn': '户外清晨', 'outdoor-day': '户外白天', 'outdoor-dusk': '户外傍晚', custom: '自定义（从补充信息取）' };
   const BG_COMPOSITION_LABEL = { 'extreme-long': '超远景', 'long': '远景', 'medium': '中景', 'close': '近景', 'extreme-close': '特写', 'macro': '微距' };
   const BG_LENS_LABEL = { 'none': '无', 'dof': '景深', 'motion-blur': '运动模糊', 'caustics': '焦散', 'fisheye': '鱼眼相机', 'tilt-shift': '移轴效果', 'isometric': '等轴' };
+  // 镜头效果 → 英文提示词片段（直接喂给 agent 落实，避免中文标签被弱翻译）。等轴关键词来自等距插画/游戏资产主流范式：isometric projection + 30° + 无透视平行投影 + 微型立体模型感。
+  const BG_LENS_EN = {
+    'none': '',
+    'dof': 'depth of field, shallow focus, soft bokeh, blurred background, selective focus',
+    'motion-blur': 'motion blur, dynamic movement, speed lines, sense of motion',
+    'caustics': 'caustics, refracted light patterns, light ripples on surfaces, underwater light',
+    'fisheye': 'fisheye lens, extreme wide angle, spherical barrel distortion, curved horizon',
+    'tilt-shift': 'tilt-shift photography, miniature effect, selective focus, small-scale model look, toy diorama',
+    'isometric': 'isometric view, isometric projection, 30 degree angle, axonometric, orthographic projection, parallel lines, no perspective, miniature diorama, clean flat geometry, game asset style'
+  };
 
   // opts: { name, contextText, creation, onStatus, signal }
   async function generateBackgroundPrompt(opts) {
@@ -949,7 +959,16 @@
     presetLines.push('画面风格：' + (BG_STYLE_LABEL[p.style] || '—') + (p.style === 'custom' ? '（自定义，请从下方补充信息中提取具体风格描述并据此生成）' : ''));
     presetLines.push('场景光照：' + (BG_LIGHTING_LABEL[p.lighting] || '—') + (p.lighting === 'custom' ? '（自定义，请从下方补充信息中提取具体光照描述并据此生成）' : ''));
     presetLines.push('景别：' + (BG_COMPOSITION_LABEL[p.composition] || '—'));
-    presetLines.push('镜头效果：' + (BG_LENS_LABEL[p.lens] || '无'));
+    if (p.lens && p.lens !== 'none') {
+      const en = BG_LENS_EN[p.lens] || '';
+      let note = '（务必在提示词中落实以下镜头效果：' + en + '）';
+      if (p.lens === 'isometric') {
+        note += ' 等轴必须呈现无透视的等距平行投影、30 度固定俯视角、微型立体模型（diorama）观感；严禁出现近大远小、透视畸变、foreshortening、wrong perspective。';
+      }
+      presetLines.push('镜头效果：' + (BG_LENS_LABEL[p.lens] || '—') + note);
+    } else {
+      presetLines.push('镜头效果：无');
+    }
     if (presetLines.length) userParts.push('【预设画面参数（硬性约束，必须直接体现在提示词中，不得与之冲突）】\n' + presetLines.join('\n'));
     const extraParts = [];
     if (p.special) extraParts.push('补充信息 / 特殊效果：' + p.special + '（自定义风格 / 光照的具体描述也写在这里，请据此落实）');

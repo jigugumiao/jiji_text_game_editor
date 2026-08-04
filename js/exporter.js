@@ -1745,6 +1745,9 @@ __STORY_DATA__
           userScrolledUp = false; // 选项点击同样强制滚到底
           hideOptions();
           recordedChoices.push(ci);
+          // galgame 模式：点击选项即视为进入新场景/新段，标记段已结束；
+          // 下一次 typeText / showDivider 登场前 beginSegmentIfNeeded() 会清空旧文字，进入新对话框
+          markSegmentEnd();
           if (opt.block){ callBlock(opt.block); execCur(); }
           else { curIdx++; execCur(); }
         });
@@ -1867,6 +1870,8 @@ __STORY_DATA__
         if (choices.length){
           const ci = choices.shift();
           const opt = (n.options && n.options[ci]) || (n.options && n.options[0]) || null;
+          // 选项跳转等价于「进入新段」：galgame 模式下 fastApply 的下一个 text/divider 会触发 beginSegmentIfNeeded 清屏
+          markSegmentEnd();
           if (opt && opt.block){ callBlock(opt.block); }
           else { curIdx++; }
         } else if (targetIdx === null){

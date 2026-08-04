@@ -343,7 +343,8 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   #bg-layer-b { opacity: 0; z-index: 1; }
   #bg-overlay { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: rgba(255,255,255,0.45); opacity: 0; transition: opacity .28s ease; }
   /* 叠层：显示于背景层之上、文字层(#stage z2)之下；召唤透明 PNG 角色 / 物件用 */
-  #overlay-layer { position: fixed; inset: 0; z-index: 1; pointer-events: none; display: none;
+  /* 尺寸：纵向显示总大小的 60%（高 60vh 的居中带，contain 保证任意宽高比都不超过 60% 高） */
+  #overlay-layer { position: fixed; left: 0; right: 0; top: 50%; transform: translateY(-50%); height: 60vh; z-index: 1; pointer-events: none; display: none;
     background-repeat: no-repeat; background-position: center; background-size: contain; }
   #message-list { flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 18vh 0 14vh; scroll-behavior: smooth; scrollbar-width: none; -ms-overflow-style: none; }
   #message-list::-webkit-scrollbar { width: 0; height: 0; }
@@ -1950,6 +1951,7 @@ __STORY_DATA__
     } else if (lib === 'item'){
       openItem(a, node.hint);
     } else if (lib === 'overlay'){
+      clearOverlay(); // 下一个叠层出现时，自动隐藏当前叠层
       setOverlay(a && a.src ? a.src : '');
       advance();
     }

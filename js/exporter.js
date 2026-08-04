@@ -367,6 +367,64 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   body.reveal-bg #hint { opacity: 0 !important; transition: opacity .28s ease; }
   body.reveal-bg #bg-overlay { opacity: 0 !important; transition: opacity .28s ease; }
   body.reveal-bg { user-select: none; -webkit-user-select: none; }
+
+  /* ===== galgame 模式：文字固定在画面底部对齐的黑色文本框内，每次只显示一段 ===== */
+  /* 文本框自带足够对比度，因此不给背景加明暗蒙版，背景原图完整呈现 */
+  body.galgame #bg-overlay { opacity: 0 !important; }
+  body.galgame #message-list {
+    flex: none; position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+    height: 32vh; min-height: 160px; max-height: 42vh;
+    padding: 20px 0 30px;
+    background: rgba(6,8,14,0.84);
+    border-top: 1px solid rgba(150,180,255,0.30);
+    box-shadow: 0 -10px 34px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    scroll-behavior: auto;
+  }
+  body.galgame .message { width: 92%; max-width: 900px; margin: 0 auto 10px; padding: 0 26px; font-size: 19px; }
+  /* 黑框内统一白字：屏蔽自动对比色（auto-dark 会变成黑字，在黑框上不可读） */
+  body.galgame .message,
+  body.galgame .message.auto-dark,
+  body.galgame .message.auto-light { color: #f2f6ff; }
+  body.galgame .message b, body.galgame .message strong,
+  body.galgame .message.auto-dark b, body.galgame .message.auto-dark strong,
+  body.galgame .message.auto-light b, body.galgame .message.auto-light strong { color: #ffffff; }
+  body.galgame .message.divider { margin: 10px auto; }
+  /* 继续提示挪到文本框右下角（galgame 习惯位置），选项条抬到文本框上方避免被遮挡 */
+  body.galgame #hint { bottom: 10px; left: auto; right: 26px; transform: none; }
+  body.galgame #options-bar { bottom: calc(32vh + 18px); }
+  @media (max-width: 640px) {
+    body.galgame #message-list { height: 36vh; padding: 16px 0 26px; }
+    body.galgame .message { font-size: 17px; padding: 0 18px; }
+    body.galgame #options-bar { bottom: calc(36vh + 14px); }
+  }
+
+  /* ===== 文字历史面板：顶部菜单唤出，滚动回看已读文本（两种模式通用） ===== */
+  #history-panel { position: fixed; inset: 0; z-index: 12; display: none; flex-direction: column;
+    background: rgba(6,9,16,0.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    opacity: 0; transition: opacity 0.2s ease; }
+  #history-panel.open { display: flex; opacity: 1; }
+  #history-head { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 12px 18px;
+    border-bottom: 1px solid rgba(120,160,255,0.22); background: rgba(15,19,29,0.85); }
+  #history-head .hp-title { font-size: 15px; font-weight: 700; color: #dfe8ff; letter-spacing: 2px; display: flex; align-items: center; gap: 8px; }
+  #history-head .hp-title::before { content: '✶'; color: #6fa8ff; font-size: 15px; }
+  #history-close { margin-left: auto; padding: 7px 18px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.06); color: #cfe0ff; cursor: pointer; font-size: 13px; transition: 0.16s; }
+  #history-close:hover { background: rgba(255,255,255,0.16); }
+  #history-body { flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 22px 0 32px; }
+  #history-body .hp-item { max-width: 780px; width: 88%; margin: 0 auto 14px; padding: 4px 24px;
+    font-size: 19px; line-height: 1.65; color: #e9eef8; white-space: pre-wrap; word-break: break-word; }
+  #history-body .hp-item b, #history-body .hp-item strong { color: #fff; font-weight: 700; }
+  #history-body .hp-item i { font-style: italic; }
+  #history-body .hp-item u { text-decoration: underline; }
+  #history-body .hp-item s { text-decoration: line-through; }
+  #history-body .hp-item.divider { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 18px auto; }
+  #history-body .hp-item.divider .divider-line { flex: 1; max-width: 42%; height: 1px; background: rgba(160,178,210,0.4); }
+  #history-body .hp-item.divider .divider-text { color: rgba(190,205,228,0.9); font-size: 15px; letter-spacing: 3px; white-space: nowrap; }
+  #history-empty { text-align: center; color: #7c879b; font-size: 14px; padding: 40px 20px; }
+  @media (max-width: 640px) {
+    #history-body .hp-item { width: 92%; padding: 4px 16px; font-size: 17px; }
+  }
   /* 分割线：横线 + 居中备注文字（备注留空则为普通横线）；显示后停顿等点击继续 */
   .message.divider { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 18px auto; opacity: 1; padding: 8px 24px; }
   .message.divider .divider-line { flex: 1; max-width: 42%; height: 1px; background: rgba(160,178,210,0.4); }
@@ -540,6 +598,15 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
     <button id="tb-music" class="tb-toggle" type="button" title="点击静音 / 恢复游戏音乐"><span class="ic">🎵</span></button>
     <button id="tb-sfx" class="tb-toggle" type="button" title="点击静音 / 恢复游戏音效"><span class="ic">🔊</span></button>
     <button id="tb-autoplay" class="tb-toggle" type="button" title="自动播放：开启后，每次停顿 2.5 秒自动继续"><span class="ic">▶</span></button>
+    <button id="tb-history" type="button" title="文字历史：回看已读过的全部文本">📜 历史</button>
+  </div>
+  <!-- 文字历史面板：暂时唤出已读文本（滚动回看，样式接近长文模式） -->
+  <div id="history-panel">
+    <div id="history-head">
+      <span class="hp-title">文字历史</span>
+      <button id="history-close" type="button">关闭</button>
+    </div>
+    <div id="history-body"><div id="history-empty">还没有已读文本</div></div>
   </div>
   <!-- 存档界面（独立） -->
   <div id="save-menu" class="tb-menu">
@@ -1123,6 +1190,35 @@ __STORY_DATA__
   let altBg = bgB;    // 备用层（用于叠化）
   let bgFadeTimer = null; // 当前未完成的背景叠化定时器（快速切换时取消上一个）
 
+  // ===== 文字历史 & galgame 分段 =====
+  // historyItems 记录全程已呈现的文字/分割线（两种模式都记），供顶部菜单「历史」回看。
+  // galgame 模式下 msgList 只保留「当前一段」，历史全靠 historyItems 兜底，所以清屏不会丢内容。
+  const historyItems = [];
+  let historyOpen = false;
+  // galSegmentEnded：上一段已在「停顿 / 分割线 / 标题」处收尾，下次出现文字前应清空文本框。
+  // 只在段落收尾处置位（而非在停顿被消费处），这样点击继续 / 定时继续 / 自动播放三条路径行为一致。
+  let galSegmentEnded = false;
+  const historyPanel = document.getElementById('history-panel');
+  const historyBody = document.getElementById('history-body');
+  function pushHistory(html, isDivider){
+    historyItems.push({ html: html || '', divider: !!isDivider });
+    if (historyOpen) renderHistory(); // 面板开着时（自动播放中）同步追加
+  }
+  function resetHistory(){ historyItems.length = 0; galSegmentEnded = false; if (historyOpen) renderHistory(); }
+  // 清空文本框内容（保留「完」卡：它可能挂在 msgList 下，整体 innerHTML='' 会把它删掉导致后续引用失效）
+  function clearStageMessages(){
+    Array.from(msgList.children).forEach(function(c){ if (c !== endCard) msgList.removeChild(c); });
+    msgList.scrollTop = 0; userScrolledUp = false; currentMsg = null;
+  }
+  // galgame：新一段开始前清屏（长文模式不清，保持累积长卷）
+  function beginSegmentIfNeeded(){
+    if (!GALGAME || !galSegmentEnded) return;
+    galSegmentEnded = false;
+    clearStageMessages();
+  }
+  // 段落收尾标记：停顿 / 分割线 / 标题之后即为一段结束
+  function markSegmentEnd(){ if (GALGAME) galSegmentEnded = true; }
+
   const FADE_MS = 3000;
   const BG_CROSSFADE_MS = 500;
 
@@ -1135,6 +1231,8 @@ __STORY_DATA__
   const tbMusic = document.getElementById('tb-music');
   const tbSfx = document.getElementById('tb-sfx');
   const tbAutoplay = document.getElementById('tb-autoplay');
+  const tbHistory = document.getElementById('tb-history');
+  const historyCloseBtn = document.getElementById('history-close');
   function fmtTime(t){ if (!t) return ''; const d = new Date(t); const p = function(n){ return (n<10?'0':'')+n; }; return p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); }
   // 刷新存档位时间，并同步两个独立界面（存档界面 sm-time-N / 读档界面 lm-time-N）；空槽位禁用「读取」
   function refreshSlotTimes(){
@@ -1183,6 +1281,8 @@ __STORY_DATA__
     if (itemOpen){ itemHint.classList.remove('show'); overlay.classList.remove('open'); frame.srcdoc = ''; itemOpen = false; }
     if (titleOverlay.classList.contains('show')){ titleOverlay.classList.remove('show', 'clickable'); }
     msgList.innerHTML = ''; msgList.scrollTop = 0; userScrolledUp = false; currentMsg = null;
+    // 重新开始：清空文字历史与段状态，新一局从空开始累积
+    historyItems.length = 0; galSegmentEnded = false; if (historyOpen) renderHistory();
     hideOptions();
     stopAllMusic();
     startGame();   // 从起始块（主剧情）重新开始
@@ -1282,6 +1382,8 @@ __STORY_DATA__
     Array.from(msgList.children).forEach(function(c){ if (c !== endCard) msgList.removeChild(c); });
     msgList.scrollTop = 0; userScrolledUp = false;
     typing = false; currentMsg = null; awaitingClick = false; hint.style.display = 'none';
+    // 读档：清空文字历史与段状态，由 fastReplay 沿重放路径重新构造历史 + 段边界
+    historyItems.length = 0; galSegmentEnded = false; if (historyOpen) renderHistory();
     endCard.style.display = 'none'; // 从完结界面读取存档时隐藏完结卡
     if (itemOpen){ itemHint.classList.remove('show'); overlay.classList.remove('open'); frame.srcdoc = ''; itemOpen = false; }
     if (titleOverlay.classList.contains('show')){ titleOverlay.classList.remove('show', 'clickable'); }
@@ -1301,6 +1403,41 @@ __STORY_DATA__
   }
   if (tbSave) tbSave.addEventListener('click', function(e){ e.stopPropagation(); saveMenu.classList.contains('open') ? closeMenus() : openSaveMenu(); });
   if (tbLoad) tbLoad.addEventListener('click', function(e){ e.stopPropagation(); loadMenu.classList.contains('open') ? closeMenus() : openLoadMenu(); });
+
+  // 文字历史：把全程已读文本（两种模式都记）暂时唤出供玩家滚动回看；不影响 stage 推进逻辑
+  function renderHistory(){
+    if (!historyBody) return;
+    if (!historyItems.length){
+      historyBody.innerHTML = '<div id="history-empty">还没有已读文本</div>';
+      return;
+    }
+    // 直接拼接每条 hp-item；divider 项自带 hp-item.divider 标记，CSS 用相同样式
+    const html = historyItems.map(function(it){ return '<div class="hp-item-wrap">' + it.html + '</div>'; }).join('');
+    historyBody.innerHTML = html;
+    // 滚到最底，便于看到最新一段
+    historyBody.scrollTop = historyBody.scrollHeight;
+  }
+  function openHistory(){
+    if (!historyPanel) return;
+    historyOpen = true;
+    closeMenus(); // 与存档/读档菜单互斥
+    renderHistory();
+    historyPanel.classList.add('open');
+    if (tbHistory) tbHistory.classList.add('active');
+  }
+  function closeHistory(){
+    if (!historyPanel) return;
+    historyOpen = false;
+    historyPanel.classList.remove('open');
+    if (tbHistory) tbHistory.classList.remove('active');
+  }
+  if (tbHistory) tbHistory.addEventListener('click', function(e){ e.stopPropagation(); historyOpen ? closeHistory() : openHistory(); });
+  if (historyCloseBtn) historyCloseBtn.addEventListener('click', function(e){ e.stopPropagation(); closeHistory(); });
+  // 面板内点击（除关闭按钮外）不冒泡到 stage，避免误推进剧情；点击遮罩空白处关闭
+  if (historyPanel) historyPanel.addEventListener('click', function(e){
+    if (e.target === historyPanel) closeHistory();
+    else e.stopPropagation();
+  });
   // 音乐 / 音效 静音开关：点击在「静音（音量归零）」与「出声」之间切换
   if (tbMusic) tbMusic.addEventListener('click', function(e){ e.stopPropagation(); musicMuted = !musicMuted; applyMusicMute(); updateMuteButtons(); });
   if (tbSfx) tbSfx.addEventListener('click', function(e){ e.stopPropagation(); sfxMuted = !sfxMuted; updateMuteButtons(); });
@@ -1377,6 +1514,11 @@ __STORY_DATA__
   //   - 额外提供「长按 1 秒隐藏文字看背景原图」功能（见 reveal-bg）。
   // TEXT_CONTRAST: 'off' 关闭 | 'auto' 选字色 + 调暗/调亮背景（默认）
   const TEXT_CONTRAST = '__TEXT_CONTRAST__';
+  // PLAY_MODE: 'longform' 长文模式（文字累积滚动）| 'galgame' galgame模式（底部黑色文本框，逐段显示）
+  // galgame 模式下文本框自带对比度，不再给背景加明暗蒙版（updateAllContrast 与 CSS 双重保证）
+  const PLAY_MODE = '__PLAY_MODE__';
+  const GALGAME = PLAY_MODE === 'galgame';
+  if (GALGAME) document.body.classList.add('galgame');
   const _bgCanvas = document.createElement('canvas');
   const _bgCtx = _bgCanvas.getContext('2d', { willReadFrequently: true });
   let _bgData = null, _bgReady = false;
@@ -1490,6 +1632,12 @@ __STORY_DATA__
   // 应用已缓存的对比方案（不再每帧重采样整张背景：O(消息数) 而非整屏计算，避免打字卡顿）
   function updateAllContrast(){
     const res = _bgContrastRes;
+    // galgame 模式：文字在黑色文本框内（CSS 已固定为白字），背景保持原图不加蒙版
+    if (GALGAME){
+      if (bgOverlay) bgOverlay.style.opacity = '0';
+      for (let i = 0; i < msgList.children.length; i++){ _updateContrastFor(msgList.children[i], null); }
+      return;
+    }
     if (!res){
       if (bgOverlay) bgOverlay.style.opacity = '0';
       for (let i = 0; i < msgList.children.length; i++){ _updateContrastFor(msgList.children[i], null); }
@@ -1743,15 +1891,31 @@ __STORY_DATA__
   function fastApply(n){
     if (n.type === 'text'){
       lastTextContent = n.content || '';
+      const html = bbcodeToHtml(interpolateVars(n.content || ''));
+      pushHistory(html, false);
+      // galgame 读档重放也要「每段换新文字」：与 typeText 行为对齐，按段边界清屏
+      beginSegmentIfNeeded();
       const d = document.createElement('div');
       d.className = 'message';
-      d.innerHTML = bbcodeToHtml(interpolateVars(n.content || ''));
+      d.innerHTML = html;
       msgList.appendChild(d);
     } else if (n.type === 'divider'){
+      // 历史面板保存格式（与 showDivider 一致：hp-item 包裹）
+      let divHtml = '<div class="hp-item divider">';
+      const divText = interpolateVars(n.text || '');
+      if (n.text){ divHtml += '<span class="divider-line"></span><span class="divider-text">' + bbcodeToHtml(divText) + '</span><span class="divider-line"></span>'; }
+      else { divHtml += '<span class="divider-line"></span>'; }
+      divHtml += '</div>';
+      pushHistory(divHtml, true);
+      beginSegmentIfNeeded();
       const d = document.createElement('div'); d.className = 'message divider';
-      if (n.text){ const t=document.createElement('span'); t.className='divider-text'; t.innerHTML=bbcodeToHtml(interpolateVars(n.text)); const l1=document.createElement('span'); l1.className='divider-line'; const l2=document.createElement('span'); l2.className='divider-line'; d.appendChild(l1); d.appendChild(t); d.appendChild(l2); }
+      if (n.text){ const t=document.createElement('span'); t.className='divider-text'; t.innerHTML=bbcodeToHtml(divText); const l1=document.createElement('span'); l1.className='divider-line'; const l2=document.createElement('span'); l2.className='divider-line'; d.appendChild(l1); d.appendChild(t); d.appendChild(l2); }
       else { const l=document.createElement('span'); l.className='divider-line'; d.appendChild(l); }
       msgList.appendChild(d);
+      markSegmentEnd(); // 分割线收尾，下一段换屏
+    } else if (n.type === 'pause'){
+      // 重放阶段按段边界处理：停顿本身不呈现，但标记段已结束，下一条文字清屏
+      markSegmentEnd();
     } else if (n.type === 'summon'){
       if (n.kind === 'background'){ const a = findAsset('background', n); restoreBackground(a && a.kind === 'solid' ? { color: a.color || '#000000' } : { src: a && a.src ? a.src : '' }); }
       else if (n.kind === 'music'){ stopAllMusic(); const a = findAsset('music', n); if (a && a.src){ const m = new Audio(a.src); m.loop = true; m.volume = musicMuted ? 0 : MUSIC_VOL; m.play().catch(function(){}); bgMusic = m; currentMusicName = a.name || null; } }
@@ -1769,6 +1933,11 @@ __STORY_DATA__
   }
   function typeText(content){
     lastTextContent = content || '';
+    // galgame 模式：上一段(停顿/分割线/标题 收尾)结束后，下一条文字登场前清空文本框，确保「每段直接换新文字」
+    beginSegmentIfNeeded();
+    // 历史在打字开始时就推一条完整 HTML（这样打开历史面板能立刻看到这条，不管打字到没到字）
+    const finalHtml = bbcodeToHtml(interpolateVars(content || ''));
+    pushHistory(finalHtml, false);
     // 创建一条新消息气泡
     const msg = document.createElement('div');
     msg.className = 'message typing';
@@ -1794,6 +1963,8 @@ __STORY_DATA__
     awaitingClick = true; hint.style.display = 'block';
     if (ms > 0){ setTimeout(function(){ if (awaitingClick){ awaitingClick = false; hint.style.display = 'none'; advance(); } }, ms); }
     scheduleAutoPlay();
+    // galgame 模式：停顿本身就是段边界，下一段文字/分割线出现前自动清屏换新文字
+    markSegmentEnd();
   }
   function fitTitle(){
     // 缩放到单行宽度内（窄屏自动缩小，不换行）
@@ -1833,6 +2004,17 @@ __STORY_DATA__
   // 分割线：在消息流中插入一条分割线（备注文字居中显示于线上；留空为普通横线），
   // 并触发停顿——等待玩家点击继续，使分割线在打字游戏中能被看清。
   function showDivider(text){
+    // galgame 模式：分割线登场前先清旧文字，并把分割线收尾标记为段边界
+    beginSegmentIfNeeded();
+    // 历史面板记录：把分割线（含居中备注）原样保存为 hp-item 结构，便于 #history-body 直接渲染
+    let divHtml = '<div class="hp-item divider">';
+    if (text){
+      divHtml += '<span class="divider-line"></span><span class="divider-text">' + bbcodeToHtml(text) + '</span><span class="divider-line"></span>';
+    } else {
+      divHtml += '<span class="divider-line"></span>';
+    }
+    divHtml += '</div>';
+    pushHistory(divHtml, true);
     const d = document.createElement('div');
     d.className = 'message divider';
     if (text) {
@@ -2049,6 +2231,7 @@ __STORY_DATA__
   _stageEl.addEventListener('click', function(){
     if (_justRevealed) return; // 长按刚结束，吞掉这次点击
     if (saveMenu.classList.contains('open') || loadMenu.classList.contains('open')) { closeMenus(); return; }
+    if (historyOpen) return; // 文字历史打开时，stage 点击不推进剧情（面板已自管滚动/关闭）
     if (itemOpen) return;
     // 点击即视为「要看新内容」：解除自动滚动锁定，强制滚到底（避免快速点击时误触发滚动手势把 userScrolledUp 卡死）
     userScrolledUp = false;
@@ -2245,7 +2428,8 @@ async function collectRuntimeData(inline) {
   // 即便 meta 误带 ai 相关字段，也绝不写入导出产物（下面逐项赋值，不整体展开 meta）。
   const globalObj = {
     gameName: meta.gameName || '', subtitle: meta.subtitle || '', authorId: meta.authorId || '',
-    icon: meta.icon || '', font: fontData, openingBg: meta.openingBg || '', openingMusic: meta.openingMusic || '', textContrast: meta.textContrast || 'auto', watermark: meta.watermark || null,
+    icon: meta.icon || '', font: fontData, openingBg: meta.openingBg || '', openingMusic: meta.openingMusic || '', textContrast: meta.textContrast || 'auto',
+    playMode: (meta.playMode === 'galgame') ? 'galgame' : 'longform', watermark: meta.watermark || null,
   };
   Object.keys(globalObj).forEach(k => { if (/^ai/i.test(k)) delete globalObj[k]; });
   // 变量库：注入运行时初始值（数字→Number，布尔→true/false，文本→字符串）
@@ -2290,7 +2474,8 @@ function buildRuntimeHTML(data, mode) {
     .replace('__WRAP__', safe(ITEM_VIEWER_WRAP))
     .replace('__TITLE__', data.title || '互动剧情')
     .replace('__STORY_SCRIPT_TAG__', mode === 'zip' ? '<script src="story.js"></script>' : '')
-    .replace('__TEXT_CONTRAST__', (data.global && data.global.textContrast) || 'auto');
+    .replace('__TEXT_CONTRAST__', (data.global && data.global.textContrast) || 'auto')
+    .replace('__PLAY_MODE__', (data.global && data.global.playMode === 'galgame') ? 'galgame' : 'longform');
   if (mode === 'single') {
     html = html.replace('__STORY_DATA__', 'window.STORY_DATA = ' + safe(data) + ';');
   } else {

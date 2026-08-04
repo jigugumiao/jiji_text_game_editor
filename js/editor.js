@@ -25,7 +25,8 @@
   let pendingEffectTag = null; // 特效按钮用的临时标签名
 
   // 全局属性
-  let globalSettings = { gameName: '', subtitle: '', authorId: '', icon: '', font: null, openingBg: '', openingMusic: '', textContrast: 'auto', watermark: { text: '', pos: '右下', url: '', opacity: 40 } };
+  // playMode: 'longform' 长文模式（默认，文字累积成长卷）| 'galgame' galgame模式（底部黑色文本框，逐段显示）
+  let globalSettings = { gameName: '', subtitle: '', authorId: '', icon: '', font: null, openingBg: '', openingMusic: '', textContrast: 'auto', playMode: 'longform', watermark: { text: '', pos: '右下', url: '', opacity: 40 } };
   // 把 meta 里的创作设定统一同步进 globalSettings（开场背景/音乐/图标等所有字段，避免 openProject 漏字段导致刷新后丢失）
   function syncGlobalFromMeta(meta) {
     meta = meta || {};
@@ -38,6 +39,7 @@
     if (meta.openingBg) globalSettings.openingBg = meta.openingBg;
     if (meta.openingMusic) globalSettings.openingMusic = meta.openingMusic;
     if (meta.textContrast) globalSettings.textContrast = (meta.textContrast === 'scrim') ? 'auto' : meta.textContrast;
+    if (meta.playMode) globalSettings.playMode = (meta.playMode === 'galgame') ? 'galgame' : 'longform';
   }
   (async function loadGlobal() {
     const meta = (window.Storage.loadMeta && window.Storage.loadMeta()) || {};
@@ -53,6 +55,7 @@
     meta.openingBg = globalSettings.openingBg;
     meta.openingMusic = globalSettings.openingMusic;
     meta.textContrast = globalSettings.textContrast;
+    meta.playMode = globalSettings.playMode;
     meta.watermark = globalSettings.watermark;
     if (window.Storage.saveMeta) await window.Storage.saveMeta(meta);
     saveNow();
@@ -2691,6 +2694,11 @@
           '<select id="gs-icon"><option value="">（使用默认图标）</option></select>' +
           (globalSettings.icon ? (String(globalSettings.icon).indexOf('data:') === 0 ? ' <span style="font-size:12px;color:#8b96a8">（旧版上传图，仍生效）</span>' : ' <span style="font-size:12px;color:#88c0ff">已选择：' + escapeHtml(globalSettings.icon) + '</span>') : ' <span style="font-size:12px;color:#8b96a8">（从图片库中选取；留空=默认图标）</span>') + '</div>' +
           (globalSettings.icon && String(globalSettings.icon).indexOf('data:') === 0 ? '<div class="field"><img id="gs-icon-preview" src="' + globalSettings.icon + '" style="max-width:64px;max-height:64px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);object-fit:cover"></div>' : '') +
+        '<h4 style="margin-top:14px"><svg class="ico" aria-hidden="true"><use href="#ic-play-circle"/></svg> 游玩模式</h4>' +
+        '<div class="ai-hint">长文模式：文字像长卷一样不断累积、整屏滚动阅读（当前默认）。galgame模式：文字每次只显示一段（到下一个「停顿」为止），固定在画面底部对齐的黑色文本框内，背景不加明暗蒙版、完整呈现原图——适合配合背景图与叠层角色。两种模式都可在游戏顶部菜单点「历史」回看已读文本。</div>' +
+        '<div class="field"><label>游玩模式</label><select id="gs-playmode">' +
+          [['longform','长文模式（文字累积滚动，默认）'],['galgame','galgame模式（底部文本框，逐段显示）']].map(function(o){ return '<option value="' + o[0] + '"' + (globalSettings.playMode === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+        '</select></div>' +
         '<h4 style="margin-top:14px"><svg class="ico" aria-hidden="true"><use href="#ic-image"/></svg> 开场背景</h4>' +
         '<div class="field"><label>开场背景图案</label>' +
           '<select id="gs-opening"><option value="">（使用默认深色开场）</option></select>' +
@@ -2712,7 +2720,7 @@
         '</select></div>' +
         '<div class="field"><label>不透明度</label><input type="range" id="wm-opacity" min="10" max="100" value="' + (wm.opacity || 40) + '"><span id="wm-op-val" style="font-size:12px;color:#9aa3b2;min-width:30px">' + (wm.opacity || 40) + '%</span></div>' +
         '<h4 style="margin-top:14px"><svg class="ico" aria-hidden="true"><use href="#ic-type"/></svg> 文字对比度保护</h4>' +
-        '<div class="ai-hint">背景图偏亮/偏暗或与文字色接近时，自动按背景平均亮度选黑字/白字，并对整张背景做亮度调整（亮背景更亮、暗背景更暗）把对比度拉到清晰可读——不再给文字加底板（避免跳闪）。游戏中长按画面 1 秒可隐藏文字、欣赏背景原图。</div>' +
+        '<div class="ai-hint">背景图偏亮/偏暗或与文字色接近时，自动按背景平均亮度选黑字/白字，并对整张背景做亮度调整（亮背景更亮、暗背景更暗）把对比度拉到清晰可读——不再给文字加底板（避免跳闪）。游戏中长按画面 1 秒可隐藏文字、欣赏背景原图。<b>仅在长文模式下生效</b>：galgame模式自带黑色文本框，不会给背景加蒙版。</div>' +
         '<div class="field"><label>保护强度</label><select id="gs-textcontrast">' +
           [['off','关（保持原样）'],['auto','自动（选字色 + 调亮暗背景，默认）']].map(function(o){ return '<option value="' + o[0] + '"' + (globalSettings.textContrast === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></div>' +
@@ -2759,6 +2767,13 @@
     box.querySelector('#wm-opacity').addEventListener('input', function() { globalSettings.watermark.opacity = parseInt(this.value); box.querySelector('#wm-op-val').textContent = this.value + '%'; saveGlobal(); });
     const tcSel = box.querySelector('#gs-textcontrast');
     if (tcSel) tcSel.addEventListener('change', function() { globalSettings.textContrast = this.value; saveGlobal(); toast('文字对比度保护：' + this.options[this.selectedIndex].text); });
+    // 游玩模式：长文模式 / galgame模式（影响运行时文字排版与背景蒙版，不改动剧情文本）
+    const pmSel = box.querySelector('#gs-playmode');
+    if (pmSel) pmSel.addEventListener('change', function() {
+      globalSettings.playMode = (this.value === 'galgame') ? 'galgame' : 'longform';
+      saveGlobal();
+      toast('游玩模式：' + (globalSettings.playMode === 'galgame' ? 'galgame模式' : '长文模式'));
+    });
     const obSel = box.querySelector('#gs-opening');
     if (obSel) {
       window.Storage.getAllAssets('background').then(function(list) {

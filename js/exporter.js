@@ -381,7 +381,8 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     scroll-behavior: auto;
   }
-  body.galgame .message { width: 92%; max-width: 900px; margin: 0 auto 10px; padding: 0 26px; font-size: 19px; }
+  /* 字号由运行时按框高动态计算（目标 3 行，见 fitGalgameFont），CSS 变量兜底 20px */
+  body.galgame .message { width: 92%; max-width: 900px; margin: 0 auto 10px; padding: 0 26px; font-size: var(--gal-font-size, 20px); }
   /* 黑框内统一白字：屏蔽自动对比色（auto-dark 会变成黑字，在黑框上不可读） */
   body.galgame .message,
   body.galgame .message.auto-dark,
@@ -395,7 +396,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   body.galgame #options-bar { bottom: calc(32vh + 18px); }
   @media (max-width: 640px) {
     body.galgame #message-list { height: 36vh; padding: 16px 0 26px; }
-    body.galgame .message { font-size: 17px; padding: 0 18px; }
+    body.galgame .message { padding: 0 18px; }
     body.galgame #options-bar { bottom: calc(36vh + 14px); }
   }
 
@@ -2045,8 +2046,21 @@ __STORY_DATA__
     if (titleOverlay.classList.contains('show')) fitTitle();
     if (_resizeScheduled) return;
     _resizeScheduled = true;
-    requestAnimationFrame(function(){ _resizeScheduled = false; _rebuildBgSample(); });
+    requestAnimationFrame(function(){ _resizeScheduled = false; _rebuildBgSample(); fitGalgameFont(); });
   });
+  // galgame 模式字号自适应：以「对话框能放 3 行文字」为标准，按文本框实际高度计算字号。
+  // 公式：可用高度 = 框高 - 上下 padding；单行高 = fontSize * 1.6(行高)；3 行 + 2 处行间距(各10px)。
+  function fitGalgameFont(){
+    if (!GALGAME || !msgList) return;
+    const cs = getComputedStyle(msgList);
+    const pt = parseFloat(cs.paddingTop) || 0;
+    const pb = parseFloat(cs.paddingBottom) || 0;
+    const avail = Math.max(0, msgList.clientHeight - pt - pb);
+    let size = (avail - 20) / (3 * 1.6); // 留 20px 给两条消息间 margin
+    size = Math.round(Math.max(16, Math.min(44, size)));
+    msgList.style.setProperty('--gal-font-size', size + 'px');
+  }
+  fitGalgameFont();
   function findAsset(lib, node){
     const m = DATA.assets[lib] || {};
     if (node.id && m[node.id]) return m[node.id];

@@ -71,11 +71,11 @@
   let pvTimer = null;
   let outlineTimer = null;   // 导航栏刷新计时器    // 分屏/预览实时刷新计时器
 
-  const KIND_TO_CN = { background: '背景', item: '物品', music: '音乐', sound: '音效' };
-  const CN_TO_KIND = { '背景': 'background', '物品': 'item', '音乐': 'music', '音效': 'sound' };
+  const KIND_TO_CN = { background: '背景', item: '物品', overlay: '叠层', music: '音乐', sound: '音效' };
+  const CN_TO_KIND = { '背景': 'background', '物品': 'item', '叠层': 'overlay', '音乐': 'music', '音效': 'sound' };
 
   const RE_PAUSE = /^<停顿(?::\s*(\d+))?>$/;
-  const RE_SUMMON = /^<召唤(背景|物品|音乐|音效):\s*(.*?)\s*>$/;
+  const RE_SUMMON = /^<召唤(背景|物品|音乐|音效|叠层):\s*(.*?)\s*>$/;
   const RE_TITLE = /^<标题:\s*(.*?)\s*>$/;
   const RE_DIVIDER = /^<分割线(?::\s*(.*?)\s*)?>$/;
   // 分支剧情：<剧情块:名>（兼容旧 <对话块:名>）跳转、<选项:"文字",块名> 选项、<跳回> 返回、<跳回重选> 回到上一步重选
@@ -265,7 +265,7 @@
           html += '<div class="pv-line pv-pause"><div class="pv-pause-line"></div><span class="pv-pause-label"><svg class="ico" aria-hidden="true"><use href="#ic-pause"/></svg> 停顿' + (ms ? ' ' + ms + 'ms' : '') + '</span></div>';
         } else if ((m = t.match(RE_SUMMON))) {
           const cn = m[1], name = m[2];
-          const clsMap = { '背景': 'bg', '物品': 'item', '音乐': 'music', '音效': 'sound' };
+          const clsMap = { '背景': 'bg', '物品': 'item', '叠层': 'overlay', '音乐': 'music', '音效': 'sound' };
           html += '<div class="pv-line"><span class="pv-cmd ' + (clsMap[cn] || '') + '"><svg class="ico" aria-hidden="true"><use href="#ic-bookmark"/></svg> ' + cn + '：' + escapeHtml(name) + '</span></div>';
         } else if ((m = t.match(RE_TITLE))) {
           html += '<div class="pv-line" style="text-align:center;font-size:28px;font-weight:700;margin:10px 0;color:#ffd700">' + renderBBCode(m[1]) + '</div>';
@@ -661,8 +661,8 @@
     return [
       { label: '刷新素材库', icon: 'ic-refresh', action: function () { renderLibrary(); toast('已刷新素材库'); } },
       { separator: true },
-      { label: '切到图片库', icon: 'ic-image', action: function () { switchLib('background'); } },
-      { label: '切到物品库', icon: 'ic-box', action: function () { switchLib('item'); } },
+      { label: '切到背景库', icon: 'ic-image', action: function () { switchLib('background'); } },
+      { label: '切到3D库', icon: 'ic-box', action: function () { switchLib('item'); } },
       { label: '切到音乐库', icon: 'ic-music', action: function () { switchLib('music'); } },
       { label: '切到音效库', icon: 'ic-volume', action: function () { switchLib('sound'); } },
       { label: '切到剧情块库', icon: 'ic-comment', action: function () { switchLib('dialogueblock'); } },
@@ -671,6 +671,7 @@
       { label: '导入素材到当前库', icon: 'ic-plus', action: function () {
         if (activeLib === 'background') $('#file-bg').click();
         else if (activeLib === 'item') $('#file-item').click();
+        else if (activeLib === 'overlay') $('#file-overlay').click();
         else if (activeLib === 'music') { pendingAudioLib = 'music'; $('#file-audio').click(); }
         else if (activeLib === 'sound') { pendingAudioLib = 'sound'; $('#file-audio').click(); }
         else if (activeLib === 'dialogueblock') { const n = window.Storage.addBlock('新对话'); switchBlock(n); }
@@ -1716,6 +1717,8 @@
       const offset = off == null ? storyText.selectionStart : snapToLineEdge(storyText, off);
       if (info.kind === 'stopmusic') {
         insertAtOffset('<停止音乐>', offset, 0);
+      } else if (info.kind === 'clearoverlay') {
+        insertAtOffset('<清除叠层>', offset, 0);
       } else if (info.kind === 'item') {
         // 物品：自动补全文字提示占位符，并把光标停在双引号之间
         insertAtOffset('<召唤物品:' + info.name + ',"">', offset, 2);
@@ -1786,6 +1789,23 @@
 
     // 文件导入
     $('#file-bg').addEventListener('change', (e) => { const f = e.target.files; e.target.value = ''; importFiles(f, 'background', 'image'); });
+    $('#file-overlay').addEventListener('change', (e) => {
+      const files = Array.from(e.target.files || []);
+      e.target.value = '';
+      if (!files.length) return;
+      (async () => {
+        let ok = 0, fail = 0;
+        for (const f of files) {
+          const err = validatePastedImage(f);
+          if (err) { toast(err); fail++; continue; }
+          try { const src = await readFileAsDataUrl(f); await window.Storage.saveAsset('overlay', { name: f.name, src }); ok++; }
+          catch (err2) { fail++; console.error('叠层保存失败', err2); }
+        }
+        if (fail) toast('有 ' + fail + ' 个叠层保存失败');
+        else if (ok) toast('已导入 ' + ok + ' 张叠层图');
+        focusLibrary('overlay');
+      })();
+    });
     $('#file-item').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; importBundle(f); });
     $('#file-audio').addEventListener('change', (e) => {
       const f = e.target.files; const lib = pendingAudioLib; e.target.value = '';
@@ -2206,6 +2226,13 @@
       window.Storage.getAllAssets('item')
         .then((assets) => { setLibCount(countEl, assets.length, '物品库'); renderItemCards(list, assets); })
         .catch(showError);
+    } else if (activeLib === 'overlay') {
+      tools.innerHTML = '<button class="btn" id="t-overlay-img"><svg class="ico" aria-hidden="true"><use href="#ic-image"/></svg> 导入图片（推荐 PNG）</button>'
+        + '<div class="lib-tools-row lib-hint">叠层会显示在背景之上、文字之下，适合放透明背景的角色 / 物件</div>';
+      tools.querySelector('#t-overlay-img').onclick = () => $('#file-overlay').click();
+      window.Storage.getAllAssets('overlay')
+        .then((assets) => { setLibCount(countEl, assets.length, '叠层库'); renderOverlayCards(list, assets); })
+        .catch(showError);
     } else if (activeLib === 'music') {
       tools.innerHTML = '<button class="btn" id="t-music"><svg class="ico" aria-hidden="true"><use href="#ic-music"/></svg> 导入音乐文件</button>';
       tools.querySelector('#t-music').onclick = () => { pendingAudioLib = 'music'; $('#file-audio').click(); };
@@ -2348,9 +2375,9 @@
     if (!ok1) return;
 
     // 统计被使用的素材名称（按库）
-    const used = { background: new Set(), item: new Set(), music: new Set(), sound: new Set() };
+    const used = { background: new Set(), item: new Set(), overlay: new Set(), music: new Set(), sound: new Set() };
     const allText = collectAllStoryText();
-    const libMap = { '背景': 'background', '物品': 'item', '音乐': 'music', '音效': 'sound' };
+    const libMap = { '背景': 'background', '物品': 'item', '叠层': 'overlay', '音乐': 'music', '音效': 'sound' };
     allText.split('\n').forEach((line) => {
       const m = line.match(RE_SUMMON);
       if (!m) return;
@@ -2366,8 +2393,8 @@
     if (globalSettings.openingMusic) used.music.add(globalSettings.openingMusic.trim());
 
     // 找出每个库里未使用的素材
-    const libs = ['background', 'item', 'music', 'sound'];
-    const libLabel = { background: '图片库', item: '物品库', music: '音乐库', sound: '音效库' };
+    const libs = ['background', 'item', 'overlay', 'music', 'sound'];
+    const libLabel = { background: '背景库', item: '3D库', overlay: '叠层库', music: '音乐库', sound: '音效库' };
     const toDelete = []; // { lib, id, name }
     (async () => {
       for (const lib of libs) {
@@ -2565,6 +2592,40 @@
         thumb.addEventListener('click', function(e){ e.stopPropagation(); openBgPreview(a.src, a.name, false); });
         card.insertBefore(thumb, card.querySelector('.asset-meta'));
       }
+      list.appendChild(card);
+    });
+  }
+  // 叠层库：图片形式，召唤后显示在背景之上、文字之下（适合透明 PNG 角色 / 物件）。
+  // 复用图片卡片渲染；kind='overlay' 使拖拽 / 点按自动生成 <召唤叠层:名称>。
+  function renderOverlayCards(list, assets) {
+    // 顶部固定「清除叠层」功能块（非真实素材，点击 / 拖入即产生 <清除叠层> 指令）
+    const stop = document.createElement('div');
+    stop.className = 'asset-card stop-music-card';
+    stop.draggable = true;
+    stop.innerHTML = '<div class="asset-meta"><div class="asset-name"><svg class="ico" aria-hidden="true"><use href="#ic-stop"/></svg> 清除叠层</div>'
+      + '<div class="asset-sub">插入 &lt;清除叠层&gt; 指令（移除当前叠层角色，回到纯背景）</div></div>';
+    stop.addEventListener('click', () => insertAtCursor('<清除叠层>'));
+    stop.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('application/x-asset', JSON.stringify({ kind: 'clearoverlay', name: '__CLEAR__' }));
+      e.dataTransfer.effectAllowed = 'copy';
+      stop.classList.add('dragging');
+    });
+    stop.addEventListener('dragend', () => stop.classList.remove('dragging'));
+    list.appendChild(stop);
+
+    if (!assets.length) {
+      const tip = document.createElement('div');
+      tip.className = 'empty-tip';
+      tip.innerHTML = '还没有叠层<br>导入 PNG（推荐透明背景的角色 / 物件），召唤后显示在背景之上、文字之下';
+      list.appendChild(tip);
+      return;
+    }
+    assets.forEach(a => {
+      const card = makeCard({ kind: 'overlay', id: a.id, name: a.name, derived: a.derived, src: a.src, original: a.original });
+      const thumb = document.createElement('img');
+      thumb.className = 'asset-thumb'; thumb.src = a.src; thumb.draggable = false;
+      thumb.addEventListener('click', function(e){ e.stopPropagation(); openBgPreview(a.src, a.name, false); });
+      card.insertBefore(thumb, card.querySelector('.asset-meta'));
       list.appendChild(card);
     });
   }
@@ -4092,7 +4153,7 @@ self.onmessage = function (e) {
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.style.display = 'none';
-    if (item.kind === 'background') fileInput.accept = 'image/*';
+    if (item.kind === 'background' || item.kind === 'overlay') fileInput.accept = 'image/*';
     else if (item.kind === 'item') fileInput.accept = '.json,application/json';
     else fileInput.accept = 'audio/*';
     row.appendChild(fileInput);
@@ -4100,11 +4161,11 @@ self.onmessage = function (e) {
     // 校验待办条目允许的文件格式；格式不对直接拒绝，不入库
     function todoFileOk(f) {
       const name = (f.name || '').toLowerCase();
-      if (item.kind === 'background') return f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|avif|bmp)$/.test(name);
+      if (item.kind === 'background' || item.kind === 'overlay') return f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|avif|bmp)$/.test(name);
       if (item.kind === 'item') return f.type === 'application/json' || name.endsWith('.json');
       return f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|aac|opus|weba)$/.test(name); // sound / music
     }
-    const KIND_NEED = { background: '图片文件', item: 'JSON 场景包', sound: '音频文件', music: '音频文件' };
+    const KIND_NEED = { background: '图片文件', item: 'JSON 场景包', overlay: '图片文件', sound: '音频文件', music: '音频文件' };
 
     // 统一入库入口：拖拽 / 选择 都走这里（先校验格式）
     async function handleTodoFile(f) {
@@ -4611,8 +4672,8 @@ self.onmessage = function (e) {
   // 预览 / 导出前的「编译」：返回问题列表 [{line,type:'error'|'warning',msg}]
   async function validateStory() {
     const issues = [];
-    const assetNames = { background: new Set(), item: new Set(), music: new Set(), sound: new Set() };
-    for (const lib of ['background', 'item', 'music', 'sound']) {
+    const assetNames = { background: new Set(), item: new Set(), overlay: new Set(), music: new Set(), sound: new Set() };
+    for (const lib of ['background', 'item', 'overlay', 'music', 'sound']) {
       const arr = await window.Storage.getAllAssets(lib);
       arr.forEach(a => assetNames[lib].add((a.name || '').trim()));
     }
@@ -4696,7 +4757,7 @@ self.onmessage = function (e) {
           pushIssue(prefix, n, 'error', '不应在主剧情块使用<跳回>或者<跳回重选>');
           return;
         }
-        const afterCmd = t.match(/^(<(?:召唤(?:背景|物品|音乐|音效):[^>]*>|<分割线(?::[^>]*)?>|停顿(?::\s*\d+)?>|<(?:对话块|剧情块):[^>]*>|<跳回>|<跳回重选>))\s*(\S[\s\S]*)$/);
+        const afterCmd = t.match(/^(<(?:召唤(?:背景|物品|音乐|音效|叠层):[^>]*>|<分割线(?::[^>]*)?>|停顿(?::\s*\d+)?>|<(?:对话块|剧情块):[^>]*>|<跳回>|<跳回重选>))\s*(\S[\s\S]*)$/);
         if (afterCmd) {
           pushIssue(prefix, n, 'error', '指令「' + afterCmd[1] + '」后方不应跟文字（如需文字请另起一行）');
           return;
@@ -4716,7 +4777,7 @@ self.onmessage = function (e) {
             const kind = CN_TO_KIND[cn];
             let name = m[2].trim();
             if (kind === 'item') { const hm = name.match(/^(.*?),\s*"(.*)"\s*$/); if (hm) name = hm[1].trim(); }
-            if (!kind) pushIssue(prefix, n, 'error', '未知召唤类型：' + cn + '（应为 背景/物品/音乐/音效）');
+            if (!kind) pushIssue(prefix, n, 'error', '未知召唤类型：' + cn + '（应为 背景/物品/叠层/音乐/音效）');
             else if (!name) pushIssue(prefix, n, 'error', '召唤名称不能为空，例如 <召唤' + cn + ':名称>');
             else if (!assetNames[kind].has(name)) pushIssue(prefix, n, 'warning', '未找到名为「' + name + '」的' + cn + '，召唤可能无效');
           } else if (t.match(RE_DIVIDER)) {

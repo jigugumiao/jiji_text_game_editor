@@ -342,6 +342,9 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   #bg-layer-a { opacity: 1; z-index: 0; }
   #bg-layer-b { opacity: 0; z-index: 1; }
   #bg-overlay { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: rgba(255,255,255,0.45); opacity: 0; transition: opacity .28s ease; }
+  /* 叠层：显示于背景层之上、文字层(#stage z2)之下；召唤透明 PNG 角色 / 物件用 */
+  #overlay-layer { position: fixed; inset: 0; z-index: 1; pointer-events: none; display: none;
+    background-repeat: no-repeat; background-position: center; background-size: contain; }
   #message-list { flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 18vh 0 14vh; scroll-behavior: smooth; scrollbar-width: none; -ms-overflow-style: none; }
   #message-list::-webkit-scrollbar { width: 0; height: 0; }
   .message { max-width: 780px; width: 88%; margin: 0 auto 12px; padding: 16px 24px; background: none; border: 0; border-radius: 0; font-size: 20px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; opacity: 0; animation: msgIn 0.3s ease forwards; }
@@ -515,6 +518,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
 <div id="bg-layer-a"></div>
 <div id="bg-layer-b"></div>
 <div id="bg-overlay"></div>
+<div id="overlay-layer"></div>
 <div id="stage">
   <div id="message-list"></div>
   <div id="hint">▼ 点击继续</div>
@@ -1113,6 +1117,7 @@ __STORY_DATA__
   const bgA = document.getElementById('bg-layer-a');
   const bgB = document.getElementById('bg-layer-b');
   const bgOverlay = document.getElementById('bg-overlay');
+  const overlayLayer = document.getElementById('overlay-layer');
   let activeBg = bgA; // 当前显示的背景层
   let altBg = bgB;    // 备用层（用于叠化）
   let bgFadeTimer = null; // 当前未完成的背景叠化定时器（快速切换时取消上一个）
@@ -1511,6 +1516,7 @@ __STORY_DATA__
   function curNode(){ const ns = nodesOf(curBlock); return ns[curIdx]; }
   // 从起始块开始一局新游戏；若预览指定了 __previewFrom，则从光标所在节点开播
   function startGame(){
+    clearOverlay();
     if (DATA.__previewFrom && DATA.blocks && DATA.blocks[DATA.__previewFrom.block]) {
       curBlock = DATA.__previewFrom.block;
       const ns = nodesOf(curBlock);
@@ -1620,6 +1626,7 @@ __STORY_DATA__
     else if (n.type === 'title') showTitle(n.text || '');
     else if (n.type === 'summon') doSummon(n);
     else if (n.type === 'stopmusic') stopMusic();
+    else if (n.type === 'clearoverlay') clearOverlay();
     else if (n.type === 'divider') showDivider(n.text || '');
     else if (n.type === 'block') { callBlock(n.name); execCur(); }
     else if (n.type === 'return') { doReturn(); }
@@ -1747,8 +1754,10 @@ __STORY_DATA__
     } else if (n.type === 'summon'){
       if (n.kind === 'background'){ const a = findAsset('background', n); restoreBackground(a && a.kind === 'solid' ? { color: a.color || '#000000' } : { src: a && a.src ? a.src : '' }); }
       else if (n.kind === 'music'){ stopAllMusic(); const a = findAsset('music', n); if (a && a.src){ const m = new Audio(a.src); m.loop = true; m.volume = musicMuted ? 0 : MUSIC_VOL; m.play().catch(function(){}); bgMusic = m; currentMusicName = a.name || null; } }
+      else if (n.kind === 'overlay'){ const a = findAsset('overlay', n); setOverlay(a && a.src ? a.src : ''); }
       // item / sound 重放阶段不实际呈现
     } else if (n.type === 'stopmusic'){ stopAllMusic(); }
+    else if (n.type === 'clearoverlay'){ clearOverlay(); }
     // pause / title 重放阶段跳过（不影响已显示文字）
   }
   function stopMusic(){
@@ -1917,6 +1926,13 @@ __STORY_DATA__
   }
   function setBackground(src){ applyBackground(src ? { src: src } : null); }
   function setSolidBackground(color){ applyBackground(color ? { color: color } : null); }
+  // 叠层：显示在背景之上、文字之下的独立图层（透明 PNG 角色 / 物件）。无动画，立即切换。
+  function setOverlay(src){
+    if (!overlayLayer) return;
+    if (src) { overlayLayer.style.backgroundImage = 'url("' + src + '")'; overlayLayer.style.display = 'block'; }
+    else { overlayLayer.style.backgroundImage = ''; overlayLayer.style.display = 'none'; }
+  }
+  function clearOverlay(){ setOverlay(''); }
   function doSummon(node){
     const lib = node.kind;
     const a = findAsset(lib, node);
@@ -1933,6 +1949,9 @@ __STORY_DATA__
       advance();
     } else if (lib === 'item'){
       openItem(a, node.hint);
+    } else if (lib === 'overlay'){
+      setOverlay(a && a.src ? a.src : '');
+      advance();
     }
   }
   function openItem(a, hint){
@@ -2046,14 +2065,14 @@ __STORY_DATA__
 // 运行时是独立产物，故此处自带解析，不依赖编辑器代码。
 function parseStoryForExport(src) {
   const RE_PAUSE = /^<停顿(?::\s*(\d+))?>$/;
-  const RE_SUMMON = /^<召唤(背景|物品|音乐|音效):\s*(.*?)\s*>$/;
+  const RE_SUMMON = /^<召唤(背景|物品|音乐|音效|叠层):\s*(.*?)\s*>$/;
   const RE_TITLE = /^<标题:\s*(.*?)\s*>$/;
   const RE_DIVIDER = /^<分割线(?::\s*(.*?)\s*)?>$/;
   const RE_BLOCK = /^<(?:对话块|剧情块):\s*(.*?)\s*>$/;
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
   const RE_OPTION = /<选项:\s*"([^"]*)"\s*(?:,\s*([^>]*?))?\s*>/g;
-  const CN = { '背景': 'background', '物品': 'item', '音乐': 'music', '音效': 'sound' };
+  const CN = { '背景': 'background', '物品': 'item', '叠层': 'overlay', '音乐': 'music', '音效': 'sound' };
   const lines = (src || '').split(/\r?\n/);
   const story = [];
   let buf = [];
@@ -2079,6 +2098,7 @@ function parseStoryForExport(src) {
     else if ((m = t.match(RE_TITLE))) { flush(); story.push({ type: 'title', text: m[1] || '标题' }); }
     else if ((m = t.match(RE_DIVIDER))) { flush(); story.push({ type: 'divider', text: (m[1] || '').trim() }); }
     else if (t === '<停止音乐>') { flush(); story.push({ type: 'stopmusic' }); }
+    else if (t === '<清除叠层>') { flush(); story.push({ type: 'clearoverlay' }); }
     else if ((m = t.match(/^<变量:([\s\S]*)>$/))) {
       flush();
       const ops = [];
@@ -2123,7 +2143,7 @@ function computeStartNode(src, charOffset) {
   const lines = (src || '').split(/\r?\n/);
   const cursorLine = (src.slice(0, charOffset).match(/\n/g) || []).length; // 0-based 行号
   const RE_PAUSE = /^<停顿(?::\s*(\d+))?>$/;
-  const RE_SUMMON = /^<召唤(背景|物品|音乐|音效):\s*(.*?)\s*>$/;
+  const RE_SUMMON = /^<召唤(背景|物品|音乐|音效|叠层):\s*(.*?)\s*>$/;
   const RE_TITLE = /^<标题:\s*(.*?)\s*>$/;
   const RE_DIVIDER = /^<分割线(?::\s*(.*?)\s*)?>$/;
   const RE_BLOCK = /^<(?:对话块|剧情块):\s*(.*?)\s*>$/;
@@ -2139,7 +2159,7 @@ function computeStartNode(src, charOffset) {
     if (t === '') { flush(); continue; }           // 空行结束文本缓冲
     const isCmd =
       RE_PAUSE.test(t) || RE_SUMMON.test(t) || RE_TITLE.test(t) || RE_DIVIDER.test(t) ||
-      t === '<停止音乐>' || RE_BLOCK.test(t) || RE_RETURN.test(t) || RE_RETURN_RECHOOSE.test(t) ||
+      t === '<停止音乐>' || t === '<清除叠层>' || RE_BLOCK.test(t) || RE_RETURN.test(t) || RE_RETURN_RECHOOSE.test(t) ||
       t.indexOf('<选项:') >= 0 || t.indexOf('<变量:') === 0;
     if (isCmd) { flush(); nodeStartLines.push(i); }
     else { if (bufStart == null) bufStart = i; }
@@ -2158,7 +2178,7 @@ function computeStartNode(src, charOffset) {
 // inline=false：图片/音频外置为相对路径文件（标准结构 zip，方便后期修改）；GLB 仍内联（iframe 无法引用本地文件）。
 async function collectRuntimeData(inline) {
   const meta = window.Storage.loadMeta() || {};
-  const assets = { background: {}, item: {}, music: {}, sound: {} };
+  const assets = { background: {}, item: {}, overlay: {}, music: {}, sound: {} };
   const files = []; // [{ path, uint8 }]
 
   function extFromDataUrl(d) {
@@ -2320,12 +2340,13 @@ const README_TEXT = [
   '',
   'index.html    —— 播放成品（双击打开即可运行）。',
   'story.js      —— 剧情脚本（window.STORY_DATA），用记事本即可编辑文字、BBCode。',
-  'assets/       —— 背景图(bg)、音乐(music)、音效(sound)、字体(fonts) 的文件，可替换后刷新页面生效。',
+  'assets/       —— 背景图(bg)、叠层(overlay)、音乐(music)、音效(sound)、字体(fonts) 的文件，可替换后刷新页面生效。',
   '               物品(GLB) 内嵌在 story.js 中，如需替换请在「剧情编辑器」重新导入场景包。',
   '',
   '说明：',
   '  - 剧情是纯文本：一行普通文字 = 一句剧情；整行以指令开头即触发：',
-  '      <召唤背景:名称>  <召唤物品:名称>  <召唤音乐:名称>  <召唤音效:名称>',
+  '      <召唤背景:名称>  <召唤物品:名称>  <召唤音乐:名称>  <召唤音效:名称>  <召唤叠层:名称>',
+  '      <清除叠层>（移除当前叠层角色，回到纯背景）',
   '      [停顿]          （点一下继续）   [停顿:2000]（停顿 2 秒自动继续）',
   '  - 文字支持 BBCode：[b][i][u][s][color=#ff0000][size=24][center][br]',
   '  - 音乐自动互斥：召唤新音乐时上一首在 3 秒内慢慢淡出；音效互不干扰，可叠加播放。',

@@ -3,7 +3,7 @@
 // 这样即使素材很大也不会撑爆 localStorage 的 ~5MB 上限。
 // 项目隔离：每个项目拥有独立命名空间（IndexedDB key 前缀 + localStorage key 后缀），互不可见。
 
-const LIBS = ['background', 'item', 'music', 'sound'];
+const LIBS = ['background', 'item', 'overlay', 'music', 'sound'];
 
 // 项目注册表 / 当前项目
 const LS_PROJECTS = 'story-editor:projects';

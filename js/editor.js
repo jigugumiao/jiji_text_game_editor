@@ -2513,7 +2513,8 @@
     offset = Math.max(0, Math.min(offset, ta.value.length));
     const before = ta.value.slice(0, offset);
     const after = ta.value.slice(offset);
-    const padBefore = (before && !before.endsWith('\n')) ? '\n' : '';
+    // 拖剧情块 = 在当前光标处插入选项指令，不自动换行（选项支持单行多指令，如 <选项:"A",块A><选项:"B",块B>）
+    const padBefore = '';
     const placeholder = '文字';
     const insertStr = '<选项:"' + placeholder + '",' + name + '>';
     const fullInsert = padBefore + insertStr;

@@ -449,9 +449,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   }
   #options-bar .opt-btn:hover { background: rgba(58,134,255,0.34); border-color: #5a9bff; transform: translateY(-2px); }
   #options-bar .opt-btn:active { transform: translateY(0); }
-  /* 条件不满足的选项：置灰不可点（仍显示，让玩家知道有此路但当前走不了） */
-  #options-bar .opt-btn.opt-disabled { opacity: 0.4; cursor: not-allowed; filter: grayscale(0.6); border-color: rgba(120,140,170,0.3); background: rgba(28,38,58,0.6); }
-  #options-bar .opt-btn.opt-disabled:hover { background: rgba(28,38,58,0.6); border-color: rgba(120,140,170,0.3); transform: none; }
+  /* 条件不满足的选项已在 presentOptions 直接隐藏（不渲染），不再需要置灰样式 */
   @keyframes optIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
   #item-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); backdrop-filter: blur(2px); z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.3s ease-out; }
   #item-overlay.open { opacity: 1; pointer-events: auto; }
@@ -1719,7 +1717,7 @@ __STORY_DATA__
     else if (stack.length){ doReturn(); }   // 没有历史选项则退化为普通跳回
     else { finish(); }
   }
-  // 选项 UI：底部排列按钮（最多 6 个）
+  // 选项 UI：底部排列按钮（最多 6 个）；条件不满足的选项直接隐藏（不渲染），仅保留满足条件的
   function presentOptions(n){
     awaitingClick = false; hint.style.display = 'none';
     hideOptions();
@@ -1728,33 +1726,28 @@ __STORY_DATA__
     if (!bar) return;
     const opts = (n.options || []).slice(0, 6);
     let anyEnabled = false;
+    let shown = 0;
     opts.forEach(function(opt, ci){
+      // 条件不满足：直接隐藏该选项（不渲染按钮），对玩家完全不可见
+      if (opt.condition && !evalCond(opt.condition)) return;
+      anyEnabled = true;
       const btn = document.createElement('button');
       btn.className = 'opt-btn';
-      btn.textContent = opt.text || ('选项' + (ci + 1));
-      btn.style.animationDelay = (ci * 0.05) + 's';
-      let enabled = true;
-      if (opt.condition && !evalCond(opt.condition)) {
-        enabled = false;
-        btn.classList.add('opt-disabled');
-        btn.title = '条件未满足：' + opt.condition;
-      }
-      if (enabled) {
-        anyEnabled = true;
-        btn.addEventListener('click', function(e){
-          e.stopPropagation();   // 同「开始游戏」按钮：阻止冒泡到 #stage 的全局点击监听，否则本次点击会被误判为「跳过新块第一段打字」
-          userScrolledUp = false; // 选项点击同样强制滚到底
-          hideOptions();
-          recordedChoices.push(ci);
-          // galgame 模式：点击选项即视为进入新场景/新段，标记段已结束；
-          // 下一次 typeText / showDivider 登场前 beginSegmentIfNeeded() 会清空旧文字，进入新对话框
-          markSegmentEnd();
-          if (opt.block){ callBlock(opt.block); execCur(); }
-          else { curIdx++; execCur(); }
-        });
-      } else {
-        btn.disabled = true;
-      }
+      btn.textContent = opt.text || ('选项' + (shown + 1));
+      btn.style.animationDelay = (shown * 0.05) + 's';
+      shown++;
+      // 注意：ci 是原始选项下标，用于 recordedChoices 存档 / 读档重放还原选择路径
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();   // 同「开始游戏」按钮：阻止冒泡到 #stage 的全局点击监听，否则本次点击会被误判为「跳过新块第一段打字」
+        userScrolledUp = false; // 选项点击同样强制滚到底
+        hideOptions();
+        recordedChoices.push(ci);
+        // galgame 模式：点击选项即视为进入新场景/新段，标记段已结束；
+        // 下一次 typeText / showDivider 登场前 beginSegmentIfNeeded() 会清空旧文字，进入新对话框
+        markSegmentEnd();
+        if (opt.block){ callBlock(opt.block); execCur(); }
+        else { curIdx++; execCur(); }
+      });
       bar.appendChild(btn);
     });
     // 同行所有选项条件都不满足：本行自动跳过，继续推进（避免卡死）

@@ -2249,11 +2249,13 @@
         .then((assets) => { setLibCount(countEl, assets.length, '音效库'); renderAudioCards(list, 'sound', assets); })
         .catch(showError);
     } else if (activeLib === 'dialogueblock') {
-      tools.innerHTML = '<button class="btn" id="t-block-add">＋ 新建剧情块</button>';
+      tools.innerHTML = '<button class="btn" id="t-block-add">＋ 新建剧情块</button>'
+        + '<button class="btn" id="t-block-graph" title="打开剧情分支节点图（自动编译当前剧情块的分支顺序）"><svg class="ico" aria-hidden="true"><use href="#ic-box"/></svg> 分支图</button>';
       tools.querySelector('#t-block-add').onclick = () => {
         const name = window.Storage.addBlock('新对话');
         switchBlock(name);
       };
+      tools.querySelector('#t-block-graph').onclick = () => openBlockGraph();
       const names = window.Storage.listBlockNames();
       setLibCount(countEl, names.length, '剧情块库');
       renderDialogueBlocks(list);
@@ -2485,6 +2487,169 @@
     });
     refreshTodo();   // 素材库每次渲染（即素材发生变动）后，自动刷新右上角待办
   }
+  // ============ 剧情分支节点图（浮动窗口）============
+  let _graphPanel = null;
+  function ensureGraphPanel() {
+    if (_graphPanel) return _graphPanel;
+    const panel = document.createElement('div');
+    panel.id = 'block-graph-panel';
+    panel.className = 'hidden';
+    panel.innerHTML =
+      '<div class="bgp-head">' +
+        '<div class="bgp-title"><svg class="ico" aria-hidden="true"><use href="#ic-box"/></svg> 剧情分支图</div>' +
+        '<div class="bgp-actions">' +
+          '<button id="bgp-refresh" class="bgp-refresh" title="重新编译剧情块、刷新节点"><svg class="ico" aria-hidden="true"><use href="#ic-refresh"/></svg> 刷新</button>' +
+          '<button id="bgp-close" class="bgp-close" title="关闭">✕</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="bgp-body"><div class="bgp-canvas" id="bgp-canvas">' +
+        '<svg id="bgp-edges" class="bgp-edges" xmlns="http://www.w3.org/2000/svg"></svg>' +
+        '<div id="bgp-nodes" class="bgp-nodes"></div>' +
+      '</div></div>' +
+      '<div class="bgp-foot"><span class="bgp-hint">点击节点跳转到该剧情块 · 点击连线上的选项标签定位到对应选项行 · ESC 关闭</span></div>';
+    document.body.appendChild(panel);
+    panel.querySelector('#bgp-close').addEventListener('click', closeGraph);
+    panel.querySelector('#bgp-refresh').addEventListener('click', renderBlockGraph);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && _graphPanel && !_graphPanel.classList.contains('hidden')) closeGraph();
+    });
+    _graphPanel = panel;
+    return panel;
+  }
+  function closeGraph() { if (_graphPanel) _graphPanel.classList.add('hidden'); }
+  function openBlockGraph() { ensureGraphPanel(); _graphPanel.classList.remove('hidden'); renderBlockGraph(); }
+
+  // 估算标签像素宽度（CJK ≈13px，ASCII ≈7px）
+  function _labelWidth(s) {
+    let w = 0;
+    for (const ch of (s || '')) w += (ch.charCodeAt(0) > 255 ? 13 : 7);
+    return Math.ceil(w) + 18;
+  }
+
+  function renderBlockGraph() {
+    const panel = ensureGraphPanel();
+    const canvas = panel.querySelector('#bgp-canvas');
+    const nodesEl = panel.querySelector('#bgp-nodes');
+    const edgesSvg = panel.querySelector('#bgp-edges');
+    const names = window.Storage.listBlockNames();
+    if (!names.length) {
+      canvas.style.width = canvas.style.height = '100%';
+      nodesEl.innerHTML = '<div style="padding:40px;color:var(--text-3)">还没有剧情块。</div>';
+      edgesSvg.innerHTML = '';
+      return;
+    }
+    const NODE_W = 172, NODE_H = 58, GAP_X = 92, GAP_Y = 26;
+    // 1) 编译所有边（选项 + 剧情块跳转），记录选项在原文的绝对字符偏移
+    const edges = [];
+    names.forEach((name) => {
+      const raw = window.Storage.getBlockText(name) || '';
+      RE_OPTION.lastIndex = 0;
+      let om;
+      while ((om = RE_OPTION.exec(raw)) !== null) {
+        const target = (om[2] && om[2].trim()) || null;
+        edges.push({ from: name, to: target, label: om[1] || '选项', charIndex: om.index, kind: 'option' });
+      }
+      const lines = raw.split(/\r?\n/);
+      lines.forEach((line) => {
+        const bm = line.trim().match(RE_BLOCK);
+        if (bm) {
+          const target = bm[1].trim();
+          edges.push({ from: name, to: target, label: '进入剧情块', charIndex: raw.indexOf(line), kind: 'block' });
+        }
+      });
+    });
+    // 2) 自「主剧情」做 BFS 分层；不可达块放到最右侧
+    const adj = {};
+    names.forEach((n) => { adj[n] = []; });
+    edges.forEach((e) => { if (e.to && names.includes(e.to)) adj[e.from].push(e.to); });
+    const layer = {};
+    if (names.includes(MAIN_BLOCK)) {
+      layer[MAIN_BLOCK] = 0;
+      const q = [MAIN_BLOCK];
+      while (q.length) {
+        const c = q.shift();
+        (adj[c] || []).forEach((t) => { if (layer[t] === undefined) { layer[t] = layer[c] + 1; q.push(t); } });
+      }
+    }
+    let maxL = 0;
+    Object.values(layer).forEach((v) => { if (v > maxL) maxL = v; });
+    names.forEach((n) => { if (layer[n] === undefined) layer[n] = maxL + 1; });
+    // 3) 按层分配坐标
+    const byLayer = {};
+    names.forEach((n) => { (byLayer[layer[n]] = byLayer[layer[n]] || []).push(n); });
+    const pos = {};
+    Object.keys(byLayer).map(Number).sort((a, b) => a - b).forEach((L) => {
+      byLayer[L].forEach((n, i) => { pos[n] = { x: L * (NODE_W + GAP_X) + 24, y: i * (NODE_H + GAP_Y) + 24 }; });
+    });
+    let maxX = 0, maxY = 0;
+    names.forEach((n) => { if (pos[n].x > maxX) maxX = pos[n].x; if (pos[n].y > maxY) maxY = pos[n].y; });
+    const W = maxX + NODE_W + 40, H = maxY + NODE_H + 40;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    edgesSvg.setAttribute('width', W); edgesSvg.setAttribute('height', H);
+    edgesSvg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    // 4) 渲染节点
+    nodesEl.innerHTML = '';
+    names.forEach((name) => {
+      const p = pos[name];
+      const isMain = name === MAIN_BLOCK;
+      const node = document.createElement('div');
+      node.className = 'bgp-node' + (isMain ? ' bgp-node-main' : '');
+      node.style.left = p.x + 'px'; node.style.top = p.y + 'px';
+      node.style.width = NODE_W + 'px'; node.style.height = NODE_H + 'px';
+      node.innerHTML = '<div class="bgp-node-name">' + (isMain ? '主剧情' : escapeHtml(name)) + '</div>';
+      node.title = isMain ? '主剧情（默认起点）' : name;
+      node.addEventListener('click', () => { window.StoryEditorApi.setActiveBlock(name); closeGraph(); });
+      nodesEl.appendChild(node);
+    });
+    // 5) 渲染连线（带箭头 marker）；平行边错开避免重叠
+    const pairCount = {};
+    edges.forEach((e) => { if (e.to && names.includes(e.to)) { const k = e.from + '\u0001' + e.to; pairCount[k] = (pairCount[k] || 0) + 1; } });
+    const pairIdx = {};
+    let svg = '<defs>' +
+      '<marker id="bgp-arrow-opt" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="var(--violet)"/></marker>' +
+      '<marker id="bgp-arrow-block" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="var(--amber)"/></marker>' +
+      '</defs>';
+    edges.forEach((e) => {
+      if (!e.to || !names.includes(e.to)) return; // 无目标的选项仅推进，不画连线
+      const a = pos[e.from], b = pos[e.to];
+      const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2;
+      const x2 = b.x, y2 = b.y + NODE_H / 2;
+      const k = e.from + '\u0001' + e.to;
+      const idx = (pairIdx[k] = (pairIdx[k] || 0));
+      pairIdx[k]++;
+      const total = pairCount[k];
+      const off = (idx - (total - 1) / 2) * 40;
+      const mx = (x1 + x2) / 2;
+      const c1x = mx, c1y = y1 + off, c2x = mx, c2y = y2 + off;
+      const isOpt = e.kind === 'option';
+      const stroke = isOpt ? 'var(--violet)' : 'var(--amber)';
+      const marker = isOpt ? 'url(#bgp-arrow-opt)' : 'url(#bgp-arrow-block)';
+      svg += '<path d="M' + x1 + ',' + y1 + ' C' + c1x + ',' + c1y + ' ' + c2x + ',' + c2y + ' ' + x2 + ',' + y2 +
+        '" fill="none" stroke="' + stroke + '" stroke-width="2" marker-end="' + marker + '" opacity="0.9"/>';
+      const lw = _labelWidth(e.label);
+      const lx = mx, ly = (y1 + y2) / 2 + off;
+      const fromAttr = encodeURIComponent(e.from);
+      svg += '<g class="bgp-edge-label" data-from="' + fromAttr + '" data-char="' + e.charIndex + '" data-kind="' + e.kind + '">' +
+        '<rect x="' + (lx - lw / 2) + '" y="' + (ly - 11) + '" width="' + lw + '" height="20" rx="9" class="bgp-edge-rect ' + e.kind + '"/>' +
+        '<text x="' + lx + '" y="' + (ly + 4) + '" text-anchor="middle" class="bgp-edge-text">' + escapeHtml(e.label) + '</text></g>';
+    });
+    edgesSvg.innerHTML = svg;
+    edgesSvg.querySelectorAll('.bgp-edge-label').forEach((g) => {
+      g.addEventListener('click', () => {
+        const from = decodeURIComponent(g.getAttribute('data-from'));
+        const charIndex = parseInt(g.getAttribute('data-char'), 10);
+        window.StoryEditorApi.setActiveBlock(from);
+        const ta = document.getElementById('story-text');
+        if (ta) {
+          const p = Math.max(0, Math.min(charIndex, ta.value.length));
+          ta.focus();
+          ta.setSelectionRange(p, p + 1);
+        }
+        closeGraph();
+      });
+    });
+  }
+
   // 切换到某个剧情块编辑（先提交当前块文本）
   function switchBlock(name) {
     if (name === activeBlock) { renderLibrary(); updateBlockChip(); return; }

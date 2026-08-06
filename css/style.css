@@ -1559,3 +1559,102 @@ body.dark #fta-send.fta-stop:hover { background: #c93c3c; border-color: #c93c3c;
 body.dark .fta-messages { background: var(--bg-sunken); }
 .fta-box.hidden, #fulltext-assistant.hidden { display: none; }
 
+/* ============================================================
+   剧情分支节点图（浮动窗口）
+   ============================================================ */
+#block-graph-panel {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(94vw, 1080px);
+  height: min(88vh, 760px);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: 0 18px 60px rgba(31,27,22,.22);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#block-graph-panel.hidden { display: none; }
+.bgp-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  flex: 0 0 auto;
+}
+.bgp-title {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 600; font-size: 15px; color: var(--text);
+}
+.bgp-title .ico { width: 18px; height: 18px; color: var(--accent); }
+.bgp-actions { display: flex; align-items: center; gap: 8px; }
+.bgp-refresh {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border: 1px solid var(--border-strong); border-radius: 8px;
+  background: var(--bg); color: var(--text-2); cursor: pointer; font-size: 13px;
+}
+.bgp-refresh:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.bgp-refresh .ico { width: 14px; height: 14px; }
+.bgp-close {
+  width: 30px; height: 30px; border: none; border-radius: 8px;
+  background: transparent; color: var(--text-3); font-size: 18px; cursor: pointer;
+  line-height: 1;
+}
+.bgp-close:hover { background: var(--accent-soft); color: var(--accent); }
+.bgp-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  position: relative;
+  background-color: var(--bg-sunken);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.bgp-canvas { position: relative; }
+.bgp-edges { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.bgp-nodes { position: absolute; top: 0; left: 0; }
+.bgp-node {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex; align-items: center;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(31,27,22,.08);
+  cursor: pointer;
+  font-size: 13px; color: var(--text);
+  transition: border-color .12s, box-shadow .12s, transform .12s;
+  overflow: hidden;
+}
+.bgp-node:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 14px var(--accent-soft-2);
+  transform: translateY(-1px);
+  z-index: 5;
+}
+.bgp-node-main {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+.bgp-node-name {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
+.bgp-edge-label { pointer-events: all; cursor: pointer; }
+.bgp-edge-label:hover .bgp-edge-rect { filter: brightness(.97); stroke-width: 1.6; }
+.bgp-edge-rect.option { fill: var(--violet-soft); stroke: var(--violet-border); }
+.bgp-edge-rect.block { fill: var(--amber-soft); stroke: var(--amber); }
+.bgp-edge-text { font-size: 11px; fill: var(--text); pointer-events: none; user-select: none; }
+.bgp-edge-label:hover .bgp-edge-text { fill: var(--accent); }
+.bgp-foot {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--text-3);
+  background: var(--bg-soft);
+}
+

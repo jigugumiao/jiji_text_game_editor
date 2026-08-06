@@ -380,6 +380,8 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
     box-shadow: 0 -10px 34px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     scroll-behavior: auto;
+    /* 永不滚动上移：超长段落由 fitGalgameContent 纵向缩放字号适配，而不是滚上去 */
+    overflow: hidden;
   }
   /* 字号由运行时按框高动态计算（目标 3 行，见 fitGalgameFont），CSS 变量兜底 20px */
   body.galgame .message { width: 92%; max-width: 900px; margin: 0 auto 10px; padding: 0 26px; font-size: var(--gal-font-size, 20px); }
@@ -1898,6 +1900,7 @@ __STORY_DATA__
       d.className = 'message';
       d.innerHTML = html;
       msgList.appendChild(d);
+      fitGalgameContent();
     } else if (n.type === 'divider'){
       // 历史面板保存格式（与 showDivider 一致：hp-item 包裹）
       let divHtml = '<div class="hp-item divider">';
@@ -1911,6 +1914,7 @@ __STORY_DATA__
       if (n.text){ const t=document.createElement('span'); t.className='divider-text'; t.innerHTML=bbcodeToHtml(divText); const l1=document.createElement('span'); l1.className='divider-line'; const l2=document.createElement('span'); l2.className='divider-line'; d.appendChild(l1); d.appendChild(t); d.appendChild(l2); }
       else { const l=document.createElement('span'); l.className='divider-line'; d.appendChild(l); }
       msgList.appendChild(d);
+      fitGalgameContent();
       markSegmentEnd(); // 分割线收尾，下一段换屏
     } else if (n.type === 'pause'){
       // 重放阶段按段边界处理：停顿本身不呈现，但标记段已结束，下一条文字清屏
@@ -1955,7 +1959,7 @@ __STORY_DATA__
       revealed++;
       msg.innerHTML = revealHtml(currentHtml, revealed);
       scrollToBottom();
-      if (revealed >= fullLen){ clearInterval(typingTimer); typing = false; msg.classList.remove('typing'); currentMsg = null; advance(); }
+      if (revealed >= fullLen){ clearInterval(typingTimer); typing = false; msg.classList.remove('typing'); fitGalgameContent(); currentMsg = null; advance(); }
     }, speed);
   }
   function doPause(ms){
@@ -2029,6 +2033,7 @@ __STORY_DATA__
       d.appendChild(l);
     }
     msgList.appendChild(d);
+    fitGalgameContent();
     scrollToBottom();
     scheduleContrast();
     awaitingClick = true; hint.style.display = 'block';
@@ -2039,7 +2044,7 @@ __STORY_DATA__
     if (titleOverlay.classList.contains('show')) fitTitle();
     if (_resizeScheduled) return;
     _resizeScheduled = true;
-    requestAnimationFrame(function(){ _resizeScheduled = false; _rebuildBgSample(); fitGalgameFont(); });
+    requestAnimationFrame(function(){ _resizeScheduled = false; _rebuildBgSample(); fitGalgameFont(); fitGalgameContent(); });
   });
   // galgame 模式字号自适应：以「对话框能放 3 行文字」为标准，按文本框实际高度计算字号。
   // 公式：可用高度 = 框高 - 上下 padding；单行高 = fontSize * 1.6(行高)；3 行 + 2 处行间距(各10px)。
@@ -2054,6 +2059,28 @@ __STORY_DATA__
     msgList.style.setProperty('--gal-font-size', size + 'px');
   }
   fitGalgameFont();
+  // galgame 模式纵向自适应（防上滚）：单段文字行数超过框高（约 3 行）时，按比例缩小该段字号，
+  // 让整段完整落入文本框内，绝不滚动上移。与 fitGalgameFont（按 3 行定基础字号）互补：
+  // 基础字号保证正常段落恰好 3 行；此函数只处理超长段落，缩到恰好能放下为止。
+  function fitGalgameContent(){
+    if (!GALGAME || !msgList) return;
+    const msg = currentMsg || msgList.lastElementChild;
+    if (!msg || !(msg.classList && msg.classList.contains('message'))) return;
+    // 先回到基础字号再测量自然高度（防止上一次缩放残留影响测量）
+    const baseVar = msgList.style.getPropertyValue('--gal-font-size') || getComputedStyle(msgList).getPropertyValue('--gal-font-size') || '20px';
+    msg.style.fontSize = baseVar;
+    const cs = getComputedStyle(msgList);
+    const pt = parseFloat(cs.paddingTop) || 0;
+    const pb = parseFloat(cs.paddingBottom) || 0;
+    const avail = Math.max(0, msgList.clientHeight - pt - pb);
+    const contentH = msg.offsetHeight;
+    if (contentH > avail){
+      const basePx = parseFloat(baseVar) || 20;
+      const newSize = Math.max(9, basePx * (avail / contentH));
+      msg.style.fontSize = newSize + 'px';
+    }
+    msgList.scrollTop = 0; // 保险：galgame 下永不滚动上移
+  }
   function findAsset(lib, node){
     const m = DATA.assets[lib] || {};
     if (node.id && m[node.id]) return m[node.id];

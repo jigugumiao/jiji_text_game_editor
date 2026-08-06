@@ -551,6 +551,22 @@
   }
   function cardItems(card) {
     const ds = card.dataset;
+    // 剧情块卡片：data-kind='block'，块名在 data-block-name；走专属菜单（不再套用素材卡的 undefined 分支）
+    if (ds.kind === 'block') {
+      const bname = ds.blockName;
+      const isMain = bname === MAIN_BLOCK;
+      const jumpCmd = '<剧情块:' + bname + '>';
+      const items = [
+        { label: '插入「跳转 ' + (isMain ? '主剧情' : bname) + '」到光标', icon: 'ic-corner-up-left', action: function () { insertBlockJump(bname); } },
+        { label: '复制跳转指令', icon: 'ic-copy', action: function () { ctxCopyText(jumpCmd); toast('已复制：' + jumpCmd); } },
+      ];
+      if (!isMain) {
+        items.push({ separator: true });
+        items.push({ label: '重命名剧情块', icon: 'ic-pencil', action: function () { handleRenameBlock(bname); } });
+        items.push({ label: '删除剧情块', icon: 'ic-trash', danger: true, action: function () { handleDeleteBlock(bname); } });
+      }
+      return items;
+    }
     const summonText = function () {
       const wasRO = storyText.readOnly; storyText.readOnly = false;
       try { const s = summonTextForCard(ds); insertAtCursor(s); toast('已插入：' + s); }
@@ -2451,6 +2467,8 @@
       const isMain = name === MAIN_BLOCK;
       const card = document.createElement('div');
       card.className = 'asset-card block-card' + (isMain ? ' block-main' : '') + (name === activeBlock ? ' block-active' : '');
+      card.dataset.kind = 'block';
+      card.dataset.blockName = name;
       card.draggable = true;
       const meta = document.createElement('div'); meta.className = 'asset-meta';
       const nm = document.createElement('div'); nm.className = 'asset-name';

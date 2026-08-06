@@ -2735,15 +2735,24 @@
     if (input == null) return;
     const newName = input.trim();
     if (!newName || newName === name) return;
+    const oldName = name;
     const finalName = window.Storage.renameBlock(name, newName);
-    if (activeBlock === name) activeBlock = finalName;
-    text = window.Storage.getBlockText(activeBlock) || '';
-    storyText.value = text;
+    // 同步更新编辑器文本框里对该块的引用（<剧情块:旧名> / <选项:"文字",旧名>），
+    // 与素材重命名一致，防止改名后选项 / 跳转失效（尤其当前正在查看引用它的其它块时）。
+    const escOld = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const ta = storyText;
+    const newVal = ta.value
+      .replace(new RegExp('<(?:对话块|剧情块):\\s*' + escOld + '\\s*>', 'g'), '<剧情块:' + finalName + '>')
+      .replace(new RegExp('<选项:(\\s*"[^"]*"\\s*,\\s*)' + escOld + '(\\s*)>', 'g'), '<选项:$1' + finalName + '$2>');
+    const changed = newVal !== ta.value;
+    if (changed) ta.value = newVal;
+    if (activeBlock === oldName) activeBlock = finalName;
+    commitEdit(); // 写回文本框（含可能更新的引用），保持内存与存储一致
     updateWordCount();
     updateBlockChip();
     renderLibrary();
     refreshTodo();
-    toast('已重命名剧情块');
+    toast('已重命名剧情块' + (changed ? '，并同步更新文本中的跳转 / 选项引用' : ''));
   }
   async function handleDeleteBlock(name) {
     if (!confirm('确定删除剧情块「' + name + '」？\n注意：其它块里指向它的 <剧情块:名称> / <选项:...,名称> 会变成无效引用。')) return;

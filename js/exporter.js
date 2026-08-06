@@ -2050,7 +2050,7 @@ __STORY_DATA__
     const pb = parseFloat(cs.paddingBottom) || 0;
     const avail = Math.max(0, msgList.clientHeight - pt - pb);
     let size = (avail - 20) / (3 * 1.6); // 留 20px 给两条消息间 margin
-    size = Math.round(Math.max(16, Math.min(44, size)));
+    size = Math.round(Math.max(11, Math.min(44, size * 0.7))); // 用户要求：galgame 文字改为当前大小的 70%
     msgList.style.setProperty('--gal-font-size', size + 'px');
   }
   fitGalgameFont();

@@ -6503,6 +6503,7 @@ self.onmessage = function (e) {
     // 剧情块 API
     getActiveBlock: () => activeBlock,
     getMode: () => currentProjectMode, // 'article' | 'game'
+    getPlayMode: () => (globalSettings.playMode === 'galgame' ? 'galgame' : 'longform'), // 'longform' | 'galgame'
     setActiveBlock: (n) => switchBlock(n),
     listBlockNames: () => window.Storage.listBlockNames(),
     getBlockText: (n) => window.Storage.getBlockText(n),

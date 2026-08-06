@@ -5079,15 +5079,8 @@ self.onmessage = function (e) {
   }
 
   // ============ 预览 ============
-  let _previewFromCursor = null; // { block, offset } 勾选「从光标开始」时记录起点
   async function openPreview() {
     saveNow();
-    // 记录「从光标开始」起点：当前激活块 + 光标字符偏移
-    const chk = document.getElementById('chk-preview-cursor');
-    if (chk && chk.checked) _previewFromCursor = { block: activeBlock, offset: storyText.selectionStart };
-    else _previewFromCursor = null;
-    // 勾选「从光标开始」时，用户明确要直接试玩 → 跳过编译检查（不再弹红字条、不再动光标），直接开始
-    if (_previewFromCursor) { reallyOpenPreview(); return; }
     const issues = await validateStory();
     if (issues.length) { showCompileBar(issues, reallyOpenPreview); return; }
     reallyOpenPreview();
@@ -5098,7 +5091,7 @@ self.onmessage = function (e) {
     const frame = $('#preview-frame');
     frame.srcdoc = '<div style="color:#9aa3b2;padding:40px;font-family:sans-serif">生成预览中…</div>';
     try {
-      const html = await window.Exporter.buildPreviewHTML(_previewFromCursor);
+      const html = await window.Exporter.buildPreviewHTML(null);
       frame.srcdoc = html;
     } catch (e) {
       frame.srcdoc = '<div style="color:#ff6677;padding:40px">预览生成失败：' + (e.message || e) + '</div>';

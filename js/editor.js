@@ -28,7 +28,7 @@
   // playMode: 'longform' 长文模式（默认，文字累积成长卷）| 'galgame' galgame模式（底部黑色文本框，逐段显示）
   let globalSettings = { gameName: '', subtitle: '', authorId: '', icon: '', font: null, openingBg: '', openingMusic: '', textContrast: 'auto', playMode: 'longform', watermark: { text: '', pos: '右下', url: '', opacity: 40 }, appearance: null, toy: null };
   // 外观默认设置（设置页「外观」标签可覆盖）。字体走系统默认字体栈，不读本地字体文件。
-  const DEFAULT_APPEARANCE = { fontSize: 20, titleFont: '', bodyFont: '', galBoxColor: 'rgba(0,0,0,0.55)' };
+  const DEFAULT_APPEARANCE = { fontSize: 20, titleFont: '', bodyFont: '', dividerFont: '', galBoxColor: 'rgba(0,0,0,0.55)' };
   function getAppearance() { return Object.assign({}, DEFAULT_APPEARANCE, globalSettings.appearance || {}); }
   function saveAppearance(patch) { globalSettings.appearance = Object.assign({}, getAppearance(), patch); saveGlobal(); }
   // 把 meta 里的创作设定统一同步进 globalSettings（开场背景/音乐/图标等所有字段，避免 openProject 漏字段导致刷新后丢失）
@@ -557,6 +557,20 @@
     if (target.closest && target.closest('#lib-panel')) return libraryItems();
     return generalItems();
   }
+  // 复制剧情块：取源块文本，新建同名文本的新块。addBlock 自动去重且永不返回主剧情名（__MAIN__），
+  // 因此即便从「主剧情」拷贝，新块也只是普通块——主剧情始终唯一，不会冒出第二个主剧情。
+  function copyStoryBlock(srcName) {
+    try {
+      const srcText = window.Storage.getBlockText(srcName) || '';
+      const isMain = srcName === MAIN_BLOCK;
+      const suggest = isMain ? '主剧情副本' : (srcName + ' 副本');
+      const newName = window.Storage.addBlock(suggest);
+      window.Storage.setBlockText(newName, srcText);
+      renderLibrary();
+      if (typeof renderBlockGraph === 'function') { try { renderBlockGraph(); } catch (e) {} }
+      toast('已复制剧情块：' + (newName === MAIN_BLOCK ? '主剧情' : newName) + (isMain ? '（新块，非主剧情）' : ''));
+    } catch (e) { toast('复制失败：' + (e && e.message ? e.message : e)); }
+  }
   function cardItems(card) {
     const ds = card.dataset;
     // 剧情块卡片：data-kind='block'，块名在 data-block-name；走专属菜单（不再套用素材卡的 undefined 分支）
@@ -567,6 +581,8 @@
       const items = [
         { label: '插入「跳转 ' + (isMain ? '主剧情' : bname) + '」到光标', icon: 'ic-corner-up-left', action: function () { insertBlockJump(bname); } },
         { label: '复制跳转指令', icon: 'ic-copy', action: function () { ctxCopyText(jumpCmd); toast('已复制：' + jumpCmd); } },
+        { separator: true },
+        { label: '复制剧情块', icon: 'ic-copy', action: function () { copyStoryBlock(bname); } },
       ];
       if (!isMain) {
         items.push({ separator: true });
@@ -3111,15 +3127,17 @@
     ];
     const optHtml = FONT_PRESETS.map(o => '<option value="' + escapeHtml(o[0]) + '"' + (ap.bodyFont === o[0] ? ' selected' : '') + '>' + escapeHtml(o[1]) + '</option>').join('');
     const optTitle = FONT_PRESETS.map(o => '<option value="' + escapeHtml(o[0]) + '"' + (ap.titleFont === o[0] ? ' selected' : '') + '>' + escapeHtml(o[1]) + '</option>').join('');
+    const optDivider = FONT_PRESETS.map(o => '<option value="' + escapeHtml(o[0]) + '"' + (ap.dividerFont === o[0] ? ' selected' : '') + '>' + escapeHtml(o[1]) + '</option>').join('');
     box.innerHTML =
       '<div class="ai-section">' +
-        '<h4><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>游戏整体外观 <span class="ai-sub-tip">对所有剧情块统一覆盖</span></h4>' +
-        '<div class="ai-hint">这里设置游戏的「默认外观」，会覆盖到试玩与导出的成品。正文字体使用系统默认字体（不读取本地字体文件）。</div>' +
-        '<div class="field"><label>正文字体大小 <span id="ap-fs-val">' + ap.fontSize + 'px</span></label>' +
+        '<h4><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>游戏整体外观 <span class="ai-sub-tip">统一覆盖全部剧情块</span></h4>' +
+        '<div class="ai-hint">设置默认外观，覆盖试玩与导出成品。</div>' +
+        '<div class="field"><label>正文字号 <span id="ap-fs-val">' + ap.fontSize + 'px</span></label>' +
           '<input type="range" id="ap-fontsize" min="14" max="32" step="1" value="' + ap.fontSize + '"></div>' +
-        '<div class="field"><label>标题字体</label><select id="ap-titlefont">' + optTitle + '</select></div>' +
+        '<div class="field"><label>浮动标题字体</label><select id="ap-titlefont">' + optTitle + '</select></div>' +
         '<div class="field"><label>正文字体</label><select id="ap-bodyfont">' + optHtml + '</select></div>' +
-        '<div class="field"><label>Galgame 模式文字底框颜色</label>' +
+        '<div class="field"><label>分割线字体</label><select id="ap-dividerfont">' + optDivider + '</select></div>' +
+        '<div class="field"><label>Galgame 底框色</label>' +
           '<div style="display:flex;align-items:center;gap:10px">' +
             '<input type="color" id="ap-galbox" value="' + toHexColor(ap.galBoxColor) + '" style="width:42px;height:30px;border:0;background:none;cursor:pointer;padding:0">' +
             '<input type="text" id="ap-galbox-text" value="' + escapeHtml(ap.galBoxColor) + '" style="flex:1;min-width:0" placeholder="rgba(0,0,0,0.55)">' +
@@ -3127,26 +3145,36 @@
       '</div>' +
       '<div class="ai-section">' +
         '<h4><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>实时预览</h4>' +
-        '<div class="ai-hint">下方分别为「长文模式」与「Galgame 模式」预览，改动上方设置会立即反映。</div>' +
-        '<div class="field"><label>长文模式预览</label><div class="ap-preview ap-preview-long">' +
-          '<div class="ap-msg" id="ap-prev-long">这是一段长文模式的示例文字，用来预览正文字体与大小的整体效果。光标会停在句尾等待点击继续。</div>' +
-        '</div></div>' +
-        '<div class="field"><label>Galgame 模式预览</label><div class="ap-preview ap-preview-gal">' +
-          '<div class="ap-galbox" id="ap-prev-gal"><div class="ap-msg" id="ap-prev-gal-msg">这是 Galgame 模式底部对话框的示例文字，底框颜色可在上方调整。</div></div>' +
-        '</div></div>' +
+        '<div class="ai-hint">左长文 / 右 Galgame，改设置即时反映。</div>' +
+        '<div class="ap-preview-row">' +
+          '<div class="ap-preview ap-preview-long">' +
+            '<div class="ap-prev-title" id="ap-prev-title">第一章 · 启程</div>' +
+            '<div class="ap-msg" id="ap-prev-long">这是长文模式的示例正文，用来预览正文字体与字号的整体观感。</div>' +
+            '<div class="ap-prev-divider"><span class="divider-line"></span><span class="divider-text" id="ap-prev-divider">分隔小标题</span><span class="divider-line"></span></div>' +
+          '</div>' +
+          '<div class="ap-preview ap-preview-gal">' +
+            '<div class="ap-galbox" id="ap-prev-gal"><div class="ap-msg" id="ap-prev-gal-msg">这是 Galgame 底部对话框的示例文字，底框颜色可在上方调整。</div></div>' +
+          '</div>' +
+        '</div>' +
       '</div>';
     function applyPreview() {
       const a = getAppearance();
+      const fs = (a.fontSize || 20) + 'px';
+      const title = $('#ap-prev-title');
+      if (title) title.style.fontFamily = a.titleFont || 'inherit';
       const longMsg = $('#ap-prev-long');
-      if (longMsg) { longMsg.style.fontFamily = a.bodyFont || 'inherit'; longMsg.style.fontSize = a.fontSize + 'px'; }
+      if (longMsg) { longMsg.style.fontFamily = a.bodyFont || 'inherit'; longMsg.style.fontSize = fs; }
+      const div = $('#ap-prev-divider');
+      if (div) div.style.fontFamily = a.dividerFont || 'inherit';
       const galBox = $('#ap-prev-gal');
       const galMsg = $('#ap-prev-gal-msg');
       if (galBox) galBox.style.background = a.galBoxColor;
-      if (galMsg) { galMsg.style.fontFamily = a.bodyFont || 'inherit'; galMsg.style.fontSize = a.fontSize + 'px'; }
+      if (galMsg) { galMsg.style.fontFamily = a.bodyFont || 'inherit'; galMsg.style.fontSize = fs; }
     }
     box.querySelector('#ap-fontsize').addEventListener('input', function() { $('#ap-fs-val').textContent = this.value + 'px'; saveAppearance({ fontSize: parseInt(this.value, 10) }); applyPreview(); });
-    box.querySelector('#ap-titlefont').addEventListener('change', function() { saveAppearance({ titleFont: this.value }); });
+    box.querySelector('#ap-titlefont').addEventListener('change', function() { saveAppearance({ titleFont: this.value }); applyPreview(); });
     box.querySelector('#ap-bodyfont').addEventListener('change', function() { saveAppearance({ bodyFont: this.value }); applyPreview(); });
+    box.querySelector('#ap-dividerfont').addEventListener('change', function() { saveAppearance({ dividerFont: this.value }); applyPreview(); });
     const galColor = box.querySelector('#ap-galbox');
     const galText = box.querySelector('#ap-galbox-text');
     galColor.addEventListener('input', function() { galText.value = this.value; saveAppearance({ galBoxColor: this.value }); applyPreview(); });

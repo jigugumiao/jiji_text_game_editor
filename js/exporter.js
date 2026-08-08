@@ -336,7 +336,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   /* __FONT_FACE__ */
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; background: #0a0c12; }
   html { position: fixed; inset: 0; }
-  body { position: fixed; inset: 0; font-family: __FONT_FAMILY__; background: #0a0c12; color: #f0f3fa; user-select: none; -webkit-user-select: none; overflow: hidden; overscroll-behavior: none; touch-action: manipulation; --body-font: __FONT_FAMILY__; --title-font: __FONT_FAMILY__; --body-font-size: 20px; --gal-box-color: rgba(0,0,0,0.55); }
+  body { position: fixed; inset: 0; font-family: __FONT_FAMILY__; background: #0a0c12; color: #f0f3fa; user-select: none; -webkit-user-select: none; overflow: hidden; overscroll-behavior: none; touch-action: manipulation; --body-font: __FONT_FAMILY__; --title-font: __FONT_FAMILY__; --body-font-size: 20px; --gal-box-color: rgba(0,0,0,0.55); --divider-font: __FONT_FAMILY__; }
   #stage { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; cursor: pointer; }
   #bg-layer-a, #bg-layer-b { position: fixed; inset: 0; background-size: auto 100%; background-position: center; background-repeat: no-repeat; transition: opacity 0.5s ease; pointer-events: none; image-rendering: pixelated; }
   #bg-layer-a { opacity: 1; z-index: 0; }
@@ -424,7 +424,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   #history-body .hp-item s { text-decoration: line-through; }
   #history-body .hp-item.divider { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 18px auto; }
   #history-body .hp-item.divider .divider-line { flex: 1; max-width: 42%; height: 1px; background: rgba(160,178,210,0.4); }
-  #history-body .hp-item.divider .divider-text { color: rgba(190,205,228,0.9); font-size: 15px; letter-spacing: 3px; white-space: nowrap; }
+  #history-body .hp-item.divider .divider-text { font-family: var(--divider-font, inherit); color: rgba(190,205,228,0.9); font-size: 15px; letter-spacing: 3px; white-space: nowrap; }
   #history-empty { text-align: center; color: #7c879b; font-size: 14px; padding: 40px 20px; }
   @media (max-width: 640px) {
     #history-body .hp-item { width: 92%; padding: 4px 16px; font-size: 17px; }
@@ -432,7 +432,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   /* 分割线：横线 + 居中备注文字（备注留空则为普通横线）；显示后停顿等点击继续 */
   .message.divider { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 18px auto; opacity: 1; padding: 8px 24px; }
   .message.divider .divider-line { flex: 1; max-width: 42%; height: 1px; background: rgba(160,178,210,0.4); }
-  .message.divider .divider-text { color: rgba(190,205,228,0.9); font-size: 15px; letter-spacing: 3px; white-space: nowrap; }
+  .message.divider .divider-text { font-family: var(--divider-font, inherit); color: rgba(190,205,228,0.9); font-size: 15px; letter-spacing: 3px; white-space: nowrap; }
   #hint { position: fixed; bottom: 5vh; left: 50%; transform: translateX(-50%); color: #9fb0c8; font-size: 14px; letter-spacing: 2px; animation: pulse 1.4s infinite; display: none; pointer-events: none; z-index: 3; }
   @keyframes pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
   /* 分支选项：游戏底部排列的按钮 */

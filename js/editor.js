@@ -28,7 +28,7 @@
   // playMode: 'longform' 长文模式（默认，文字累积成长卷）| 'galgame' galgame模式（底部黑色文本框，逐段显示）
   let globalSettings = { gameName: '', subtitle: '', authorId: '', icon: '', font: null, openingBg: '', openingMusic: '', textContrast: 'auto', playMode: 'longform', watermark: { text: '', pos: '右下', url: '', opacity: 40 }, appearance: null, toy: null };
   // 外观默认设置（设置页「外观」标签可覆盖）。字体走系统默认字体栈，不读本地字体文件。
-  const DEFAULT_APPEARANCE = { fontSize: 20, titleFont: '', bodyFont: '', dividerFont: '', galBoxColor: 'rgba(0,0,0,0.55)' };
+  const DEFAULT_APPEARANCE = { fontSize: 20, titleFont: '', bodyFont: '', dividerFont: '', galBoxColor: 'rgba(0,0,0,0.55)', titleColor: '' };
   function getAppearance() { return Object.assign({}, DEFAULT_APPEARANCE, globalSettings.appearance || {}); }
   function saveAppearance(patch) { globalSettings.appearance = Object.assign({}, getAppearance(), patch); saveGlobal(); }
   // 把 meta 里的创作设定统一同步进 globalSettings（开场背景/音乐/图标等所有字段，避免 openProject 漏字段导致刷新后丢失）
@@ -2988,11 +2988,6 @@
         '<div class="field"><label>游玩模式</label><select id="gs-playmode">' +
           [['longform','长文模式（文字累积滚动，默认）'],['galgame','galgame模式（底部文本框，逐段显示）']].map(function(o){ return '<option value="' + o[0] + '"' + (globalSettings.playMode === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></div>' +
-        '<h4 style="margin-top:14px"><svg class="ico" aria-hidden="true"><use href="#ic-image"/></svg> 开场背景</h4>' +
-        '<div class="field"><label>开场背景图案</label>' +
-          '<select id="gs-opening"><option value="">（使用默认深色开场）</option></select>' +
-          (globalSettings.openingBg ? (String(globalSettings.openingBg).indexOf('data:') === 0 ? ' <span style="font-size:12px;color:#8b96a8">（旧版上传图，仍生效）</span>' : ' <span style="font-size:12px;color:#88c0ff">已选择：' + escapeHtml(globalSettings.openingBg) + '</span>') : ' <span style="font-size:12px;color:#8b96a8">（从素材库的背景中选取；留空=默认深色开场）</span>') + '</div>' +
-        (globalSettings.openingBg && String(globalSettings.openingBg).indexOf('data:') === 0 ? '<div class="field"><img id="gs-opening-preview" src="' + globalSettings.openingBg + '" style="max-width:140px;max-height:80px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);object-fit:cover"></div>' : '') +
         '<h4 style="margin-top:14px"><svg class="ico" aria-hidden="true"><use href="#ic-music"/></svg> 开场音乐</h4>' +
         '<div class="field"><label>开场标题界面音乐</label>' +
           '<select id="gs-opening-music"><option value="">（不使用开场音乐）</option></select>' +
@@ -3002,17 +2997,6 @@
         '<div class="field"><label>自定义字体</label><input type="file" id="gs-font" accept=".ttf,.otf,.woff,.woff2">' +
           (globalSettings.font ? ' <span style="font-size:12px;color:#88c0ff">已设置：' + escapeHtml(globalSettings.font.name) + '</span>' : ' <span style="font-size:12px;color:#8b96a8">（留空=系统默认字体）</span>') + '</div>' +
         (globalSettings.font ? '<div class="field"><button type="button" id="gs-font-remove" style="padding:5px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.08);color:#fff;cursor:pointer">移除字体</button></div>' : '') +
-        '<h4 style="margin-top:14px"><svg class="ico" aria-hidden="true"><use href="#ic-lock"/></svg> 水印设置</h4>' +
-        '<div class="field"><label>文字</label><input type="text" id="wm-text" value="' + escapeHtml(wm.text) + '" placeholder="水印文字（留空=不显示）"></div>' +
-        '<div class="field"><label>位置</label><select id="wm-pos">' +
-          ['左上','右上','左下','右下'].map(p => '<option value="' + p + '"' + (wm.pos===p?' selected':'') + '>' + p + '</option>').join('') +
-        '</select></div>' +
-        '<div class="field"><label>不透明度</label><input type="range" id="wm-opacity" min="10" max="100" value="' + (wm.opacity || 40) + '"><span id="wm-op-val" style="font-size:12px;color:#9aa3b2;min-width:30px">' + (wm.opacity || 40) + '%</span></div>' +
-        '<h4 style="margin-top:14px"><svg class="ico" aria-hidden="true"><use href="#ic-type"/></svg> 文字对比度保护</h4>' +
-        '<div class="ai-hint">背景图偏亮/偏暗或与文字色接近时，自动按背景平均亮度选黑字/白字，并对整张背景做亮度调整（亮背景更亮、暗背景更暗）把对比度拉到清晰可读——不再给文字加底板（避免跳闪）。游戏中长按画面 1 秒可隐藏文字、欣赏背景原图。<b>仅在长文模式下生效</b>：galgame模式自带黑色文本框，不会给背景加蒙版。</div>' +
-        '<div class="field"><label>保护强度</label><select id="gs-textcontrast">' +
-          [['off','关（保持原样）'],['auto','自动（选字色 + 调亮暗背景，默认）']].map(function(o){ return '<option value="' + o[0] + '"' + (globalSettings.textContrast === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
-        '</select></div>' +
       '</div>';
     box.querySelector('#gs-name').addEventListener('input', function() { globalSettings.gameName = this.value; saveGlobal(); });
     box.querySelector('#gs-subtitle').addEventListener('input', function() { globalSettings.subtitle = this.value; saveGlobal(); });
@@ -3051,11 +3035,6 @@
         globalSettings.font = null; saveGlobal(); applyEditorFont(); toast('已移除字体'); renderSettingsGeneral();
       });
     }
-    box.querySelector('#wm-text').addEventListener('input', function() { globalSettings.watermark.text = this.value; saveGlobal(); });
-    box.querySelector('#wm-pos').addEventListener('change', function() { globalSettings.watermark.pos = this.value; saveGlobal(); });
-    box.querySelector('#wm-opacity').addEventListener('input', function() { globalSettings.watermark.opacity = parseInt(this.value); box.querySelector('#wm-op-val').textContent = this.value + '%'; saveGlobal(); });
-    const tcSel = box.querySelector('#gs-textcontrast');
-    if (tcSel) tcSel.addEventListener('change', function() { globalSettings.textContrast = this.value; saveGlobal(); toast('文字对比度保护：' + this.options[this.selectedIndex].text); });
     // 游玩模式：长文模式 / galgame模式（影响运行时文字排版与背景蒙版，不改动剧情文本）
     const pmSel = box.querySelector('#gs-playmode');
     if (pmSel) pmSel.addEventListener('change', function() {
@@ -3063,22 +3042,6 @@
       saveGlobal();
       toast('游玩模式：' + (globalSettings.playMode === 'galgame' ? 'galgame模式' : '长文模式'));
     });
-    const obSel = box.querySelector('#gs-opening');
-    if (obSel) {
-      window.Storage.getAllAssets('background').then(function(list) {
-        const opts = ['<option value="">（使用默认深色开场）</option>'];
-        (list || []).forEach(function(a) {
-          if (a && a.name) opts.push('<option value="' + escapeHtml(a.name) + '"' + (globalSettings.openingBg === a.name ? ' selected' : '') + '>' + escapeHtml(a.name) + '</option>');
-        });
-        obSel.innerHTML = opts.join('');
-      }).catch(function() {});
-      obSel.addEventListener('change', function() {
-        globalSettings.openingBg = this.value;
-        saveGlobal();
-        if (this.value) { toast('开场背景已设为：' + this.value); renderSettingsGeneral(); }
-        else { toast('已使用默认深色开场'); renderSettingsGeneral(); }
-      });
-    }
     // 开场音乐：从素材库的音乐中选取（存名称，导出时按名称解析 src）
     const omSel = box.querySelector('#gs-opening-music');
     if (omSel) {
@@ -3107,12 +3070,21 @@
     if (m) { const p = m[1].split(',').map(s => parseFloat(s)); return '#' + [Math.round(p[0]), Math.round(p[1]), Math.round(p[2])].map(x => ('0' + Math.max(0,Math.min(255,x)).toString(16)).slice(-2)).join(''); }
     return '#000000';
   }
+  // 解析 galgame 底框色（rgba 或 #hex）为 {r,g,b,a}，供颜色/透明度滑块互转
+  function galBoxParts(c) {
+    c = String(c || 'rgba(0,0,0,0.55)');
+    const m = c.match(/rgba?\(([^)]+)\)/);
+    if (m) { const p = m[1].split(',').map(function(s){ return parseFloat(s); }); return { r: Math.round(p[0]), g: Math.round(p[1]), b: Math.round(p[2]), a: (p[3] == null ? 1 : parseFloat(p[3])) }; }
+    const h = toHexColor(c);
+    return { r: parseInt(h.slice(1,3),16), g: parseInt(h.slice(3,5),16), b: parseInt(h.slice(5,7),16), a: 0.55 };
+  }
 
   // ===== 设置：外观（游戏整体默认外观覆盖）=====
   function renderAppearance() {
     const box = $('#settings-appearance');
     if (!box) return;
     const ap = getAppearance();
+    const wm = globalSettings.watermark;
     const FONT_PRESETS = [
       ['', '系统默认（跟随游戏字体）'],
       ["'PingFang SC', 'Microsoft YaHei', sans-serif", '苹方 / 微软雅黑（中文无衬线）'],
@@ -3137,11 +3109,40 @@
         '<div class="field"><label>浮动标题字体</label><select id="ap-titlefont">' + optTitle + '</select></div>' +
         '<div class="field"><label>正文字体</label><select id="ap-bodyfont">' + optHtml + '</select></div>' +
         '<div class="field"><label>分割线字体</label><select id="ap-dividerfont">' + optDivider + '</select></div>' +
+        '<div class="field"><label>浮动标题默认颜色</label>' +
+          '<div style="display:flex;align-items:center;gap:10px">' +
+            '<input type="color" id="ap-titlecolor" value="' + (ap.titleColor ? toHexColor(ap.titleColor) : '#ffffff') + '" style="width:42px;height:30px;border:0;background:none;cursor:pointer;padding:0">' +
+            '<input type="text" id="ap-titlecolor-text" value="' + escapeHtml(ap.titleColor || '') + '" style="flex:1;min-width:0" placeholder="留空=默认白色 #fff">' +
+          '</div></div>' +
         '<div class="field"><label>Galgame 底框色</label>' +
           '<div style="display:flex;align-items:center;gap:10px">' +
             '<input type="color" id="ap-galbox" value="' + toHexColor(ap.galBoxColor) + '" style="width:42px;height:30px;border:0;background:none;cursor:pointer;padding:0">' +
             '<input type="text" id="ap-galbox-text" value="' + escapeHtml(ap.galBoxColor) + '" style="flex:1;min-width:0" placeholder="rgba(0,0,0,0.55)">' +
           '</div></div>' +
+        '<div class="field"><label>Galgame 底框透明度 <span id="ap-galop-val">' + Math.round(galBoxParts(ap.galBoxColor).a * 100) + '%</span></label>' +
+          '<input type="range" id="ap-galop" min="10" max="100" step="1" value="' + Math.round(galBoxParts(ap.galBoxColor).a * 100) + '"></div>' +
+      '</div>' +
+      '<div class="ai-section">' +
+        '<h4><svg class="ico" aria-hidden="true"><use href="#ic-image"/></svg> 开场背景</h4>' +
+        '<div class="field"><label>开场背景图案</label>' +
+          '<select id="gs-opening"><option value="">（使用默认深色开场）</option></select>' +
+          (globalSettings.openingBg ? (String(globalSettings.openingBg).indexOf('data:') === 0 ? ' <span style="font-size:12px;color:#8b96a8">（旧版上传图，仍生效）</span>' : ' <span style="font-size:12px;color:#88c0ff">已选择：' + escapeHtml(globalSettings.openingBg) + '</span>') : ' <span style="font-size:12px;color:#8b96a8">（从素材库的背景中选取；留空=默认深色开场）</span>') + '</div>' +
+        (globalSettings.openingBg && String(globalSettings.openingBg).indexOf('data:') === 0 ? '<div class="field"><img id="gs-opening-preview" src="' + globalSettings.openingBg + '" style="max-width:140px;max-height:80px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);object-fit:cover"></div>' : '') +
+      '</div>' +
+      '<div class="ai-section">' +
+        '<h4><svg class="ico" aria-hidden="true"><use href="#ic-type"/></svg> 文字对比度保护</h4>' +
+        '<div class="ai-hint">背景图偏亮/偏暗或与文字色接近时，自动按背景平均亮度选黑字/白字，并对整张背景做亮度调整（亮背景更亮、暗背景更暗）把对比度拉到清晰可读——不再给文字加底板（避免跳闪）。游戏中长按画面 1 秒可隐藏文字、欣赏背景原图。<b>仅在长文模式下生效</b>：galgame模式自带黑色文本框，不会给背景加蒙版。</div>' +
+        '<div class="field"><label>保护强度</label><select id="gs-textcontrast">' +
+          [['off','关（保持原样）'],['auto','自动（选字色 + 调亮暗背景，默认）']].map(function(o){ return '<option value="' + o[0] + '"' + (globalSettings.textContrast === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+        '</select></div>' +
+      '</div>' +
+      '<div class="ai-section">' +
+        '<h4><svg class="ico" aria-hidden="true"><use href="#ic-lock"/></svg> 水印设置</h4>' +
+        '<div class="field"><label>文字</label><input type="text" id="wm-text" value="' + escapeHtml(wm.text) + '" placeholder="水印文字（留空=不显示）"></div>' +
+        '<div class="field"><label>位置</label><select id="wm-pos">' +
+          ['左上','右上','左下','右下'].map(function(p){ return '<option value="' + p + '"' + (wm.pos===p?' selected':'') + '>' + p + '</option>'; }).join('') +
+        '</select></div>' +
+        '<div class="field"><label>不透明度</label><input type="range" id="wm-opacity" min="10" max="100" value="' + (wm.opacity || 40) + '"><span id="wm-op-val" style="font-size:12px;color:#9aa3b2;min-width:30px">' + (wm.opacity || 40) + '%</span></div>' +
       '</div>' +
       '<div class="ai-section">' +
         '<h4><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>实时预览</h4>' +
@@ -3161,7 +3162,7 @@
       const a = getAppearance();
       const fs = (a.fontSize || 20) + 'px';
       const title = $('#ap-prev-title');
-      if (title) title.style.fontFamily = a.titleFont || 'inherit';
+      if (title) { title.style.fontFamily = a.titleFont || 'inherit'; title.style.color = a.titleColor || ''; }
       const longMsg = $('#ap-prev-long');
       if (longMsg) { longMsg.style.fontFamily = a.bodyFont || 'inherit'; longMsg.style.fontSize = fs; }
       const div = $('#ap-prev-divider');
@@ -3171,14 +3172,44 @@
       if (galBox) galBox.style.background = a.galBoxColor;
       if (galMsg) { galMsg.style.fontFamily = a.bodyFont || 'inherit'; galMsg.style.fontSize = fs; }
     }
+    function galParts() { return galBoxParts(getAppearance().galBoxColor); }
+    function setGal(r,g,b,a){ return 'rgba(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ',' + a + ')'; }
     box.querySelector('#ap-fontsize').addEventListener('input', function() { $('#ap-fs-val').textContent = this.value + 'px'; saveAppearance({ fontSize: parseInt(this.value, 10) }); applyPreview(); });
     box.querySelector('#ap-titlefont').addEventListener('change', function() { saveAppearance({ titleFont: this.value }); applyPreview(); });
     box.querySelector('#ap-bodyfont').addEventListener('change', function() { saveAppearance({ bodyFont: this.value }); applyPreview(); });
     box.querySelector('#ap-dividerfont').addEventListener('change', function() { saveAppearance({ dividerFont: this.value }); applyPreview(); });
+    const tcColor = box.querySelector('#ap-titlecolor');
+    const tcText = box.querySelector('#ap-titlecolor-text');
+    tcColor.addEventListener('input', function() { tcText.value = this.value; saveAppearance({ titleColor: this.value }); applyPreview(); });
+    tcText.addEventListener('input', function() { const v = this.value.trim(); tcColor.value = toHexColor(v || '#ffffff'); saveAppearance({ titleColor: v }); applyPreview(); });
     const galColor = box.querySelector('#ap-galbox');
     const galText = box.querySelector('#ap-galbox-text');
-    galColor.addEventListener('input', function() { galText.value = this.value; saveAppearance({ galBoxColor: this.value }); applyPreview(); });
-    galText.addEventListener('input', function() { galColor.value = toHexColor(this.value); saveAppearance({ galBoxColor: this.value }); applyPreview(); });
+    const galOp = box.querySelector('#ap-galop');
+    const galOpVal = box.querySelector('#ap-galop-val');
+    galColor.addEventListener('input', function() { const p = galParts(); const nc = toHexColor(this.value); const r=parseInt(nc.slice(1,3),16),g=parseInt(nc.slice(3,5),16),b=parseInt(nc.slice(5,7),16); const rgba=setGal(r,g,b,p.a); galText.value=rgba; galOp.value=Math.round(p.a*100); galOpVal.textContent=Math.round(p.a*100)+'%'; saveAppearance({ galBoxColor: rgba }); applyPreview(); });
+    galText.addEventListener('input', function() { const v=this.value.trim(); if(!v) return; const p=galBoxParts(v); galColor.value=toHexColor(v); galOp.value=Math.round(p.a*100); galOpVal.textContent=Math.round(p.a*100)+'%'; saveAppearance({ galBoxColor: v }); applyPreview(); });
+    galOp.addEventListener('input', function() { const p=galParts(); const a=parseInt(this.value,10)/100; const rgba=setGal(p.r,p.g,p.b,a); galText.value=rgba; galOpVal.textContent=this.value+'%'; saveAppearance({ galBoxColor: rgba }); applyPreview(); });
+    // 开场背景（从通用迁入）
+    const obSel = box.querySelector('#gs-opening');
+    if (obSel) {
+      window.Storage.getAllAssets('background').then(function(list) {
+        const opts = ['<option value="">（使用默认深色开场）</option>'];
+        (list || []).forEach(function(a) {
+          if (a && a.name) opts.push('<option value="' + escapeHtml(a.name) + '"' + (globalSettings.openingBg === a.name ? ' selected' : '') + '>' + escapeHtml(a.name) + '</option>');
+        });
+        obSel.innerHTML = opts.join('');
+      }).catch(function() {});
+      obSel.addEventListener('change', function() {
+        globalSettings.openingBg = this.value; saveGlobal();
+        if (this.value) { toast('开场背景已设为：' + this.value); renderAppearance(); }
+        else { toast('已使用默认深色开场'); renderAppearance(); }
+      });
+    }
+    const tcSel = box.querySelector('#gs-textcontrast');
+    if (tcSel) tcSel.addEventListener('change', function() { globalSettings.textContrast = this.value; saveGlobal(); toast('文字对比度保护：' + this.options[this.selectedIndex].text); });
+    box.querySelector('#wm-text').addEventListener('input', function() { globalSettings.watermark.text = this.value; saveGlobal(); });
+    box.querySelector('#wm-pos').addEventListener('change', function() { globalSettings.watermark.pos = this.value; saveGlobal(); });
+    box.querySelector('#wm-opacity').addEventListener('input', function() { globalSettings.watermark.opacity = parseInt(this.value); box.querySelector('#wm-op-val').textContent = this.value + '%'; saveGlobal(); });
     applyPreview();
   }
 

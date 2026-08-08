@@ -336,7 +336,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   /* __FONT_FACE__ */
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; background: #0a0c12; }
   html { position: fixed; inset: 0; }
-  body { position: fixed; inset: 0; font-family: __FONT_FAMILY__; background: #0a0c12; color: #f0f3fa; user-select: none; -webkit-user-select: none; overflow: hidden; overscroll-behavior: none; touch-action: manipulation; --body-font: __FONT_FAMILY__; --title-font: __FONT_FAMILY__; --body-font-size: 20px; --gal-box-color: rgba(0,0,0,0.55); --divider-font: __FONT_FAMILY__; }
+  body { position: fixed; inset: 0; font-family: __FONT_FAMILY__; background: #0a0c12; color: #f0f3fa; user-select: none; -webkit-user-select: none; overflow: hidden; overscroll-behavior: none; touch-action: manipulation; --body-font: __FONT_FAMILY__; --title-font: __FONT_FAMILY__; --body-font-size: 20px; --gal-box-color: rgba(6,8,14,0.84); --divider-font: __FONT_FAMILY__; --title-color: #fff; }
   #stage { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; cursor: pointer; }
   #bg-layer-a, #bg-layer-b { position: fixed; inset: 0; background-size: auto 100%; background-position: center; background-repeat: no-repeat; transition: opacity 0.5s ease; pointer-events: none; image-rendering: pixelated; }
   #bg-layer-a { opacity: 1; z-index: 0; }
@@ -373,10 +373,9 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   body.galgame #bg-overlay { opacity: 0 !important; }
   body.galgame #message-list {
     flex: none; position: fixed; left: 0; right: 0; bottom: 0; top: auto;
-    background: var(--gal-box-color, rgba(0,0,0,0.55));
+    background: var(--gal-box-color, rgba(6,8,14,0.84));
     height: 32vh; min-height: 160px; max-height: 42vh;
     padding: 20px 0 30px;
-    background: rgba(6,8,14,0.84);
     border-top: 1px solid rgba(150,180,255,0.30);
     box-shadow: 0 -10px 34px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
@@ -466,7 +465,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   #start-screen.has-opening { background: transparent; }
   #start-icon, #start-heading, #start-title, #start-subtitle, #start-author, #start-btns { position: relative; z-index: 1; }
   #start-heading { display: flex; flex-direction: column; align-items: center; gap: 6px; background: rgba(0,0,0,0.45); border-radius: 14px; padding: 18px 32px; max-width: 90vw; box-shadow: 0 6px 30px rgba(0,0,0,0.4); }
-  #start-title { font-size: 36px; font-weight: 700; color: #fff; text-align: center; text-shadow: 0 2px 18px rgba(0,0,0,0.65); line-height: 1.25; font-family: var(--title-font, inherit); }
+  #start-title { font-size: 36px; font-weight: 700; color: var(--title-color, #fff); text-align: center; text-shadow: 0 2px 18px rgba(0,0,0,0.65); line-height: 1.25; font-family: var(--title-font, inherit); }
   #start-subtitle { font-size: 16px; font-weight: 400; color: #c4ccd8; text-align: center; margin-top: 4px; letter-spacing: 1px; text-shadow: 0 1px 10px rgba(0,0,0,0.5); }
   #start-icon { width: 100%; height: auto; object-fit: contain; margin-bottom: 8px; display: none; }
   /* 横屏：固定宽度 800px，高度按比例自适应，避免把开始按钮顶掉 */
@@ -499,7 +498,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   #title-overlay { position: fixed; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; transition: opacity 0.3s; background: rgba(0,0,0,0.62); backdrop-filter: blur(1.5px); }
   #title-overlay.show { opacity: 1; }
   #title-overlay.clickable { pointer-events: auto; cursor: pointer; }
-  #title-text { font-size: 48px; font-weight: 700; color: #fff; text-shadow: 0 0 40px rgba(0,0,0,0.7); text-align: center; padding: 0 40px; white-space: nowrap; max-width: 96vw; font-family: var(--title-font, inherit); }
+  #title-text { font-size: 48px; font-weight: 700; color: var(--title-color, #fff); text-shadow: 0 0 40px rgba(0,0,0,0.7); text-align: center; padding: 0 40px; white-space: nowrap; max-width: 96vw; font-family: var(--title-font, inherit); }
   /* 物品提示文字：画面中下方 */
   #item-hint { position: fixed; left: 50%; bottom: 9%; transform: translateX(-50%); max-width: 80vw; text-align: center; font-size: 18px; line-height: 1.6; color: #fff; background: rgba(0,0,0,0.55); padding: 10px 22px; border-radius: 12px; z-index: 51; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
   #item-hint.show { opacity: 1; }
@@ -1527,6 +1526,8 @@ __STORY_DATA__
     if (APPEAR) {
       if (APPEAR.bodyFont) document.body.style.setProperty('--body-font', APPEAR.bodyFont);
       if (APPEAR.titleFont) document.body.style.setProperty('--title-font', APPEAR.titleFont);
+      if (APPEAR.dividerFont) document.body.style.setProperty('--divider-font', APPEAR.dividerFont);
+      if (APPEAR.titleColor) document.body.style.setProperty('--title-color', APPEAR.titleColor);
       if (APPEAR.fontSize) document.body.style.setProperty('--body-font-size', (APPEAR.fontSize | 0) + 'px');
       if (APPEAR.galBoxColor) document.body.style.setProperty('--gal-box-color', APPEAR.galBoxColor);
     }

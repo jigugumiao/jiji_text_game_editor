@@ -3276,7 +3276,7 @@
     box.querySelector('#toy-title').addEventListener('input', persist);
     box.querySelector('#toy-slug').addEventListener('input', persist);
     box.querySelector('#toy-vis').addEventListener('change', persist);
-    box.querySelector('#toy-open').addEventListener('click', function() { window.open('https://www.bilibili.com/toy/', '_blank'); });
+    box.querySelector('#toy-open').addEventListener('click', function() { window.open('https://www.bilibili.com/toy/publish/', '_blank'); });
     box.querySelector('#toy-poster').addEventListener('change', function() {
       const file = this.files && this.files[0];
       if (!file) return;

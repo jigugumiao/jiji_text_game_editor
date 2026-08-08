@@ -1689,3 +1689,60 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
   transition: opacity .3s ease, transform .3s ease;
 }
 
+/* ===== 轻量微交互动画（统一缓动，幅度克制） ===== */
+:root { --ease-soft: cubic-bezier(.2,.7,.3,1); }
+
+/* 按钮：悬停轻微上浮，按下回弹收缩 */
+.btn, .icon-btn, .mini-btn, .btn-ai, .btn-lg, .btn-sm, .btn-danger-ghost {
+  transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, color .15s ease, transform .1s var(--ease-soft);
+}
+.btn:hover, .icon-btn:hover, .mini-btn:hover, .btn-ai:hover, .btn-danger-ghost:hover { transform: translateY(-1px); }
+.btn:active, .icon-btn:active, .mini-btn:active, .btn-ai:active, .btn-danger-ghost:active { transform: translateY(0) scale(.975); }
+.btn:disabled:hover, .btn:disabled:active, .icon-btn:disabled:hover, .icon-btn:disabled:active,
+.btn-primary:disabled:hover, .btn-primary:disabled:active { transform: none; }
+
+/* 卡片：悬停轻微上浮 */
+.asset-card, .block-card, .ai-hook-card, .about-bili {
+  transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease, transform .15s var(--ease-soft);
+}
+.asset-card:hover, .block-card:hover, .ai-hook-card:hover, .about-bili:hover { transform: translateY(-2px); }
+
+/* 项目卡：整行轻微上浮 + 柔和阴影 */
+.project-card { transition: background-color .15s ease, box-shadow .15s ease, transform .15s var(--ease-soft); }
+.project-card:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(17,17,20,.05); }
+
+/* 标签：悬停底色（激活下划线已由原 transition 处理） */
+.tabs button { transition: color .15s ease, border-color .15s ease, background-color .12s ease; }
+.tabs button:hover { background-color: #f4f4f6; }
+
+/* 弹窗：遮罩淡入 + 内容轻微放大上浮 */
+.modal:not(.hidden) { animation: overlayIn .18s ease; }
+.modal:not(.hidden) .modal-box { animation: modalIn .2s var(--ease-soft); }
+@keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalIn { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* 下拉菜单淡入 */
+.dropdown-menu.open { animation: menuIn .14s ease; }
+@keyframes menuIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* 变量浮层淡入 */
+#var-popover.show { animation: popIn .14s ease; }
+@keyframes popIn { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* 分支图浮动窗口淡入 */
+#block-graph-panel:not(.hidden) { animation: modalIn .2s var(--ease-soft); }
+
+/* 提示 toast 上滑淡入 */
+#toast { animation: toastIn .22s var(--ease-soft); }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* 尊重系统「减少动态效果」设置 */
+@media (prefers-reduced-motion: reduce) {
+  .btn, .icon-btn, .mini-btn, .btn-ai, .btn-lg, .btn-sm, .btn-danger-ghost,
+  .asset-card, .block-card, .ai-hook-card, .about-bili, .project-card { transition: none; }
+  .btn:hover, .icon-btn:hover, .mini-btn:hover, .btn-ai:hover, .btn-danger-ghost:hover,
+  .asset-card:hover, .block-card:hover, .ai-hook-card:hover, .about-bili:hover, .project-card:hover { transform: none; }
+  .modal:not(.hidden), .modal:not(.hidden) .modal-box, .dropdown-menu.open,
+  #var-popover.show, #block-graph-panel:not(.hidden), #toast { animation: none; }
+}
+

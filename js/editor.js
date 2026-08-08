@@ -3240,7 +3240,8 @@
     const box = $('#settings-toy');
     if (!box) return;
     const t = globalSettings.toy || {};
-    const vis = t.visibility || 'public';
+    const VALID_VIS = ['public', 'link-only', 'password'];
+    const vis = VALID_VIS.indexOf(t.visibility) >= 0 ? t.visibility : 'public';
     box.innerHTML =
       '<div class="ai-section">' +
         '<h4><svg class="ico" aria-hidden="true"><use href="#ic-bili"/></svg>Toy 推送 <span class="ai-sub-tip">一键发布到 B 站 Toy</span></h4>' +
@@ -3248,9 +3249,9 @@
         '<div class="field"><label>玩具标题</label><input type="text" id="toy-title" value="' + escapeHtml(t.title || '') + '" placeholder="留空则使用游戏名"></div>' +
         '<div class="field"><label>Slug（URL 标识，英文/数字）</label><input type="text" id="toy-slug" value="' + escapeHtml(t.slug || '') + '" placeholder="留空则自动从标题生成"></div>' +
         '<div class="field"><label>可见性</label><select id="toy-vis">' +
-          '<option value="public"' + (vis === 'public' ? ' selected' : '') + '>公开 public</option>' +
-          '<option value="private"' + (vis === 'private' ? ' selected' : '') + '>私有 private</option>' +
-          '<option value="unlisted"' + (vis === 'unlisted' ? ' selected' : '') + '>私密链接 unlisted</option>' +
+          '<option value="public"' + (vis === 'public' ? ' selected' : '') + '>公开 public（所有人可访问）</option>' +
+          '<option value="link-only"' + (vis === 'link-only' ? ' selected' : '') + '>仅链接 link-only（有链接才能访问）</option>' +
+          '<option value="password"' + (vis === 'password' ? ' selected' : '') + '>密码 password（需输入密码）</option>' +
         '</select></div>' +
         '<div class="field"><label>封面图（可选）</label>' +
           '<input type="file" id="toy-poster" accept="image/*" style="color:#cfe0ff">' +

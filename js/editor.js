@@ -4053,6 +4053,15 @@ self.onmessage = function (e) {
       sizeText = '约 ' + (kb >= 1024 ? (kb / 1024).toFixed(2) + ' MB' : kb.toFixed(0) + ' KB') + '（WAV）';
     }
     $('#audioproc-info').textContent = '时长 ' + dur.toFixed(1) + 's · ' + sr + 'Hz · ' + ch + '声道 · ' + sizeText;
+    const hint = $('#ap-mode-hint');
+    if (hint) {
+      if (p.format === 'mp3') {
+        hint.textContent = 'MP3（固定码率）下，采样率/声道仅影响音质、不影响文件体积；要压缩体积请调低「码率」。';
+        hint.style.display = '';
+      } else {
+        hint.style.display = 'none';
+      }
+    }
   }
   function scheduleAudioProcRender() {
     if (!audioProc) return;

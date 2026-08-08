@@ -196,6 +196,27 @@ async function getProjectStats(id) {
   if (t) lineCount = t.split('\n').length;
   return { assetCount, lineCount };
 }
+// 批量统计：只全量读一次 IndexedDB，按项目前缀计数，避免 N 个项目各读一次（O(N²) → O(总素材数)）
+async function getProjectStatsBatch(ids) {
+  const map = {};
+  for (const id of ids) map[id] = { assetCount: 0, lineCount: 0 };
+  try {
+    const all = await idbGetAll(STORE_ASSETS);
+    for (const r of all) {
+      if (!r.key) continue;
+      const sep = r.key.indexOf(PROJECT_NS_SEP);
+      if (sep > 0) {
+        const pid = r.key.slice(0, sep);
+        if (map[pid]) map[pid].assetCount++;
+      }
+    }
+  } catch (e) {}
+  for (const id of ids) {
+    const t = localStorage.getItem(LS_STORY_TEXT + ':' + id) || localStorage.getItem(LS_STORY + ':' + id) || '';
+    if (t) map[id].lineCount = t.split('\n').length;
+  }
+  return map;
+}
 
 // 首次启动：把旧版无项目数据收进「默认项目」，并确保项目注册表存在
 async function migrateLegacyIfNeeded() {
@@ -635,7 +656,7 @@ const Storage = {
   MAIN_BLOCK, loadBlocks, saveBlocks, getBlockText, setBlockText, addBlock, renameBlock, deleteBlock, listBlockNames, hasBlocksData,
   // 项目 API
   listProjects, createProject, renameProject, deleteProject, getProjectName, getProjectMode,
-  getCurrentProjectId, setCurrentProject, getProjectStats, migrateLegacyIfNeeded,
+  getCurrentProjectId, setCurrentProject, getProjectStats, getProjectStatsBatch, migrateLegacyIfNeeded,
   // 工程备份 / 恢复（跨设备搬运整个剧本：素材+变量+线索+设定）
   exportProject, importProject,
 };

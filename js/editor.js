@@ -1089,53 +1089,125 @@
     refreshBlockReviewLine();
     ftResetSession(); // 全文助理对话按工程隔离：切工程时重置内存态，下次开面板从本工程 key 重新加载
   }
+  // 记录已渲染的项目签名（各项目 id 拼串），用于判断「返回项目页」时是否需要整页重建
+  let _projectsSignature = null;
+  function projectsSignatureMatches() {
+    const projects = window.Storage.listProjects();
+    const sig = projects.map(p => p.id).join('|');
+    return sig === _projectsSignature;
+  }
   function returnToProjects() {
     saveNow();
-    renderProjectsScreen();
-    showProjectsScreen(true);
+    const list = $('#projects-list');
+    // 结构未变（仍是同一批项目）→ 直接显示已渲染的卡片，不整页重刷；仅后台刷新统计数字
+    if (_projectsSignature && list && list.querySelector('.project-card') && projectsSignatureMatches()) {
+      showProjectsScreen(true);
+      softRefreshProjectStats();
+    } else {
+      renderProjectsScreen();
+      showProjectsScreen(true);
+    }
+  }
+  // 后台刷新卡片统计，不动 DOM 结构（快速、无闪烁）
+  function softRefreshProjectStats() {
+    const list = $('#projects-list');
+    if (!list) return;
+    const cards = Array.prototype.slice.call(list.querySelectorAll('.project-card'));
+    if (!cards.length) return;
+    const ids = cards.map(c => c.dataset.pid).filter(Boolean);
+    if (!ids.length) return;
+    window.Storage.getProjectStatsBatch(ids).then((map) => {
+      cards.forEach((card) => {
+        const p = window.Storage.listProjects().find(x => x.id === card.dataset.pid);
+        if (p) updateProjectCardMeta(card, p, map[card.dataset.pid] || { assetCount: 0, lineCount: 0 });
+      });
+    }).catch(() => {});
+  }
+  function buildProjectCard(p) {
+    const isArticle = p.mode === 'article';
+    const modeLabel = isArticle ? '通用文章' : '剧情游戏';
+    const card = document.createElement('div');
+    card.className = 'project-card' + (isArticle ? ' is-article' : '');
+    card.dataset.pid = p.id;
+    card.innerHTML =
+      '<div class="project-card-main">' +
+        '<div class="project-card-name">' + escapeHtml(p.name) + '</div>' +
+        '<div class="project-card-meta">' +
+          '<span class="mode-badge ' + (isArticle ? 'mode-article' : 'mode-game') + '">' + modeLabel + '</span>' +
+          '<span class="proj-stats">…</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="project-card-actions">' +
+        '<button class="btn btn-ghost btn-p-open">打开</button>' +
+        '<button class="btn btn-ghost btn-p-backup">备份</button>' +
+        '<button class="btn btn-ghost btn-p-rename">重命名</button>' +
+        '<button class="btn btn-ghost btn-p-del">删除</button>' +
+      '</div>';
+    card.querySelector('.btn-p-open').onclick = () => openProject(p.id);
+    card.querySelector('.btn-p-backup').onclick = () => exportProjectBackup(p.id);
+    card.querySelector('.btn-p-rename').onclick = () => {
+      const name = prompt('项目新名称', p.name);
+      if (name == null) return;
+      const trimmed = name.trim();
+      if (!trimmed || trimmed === p.name) return;
+      window.Storage.renameProject(p.id, trimmed);
+      // 原地改卡片标题，不整页重刷
+      const nameEl = card.querySelector('.project-card-name');
+      if (nameEl) nameEl.textContent = trimmed;
+      p.name = trimmed;
+    };
+    card.querySelector('.btn-p-del').onclick = () => {
+      if (!confirm('确定删除项目「' + p.name + '」？其剧情与素材将一并清空，且不可恢复。')) return;
+      const list = $('#projects-list');
+      card.classList.add('proj-leave');
+      const removeIt = () => {
+        card.remove();
+        if (!list.querySelector('.project-card')) {
+          list.innerHTML = '<div class="empty-tip">还没有项目，点右上角「＋ 新建项目」开始。</div>';
+        }
+        _projectsSignature = window.Storage.listProjects().map(x => x.id).join('|');
+      };
+      card.addEventListener('transitionend', removeIt, { once: true });
+      setTimeout(removeIt, 360); // 兜底，避免 transitionend 未触发
+      window.Storage.deleteProject(p.id).catch(() => {});
+    };
+    return card;
+  }
+  function updateProjectCardMeta(card, p, stats) {
+    const el = card.querySelector('.proj-stats');
+    if (el) el.textContent = '素材 ' + (stats.assetCount || 0) + ' 个 · 剧情 ' + (stats.lineCount || 0) + ' 行';
   }
   async function renderProjectsScreen() {
     const list = $('#projects-list');
-    list.innerHTML = '';
+    // 先转圈，避免空白/闪烁
+    list.innerHTML = '<div class="projects-spinner"><div class="spinner"></div><span>加载项目中…</span></div>';
     const projects = window.Storage.listProjects();
-    // 并行读取全部项目统计，避免卡片逐张 await 串行弹出
-    const statsList = await Promise.all(projects.map(p => window.Storage.getProjectStats(p.id)));
-    for (let i = 0; i < projects.length; i++) {
-      const p = projects[i];
-      const stats = statsList[i];
-      const isArticle = p.mode === 'article';
-      const modeLabel = isArticle ? '通用文章' : '剧情游戏';
-      const card = document.createElement('div');
-      card.className = 'project-card' + (isArticle ? ' is-article' : '');
-      card.innerHTML =
-        '<div class="project-card-main">' +
-          '<div class="project-card-name">' + escapeHtml(p.name) + '</div>' +
-          '<div class="project-card-meta">' +
-            '<span class="mode-badge ' + (isArticle ? 'mode-article' : 'mode-game') + '">' + modeLabel + '</span>' +
-            '素材 ' + stats.assetCount + ' 个 · 剧情 ' + stats.lineCount + ' 行' +
-          '</div>' +
-        '</div>' +
-        '<div class="project-card-actions">' +
-          '<button class="btn btn-ghost btn-p-open">打开</button>' +
-          '<button class="btn btn-ghost btn-p-backup">备份</button>' +
-          '<button class="btn btn-ghost btn-p-rename">重命名</button>' +
-          '<button class="btn btn-ghost btn-p-del">删除</button>' +
-        '</div>';
-      card.querySelector('.btn-p-open').onclick = () => openProject(p.id);
-      card.querySelector('.btn-p-backup').onclick = () => exportProjectBackup(p.id);
-      card.querySelector('.btn-p-rename').onclick = () => {
-        const name = prompt('项目新名称', p.name);
-        if (name != null && name.trim()) { window.Storage.renameProject(p.id, name.trim()); renderProjectsScreen(); }
-      };
-      card.querySelector('.btn-p-del').onclick = () => {
-        if (!confirm('确定删除项目「' + p.name + '」？其剧情与素材将一并清空，且不可恢复。')) return;
-        window.Storage.deleteProject(p.id).then(() => renderProjectsScreen());
-      };
-      list.appendChild(card);
-    }
     if (!projects.length) {
       list.innerHTML = '<div class="empty-tip">还没有项目，点右上角「＋ 新建项目」开始。</div>';
+      _projectsSignature = '';
+      return;
     }
+    // 统计一次性批量读取（仅全量读一次 IndexedDB）
+    let statsMap = {};
+    try { statsMap = await window.Storage.getProjectStatsBatch(projects.map(p => p.id)); }
+    catch (e) { statsMap = {}; }
+    // 清空转圈，逐张构建卡片
+    list.innerHTML = '';
+    const cards = projects.map((p) => {
+      const card = buildProjectCard(p);
+      card.classList.add('proj-enter');
+      list.appendChild(card);
+      return card;
+    });
+    // 逐张滑入（错峰 60ms），不必等全部加载完才一起出现
+    cards.forEach((card, i) => {
+      setTimeout(() => card.classList.add('proj-in'), 20 + i * 60);
+    });
+    // 填充统计数字
+    projects.forEach((p, i) => {
+      updateProjectCardMeta(cards[i], p, statsMap[p.id] || { assetCount: 0, lineCount: 0 });
+    });
+    _projectsSignature = projects.map(p => p.id).join('|');
   }
 
   // ============ 项目类型（通用文章 / 剧情游戏） ============

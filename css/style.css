@@ -1658,3 +1658,34 @@ body.dark .fta-messages { background: var(--bg-sunken); }
   background: var(--bg-soft);
 }
 
+/* ============ 项目页：加载转圈 + 卡片滑入/滑出 ============ */
+.projects-spinner {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 60px 20px; color: var(--text-3); font-size: 14px;
+}
+.projects-spinner .spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid var(--border-strong);
+  border-top-color: var(--accent);
+  animation: proj-spin .8s linear infinite;
+}
+@keyframes proj-spin { to { transform: rotate(360deg); } }
+body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: var(--accent); }
+
+/* 卡片逐张滑入：从下方淡入 */
+.project-card.proj-enter {
+  opacity: 0;
+  transform: translateY(16px);
+}
+.project-card.proj-in {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity .42s ease, transform .42s cubic-bezier(.2,.7,.3,1);
+}
+/* 删除时滑出 */
+.project-card.proj-leave {
+  opacity: 0;
+  transform: translateX(28px);
+  transition: opacity .3s ease, transform .3s ease;
+}
+

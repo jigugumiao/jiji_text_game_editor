@@ -705,6 +705,7 @@
       { label: '刷新素材库', icon: 'ic-refresh', action: function () { renderLibrary(); toast('已刷新素材库'); } },
       { separator: true },
       { label: '切到背景库', icon: 'ic-image', action: function () { switchLib('background'); } },
+      { label: '切到叠层库', icon: 'ic-layers', action: function () { switchLib('overlay'); } },
       { label: '切到3D库', icon: 'ic-box', action: function () { switchLib('item'); } },
       { label: '切到音乐库', icon: 'ic-music', action: function () { switchLib('music'); } },
       { label: '切到音效库', icon: 'ic-volume', action: function () { switchLib('sound'); } },
@@ -787,7 +788,7 @@
 
   // ============ 右键：插入素材子菜单 ============
   function kindIcon(kind) {
-    return ({ background: 'ic-image', item: 'ic-box', music: 'ic-music', sound: 'ic-volume' })[kind] || 'ic-circle-dot';
+    return ({ background: 'ic-image', item: 'ic-box', overlay: 'ic-layers', music: 'ic-music', sound: 'ic-volume' })[kind] || 'ic-circle-dot';
   }
   // 由鼠标视口坐标反推 textarea 内字符偏移（镜像 div 反查；textarea 内容非实时 DOM，caretRangeFromPoint 不可靠，故自实现）
   function offsetFromPoint(ta, clientX, clientY) {
@@ -868,14 +869,35 @@
   }
   function buildInsertAssetMenu() {
     const cats = [
-      { kind: 'background', label: '图片', icon: 'ic-image' },
-      { kind: 'item', label: '物品', icon: 'ic-box' },
+      { kind: 'background', label: '背景', icon: 'ic-image' },
+      { kind: 'overlay', label: '叠层', icon: 'ic-layers' },
+      { kind: 'item', label: '3D', icon: 'ic-box' },
       { kind: 'music', label: '音乐', icon: 'ic-music' },
       { kind: 'sound', label: '音效', icon: 'ic-volume' },
+      { kind: 'block', label: '选项', icon: 'ic-comment' },
     ];
     return cats.map(function (c) {
+      if (c.kind === 'block') {
+        return { label: c.label, icon: c.icon, submenu: function () { return buildBlockOptionSubmenu(); }, action: function () { insertOptionEmpty(); } };
+      }
       return { label: c.label, icon: c.icon, submenu: function () { return buildAssetSubmenu(c.kind); }, action: function () { insertSummonTemplate(c.kind); } };
     });
+  }
+  // 右键「插入 → 选项」子菜单：列出全部剧情块，点选插入 <选项:"文字",块名>（光标落在「文字」可直接打字）。
+  // 顶层「选项」点一下插入空白 <选项:"">（仅文字=纯推进；后接 ,块名=分支跳转），与素材类「输入名称…」一致。
+  async function buildBlockOptionSubmenu() {
+    const items = [];
+    items.push({ label: '✎ 输入选项…', icon: 'ic-pencil', action: function () { insertOptionEmpty(); } });
+    let names = [];
+    try { names = await window.Storage.listBlockNames() || []; } catch (e) { names = []; }
+    if (names.length) {
+      items.push({ separator: true });
+      names.forEach(function (nm) {
+        const disp = (nm === MAIN_BLOCK) ? '主剧情' : nm;
+        items.push({ label: disp, icon: 'ic-comment', action: function () { storyText.focus(); insertBlockOption(nm); } });
+      });
+    }
+    return items;
   }
   async function buildAssetSubmenu(kind) {
     const items = [];

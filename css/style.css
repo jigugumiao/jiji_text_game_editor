@@ -1746,3 +1746,14 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
   #var-popover.show, #block-graph-panel:not(.hidden), #toast { animation: none; }
 }
 
+/* ===== 设置：外观 预览 ===== */
+.ap-preview { border-radius: 10px; overflow: hidden; margin-top: 4px; }
+.ap-preview-long { background: linear-gradient(180deg, #141926, #0a0c12); padding: 30px 0; min-height: 120px; }
+.ap-msg { max-width: 640px; margin: 0 auto; padding: 0 24px; line-height: 1.6; color: #e9eef8; white-space: pre-wrap; word-break: break-word; font-size: 20px; }
+.ap-preview-gal { position: relative; background: #05070c; min-height: 156px; padding-bottom: 96px; }
+.ap-galbox { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 26px; min-height: 70px; display: flex; align-items: center; background: rgba(0,0,0,0.55); }
+.ap-galbox .ap-msg { max-width: 900px; width: 92%; margin: 0 auto; padding: 0; color: #f2f6ff; }
+.toy-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.toy-actions .btn { flex: 0 0 auto; }
+.settings-sub code { background: rgba(0,0,0,0.3); color: #cfe0ff; padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+

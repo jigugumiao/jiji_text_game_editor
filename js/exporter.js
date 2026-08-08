@@ -336,7 +336,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   /* __FONT_FACE__ */
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; background: #0a0c12; }
   html { position: fixed; inset: 0; }
-  body { position: fixed; inset: 0; font-family: __FONT_FAMILY__; background: #0a0c12; color: #f0f3fa; user-select: none; -webkit-user-select: none; overflow: hidden; overscroll-behavior: none; touch-action: manipulation; }
+  body { position: fixed; inset: 0; font-family: __FONT_FAMILY__; background: #0a0c12; color: #f0f3fa; user-select: none; -webkit-user-select: none; overflow: hidden; overscroll-behavior: none; touch-action: manipulation; --body-font: __FONT_FAMILY__; --title-font: __FONT_FAMILY__; --body-font-size: 20px; --gal-box-color: rgba(0,0,0,0.55); }
   #stage { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; cursor: pointer; }
   #bg-layer-a, #bg-layer-b { position: fixed; inset: 0; background-size: auto 100%; background-position: center; background-repeat: no-repeat; transition: opacity 0.5s ease; pointer-events: none; image-rendering: pixelated; }
   #bg-layer-a { opacity: 1; z-index: 0; }
@@ -348,7 +348,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
     background-repeat: no-repeat; background-position: center; background-size: contain; }
   #message-list { flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 18vh 0 14vh; scroll-behavior: smooth; scrollbar-width: none; -ms-overflow-style: none; }
   #message-list::-webkit-scrollbar { width: 0; height: 0; }
-  .message { max-width: 780px; width: 88%; margin: 0 auto 12px; padding: 16px 24px; background: none; border: 0; border-radius: 0; font-size: 20px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; opacity: 0; animation: msgIn 0.3s ease forwards; }
+  .message { max-width: 780px; width: 88%; margin: 0 auto 12px; padding: 16px 24px; background: none; border: 0; border-radius: 0; font-size: var(--body-font-size, 20px); line-height: 1.6; font-family: var(--body-font); white-space: pre-wrap; word-break: break-word; opacity: 0; animation: msgIn 0.3s ease forwards; }
   @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   .message.typing { opacity: 1; }
   .message b, .message strong { color: #fff; font-weight: 700; }
@@ -373,6 +373,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   body.galgame #bg-overlay { opacity: 0 !important; }
   body.galgame #message-list {
     flex: none; position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+    background: var(--gal-box-color, rgba(0,0,0,0.55));
     height: 32vh; min-height: 160px; max-height: 42vh;
     padding: 20px 0 30px;
     background: rgba(6,8,14,0.84);
@@ -465,7 +466,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   #start-screen.has-opening { background: transparent; }
   #start-icon, #start-heading, #start-title, #start-subtitle, #start-author, #start-btns { position: relative; z-index: 1; }
   #start-heading { display: flex; flex-direction: column; align-items: center; gap: 6px; background: rgba(0,0,0,0.45); border-radius: 14px; padding: 18px 32px; max-width: 90vw; box-shadow: 0 6px 30px rgba(0,0,0,0.4); }
-  #start-title { font-size: 36px; font-weight: 700; color: #fff; text-align: center; text-shadow: 0 2px 18px rgba(0,0,0,0.65); line-height: 1.25; }
+  #start-title { font-size: 36px; font-weight: 700; color: #fff; text-align: center; text-shadow: 0 2px 18px rgba(0,0,0,0.65); line-height: 1.25; font-family: var(--title-font, inherit); }
   #start-subtitle { font-size: 16px; font-weight: 400; color: #c4ccd8; text-align: center; margin-top: 4px; letter-spacing: 1px; text-shadow: 0 1px 10px rgba(0,0,0,0.5); }
   #start-icon { width: 100%; height: auto; object-fit: contain; margin-bottom: 8px; display: none; }
   /* 横屏：固定宽度 800px，高度按比例自适应，避免把开始按钮顶掉 */
@@ -498,7 +499,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   #title-overlay { position: fixed; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; transition: opacity 0.3s; background: rgba(0,0,0,0.62); backdrop-filter: blur(1.5px); }
   #title-overlay.show { opacity: 1; }
   #title-overlay.clickable { pointer-events: auto; cursor: pointer; }
-  #title-text { font-size: 48px; font-weight: 700; color: #fff; text-shadow: 0 0 40px rgba(0,0,0,0.7); text-align: center; padding: 0 40px; white-space: nowrap; max-width: 96vw; }
+  #title-text { font-size: 48px; font-weight: 700; color: #fff; text-shadow: 0 0 40px rgba(0,0,0,0.7); text-align: center; padding: 0 40px; white-space: nowrap; max-width: 96vw; font-family: var(--title-font, inherit); }
   /* 物品提示文字：画面中下方 */
   #item-hint { position: fixed; left: 50%; bottom: 9%; transform: translateX(-50%); max-width: 80vw; text-align: center; font-size: 18px; line-height: 1.6; color: #fff; background: rgba(0,0,0,0.55); padding: 10px 22px; border-radius: 12px; z-index: 51; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
   #item-hint.show { opacity: 1; }
@@ -1520,6 +1521,16 @@ __STORY_DATA__
   const PLAY_MODE = '__PLAY_MODE__';
   const GALGAME = PLAY_MODE === 'galgame';
   if (GALGAME) document.body.classList.add('galgame');
+  // 外观默认设置覆盖（设置页「外观」标签配置）：字体大小/标题字体/正文字体/galgame 底框色
+  try {
+    var APPEAR = __APPEARANCE__;
+    if (APPEAR) {
+      if (APPEAR.bodyFont) document.body.style.setProperty('--body-font', APPEAR.bodyFont);
+      if (APPEAR.titleFont) document.body.style.setProperty('--title-font', APPEAR.titleFont);
+      if (APPEAR.fontSize) document.body.style.setProperty('--body-font-size', (APPEAR.fontSize | 0) + 'px');
+      if (APPEAR.galBoxColor) document.body.style.setProperty('--gal-box-color', APPEAR.galBoxColor);
+    }
+  } catch (e) {}
   const _bgCanvas = document.createElement('canvas');
   const _bgCtx = _bgCanvas.getContext('2d', { willReadFrequently: true });
   let _bgData = null, _bgReady = false;
@@ -2469,6 +2480,7 @@ async function collectRuntimeData(inline) {
     gameName: meta.gameName || '', subtitle: meta.subtitle || '', authorId: meta.authorId || '',
     icon: meta.icon || '', font: fontData, openingBg: meta.openingBg || '', openingMusic: meta.openingMusic || '', textContrast: meta.textContrast || 'auto',
     playMode: (meta.playMode === 'galgame') ? 'galgame' : 'longform', watermark: meta.watermark || null,
+    appearance: meta.appearance || null,
   };
   Object.keys(globalObj).forEach(k => { if (/^ai/i.test(k)) delete globalObj[k]; });
   // 变量库：注入运行时初始值（数字→Number，布尔→true/false，文本→字符串）
@@ -2514,7 +2526,8 @@ function buildRuntimeHTML(data, mode) {
     .replace('__TITLE__', data.title || '互动剧情')
     .replace('__STORY_SCRIPT_TAG__', mode === 'zip' ? '<script src="story.js"></script>' : '')
     .replace('__TEXT_CONTRAST__', (data.global && data.global.textContrast) || 'auto')
-    .replace('__PLAY_MODE__', (data.global && data.global.playMode === 'galgame') ? 'galgame' : 'longform');
+    .replace('__PLAY_MODE__', (data.global && data.global.playMode === 'galgame') ? 'galgame' : 'longform')
+    .replace('__APPEARANCE__', safe((data.global && data.global.appearance) || null));
   if (mode === 'single') {
     html = html.replace('__STORY_DATA__', 'window.STORY_DATA = ' + safe(data) + ';');
   } else {

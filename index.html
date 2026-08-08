@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260809-01">
+<link rel="stylesheet" href="css/style.css?v=20260809-02">
 </head>
 <body>
 
@@ -76,7 +76,7 @@
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.17</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.18</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -403,11 +403,11 @@
 <script src="js/storage.js?v=20260809-01"></script>
 <script src="js/generators.js?v=20260722-60"></script>
 <script src="js/bbcode.js?v=20260722-60"></script>
-<script src="js/exporter.js?v=20260806-04"></script>
+<script src="js/exporter.js?v=20260809-02"></script>
 <script src="js/ai.js?v=20260806-01"></script>
 <script src="js/lame.min.js?v=1"></script>
 <!-- sample-project.js 改为按需懒加载（内含压缩后内联示例素材 data URL，约 1.5MB，避免拖慢编辑器日常启动），见 editor.js ensureSampleProject() -->
-<script src="js/editor.js?v=20260809-01"></script>
+<script src="js/editor.js?v=20260809-02"></script>
 <!-- 文字浮动工具栏 -->
 <div id="bbcode-float" class="bbcode-float hidden">
   <div id="bbcode-drag" class="bbcode-drag-head">⋮⋮ 文字工具栏</div>
@@ -482,6 +482,8 @@
     <div class="settings-nav">
       <button class="settings-subnav active" data-sub="ai"><svg class="ico" aria-hidden="true"><use href="#ic-sparkles"/></svg>AI 编剧</button>
       <button class="settings-subnav" data-sub="general"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>通用</button>
+      <button class="settings-subnav" data-sub="appearance"><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>外观</button>
+      <button class="settings-subnav" data-sub="toy"><svg class="ico" aria-hidden="true"><use href="#ic-bili"/></svg>Toy推送</button>
       <button class="settings-subnav" data-sub="about"><svg class="ico" aria-hidden="true"><use href="#ic-user"/></svg>关于作者</button>
     </div>
     <div class="settings-content">
@@ -527,6 +529,14 @@
       <div class="settings-sub hidden" data-sub="general">
         <div class="ai-section" id="settings-general"></div>
       </div>
+      <!-- 子项：外观 -->
+      <div class="settings-sub hidden" data-sub="appearance">
+        <div class="ai-section" id="settings-appearance"></div>
+      </div>
+      <!-- 子项：Toy 推送 -->
+      <div class="settings-sub hidden" data-sub="toy">
+        <div class="ai-section" id="settings-toy"></div>
+      </div>
       <!-- 子项：关于作者 -->
       <div class="settings-sub hidden" data-sub="about">
         <div class="ai-section">
@@ -545,7 +555,7 @@
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.17</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.18</span></div>
         </div>
       </div>
     </div>

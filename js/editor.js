@@ -3239,98 +3239,32 @@
   function renderToy() {
     const box = $('#settings-toy');
     if (!box) return;
-    const t = globalSettings.toy || {};
-    const VALID_VIS = ['public', 'link-only', 'password'];
-    const vis = VALID_VIS.indexOf(t.visibility) >= 0 ? t.visibility : 'public';
     box.innerHTML =
       '<div class="ai-section">' +
-        '<h4><svg class="ico" aria-hidden="true"><use href="#ic-bili"/></svg>Toy 推送 <span class="ai-sub-tip">一键发布到 B 站 Toy</span></h4>' +
-        '<div class="ai-hint">把当前游戏导出为单文件 HTML，并生成 <code>toy create</code> 命令。本机已安装 Toy CLI 并已登录（uid 679874 · 叽叽I咕咕）。点击下方按钮生成命令后，在下载目录的终端运行即可发布。</div>' +
-        '<div class="field"><label>玩具标题</label><input type="text" id="toy-title" value="' + escapeHtml(t.title || '') + '" placeholder="留空则使用游戏名"></div>' +
-        '<div class="field"><label>Slug（URL 标识，英文/数字）</label><input type="text" id="toy-slug" value="' + escapeHtml(t.slug || '') + '" placeholder="留空则自动从标题生成"></div>' +
-        '<div class="field"><label>可见性</label><select id="toy-vis">' +
-          '<option value="public"' + (vis === 'public' ? ' selected' : '') + '>公开 public（所有人可访问）</option>' +
-          '<option value="link-only"' + (vis === 'link-only' ? ' selected' : '') + '>仅链接 link-only（有链接才能访问）</option>' +
-          '<option value="password"' + (vis === 'password' ? ' selected' : '') + '>密码 password（需输入密码）</option>' +
-        '</select></div>' +
-        '<div class="field"><label>封面图（可选）</label>' +
-          '<input type="file" id="toy-poster" accept="image/*" style="color:#cfe0ff">' +
-          (t.poster ? '<div style="margin-top:6px"><img src="' + t.poster + '" style="max-height:60px;border-radius:8px"><button type="button" id="toy-poster-del" style="margin:6px 0 0 8px;padding:4px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.08);color:#fff;cursor:pointer">移除封面</button></div>' : '') +
+        '<h4><svg class="ico" aria-hidden="true"><use href="#ic-bili"/></svg>Toy 发布 <span class="ai-sub-tip">导出 HTML 后去平台上传</span></h4>' +
+        '<div class="ai-hint">点「导出并打开 Toy 平台」：先把当前游戏打包成单文件 HTML 下载到本机，并自动打开 B 站 Toy 发布页。你只需把下载好的文件拖到平台上传即可，无需填写任何参数。</div>' +
+        '<div class="toy-actions">' +
+          '<button id="toy-go" class="btn btn-primary">导出并打开 Toy 平台</button>' +
+          '<button id="toy-open" class="btn btn-ghost">仅打开平台</button>' +
         '</div>' +
-        '<div class="toy-actions"><button id="toy-push" class="btn btn-primary">生成并复制推送命令</button>' +
-          '<button id="toy-open" class="btn btn-ghost">打开 Toy 平台</button></div>' +
-        '<div class="field" style="margin-top:10px"><label>推送命令（发布时运行）</label>' +
-          '<textarea id="toy-cmd" readonly placeholder="点上方按钮生成" style="width:100%;height:84px;font-family:monospace;font-size:12px;background:rgba(0,0,0,0.3);color:#cfe0ff;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:8px"></textarea>' +
-          '<div class="toy-actions" style="margin-top:6px"><button id="toy-copy" class="btn btn-ghost">复制命令</button><span id="toy-status" class="ai-status"></span></div>' +
-        '</div>' +
-        '<div class="ai-hint" style="margin-top:8px">如本机未登录，先在终端运行 <code>toy login</code> 完成 B 站 OAuth 授权；安装命令：<code>irm https://boss.hdslb.com/toy-cli/toy/install.ps1 | iex</code></div>' +
+        '<div class="ai-hint" style="margin-top:10px">发布地址：<a href="https://www.bilibili.com/toy/publish/" target="_blank" style="color:#88c0ff">bilibili.com/toy/publish</a></div>' +
       '</div>';
-    function readCfg() {
-      return {
-        title: box.querySelector('#toy-title').value.trim(),
-        slug: box.querySelector('#toy-slug').value.trim(),
-        visibility: box.querySelector('#toy-vis').value,
-        poster: (globalSettings.toy && globalSettings.toy.poster) || ''
-      };
-    }
-    function persist() { globalSettings.toy = readCfg(); saveGlobal(); }
-    box.querySelector('#toy-title').addEventListener('input', persist);
-    box.querySelector('#toy-slug').addEventListener('input', persist);
-    box.querySelector('#toy-vis').addEventListener('change', persist);
+    box.querySelector('#toy-go').addEventListener('click', function() { exportGameHtml(true); });
     box.querySelector('#toy-open').addEventListener('click', function() { window.open('https://www.bilibili.com/toy/publish/', '_blank'); });
-    box.querySelector('#toy-poster').addEventListener('change', function() {
-      const file = this.files && this.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function() { globalSettings.toy = readCfg(); globalSettings.toy.poster = reader.result; saveGlobal(); renderToy(); toast('封面已选择'); };
-      reader.readAsDataURL(file);
-    });
-    const delBtn = box.querySelector('#toy-poster-del');
-    if (delBtn) delBtn.addEventListener('click', function() { globalSettings.toy = readCfg(); globalSettings.toy.poster = ''; saveGlobal(); renderToy(); });
-    box.querySelector('#toy-copy').addEventListener('click', function() {
-      const cmd = box.querySelector('#toy-cmd').value;
-      if (!cmd) { toast('请先生成命令'); return; }
-      const done = function() { $('#toy-status').textContent = '已复制'; setTimeout(function() { $('#toy-status').textContent = ''; }, 2000); };
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(cmd).then(done, function() { fallbackCopy(cmd); done(); });
-      else { fallbackCopy(cmd); done(); }
-    });
-    box.querySelector('#toy-push').addEventListener('click', function() { doToyPush(); });
   }
   function fallbackCopy(text) {
     const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
     document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) {} ta.remove();
   }
-  async function doToyPush() {
-    const box = $('#settings-toy');
-    if (!box) return;
-    const t = (function() { const c = { title: box.querySelector('#toy-title').value.trim(), slug: box.querySelector('#toy-slug').value.trim(), visibility: box.querySelector('#toy-vis').value, poster: (globalSettings.toy && globalSettings.toy.poster) || '' }; globalSettings.toy = c; saveGlobal(); return c; })();
+  async function exportGameHtml(openPlatform) {
     let data;
     try { data = await window.Exporter.collectRuntimeData(true); }
     catch (e) { toast('导出失败：' + ((e && e.message) || e)); return; }
     const html = window.Exporter.buildRuntimeHTML(data, 'single');
-    const baseTitle = t.title || data.title || '我的互动剧情';
-    const slugRaw = (t.slug && /^[a-z0-9_-]+$/i.test(t.slug)) ? t.slug : (baseTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'my-game');
-    const slug = slugRaw.toLowerCase();
-    const safeName = slug + '.html';
-    downloadBlob(safeName, html, 'text/html;charset=utf-8');
-    let posterArg = '';
-    if (t.poster) {
-      try {
-        const arr = t.poster.split(',');
-        const mime = (arr[0].match(/:(.*?);/) || [, 'image/png'])[1];
-        const bstr = atob(arr[1]);
-        const u8 = new Uint8Array(bstr.length);
-        for (let i = 0; i < bstr.length; i++) u8[i] = bstr.charCodeAt(i);
-        const ext = (mime.indexOf('png') >= 0) ? 'png' : 'jpg';
-        const pname = slug + '-poster.' + ext;
-        downloadBlob(pname, u8, mime);
-        posterArg = ' --poster "' + pname + '"';
-      } catch (e) {}
-    }
-    const cmd = 'toy create "' + safeName + '" --title "' + baseTitle + '" --slug "' + slug + '" --visibility ' + (t.visibility || 'public') + posterArg + ' --yes';
-    const cmdEl = box.querySelector('#toy-cmd');
-    if (cmdEl) cmdEl.value = cmd;
-    toast('已生成 HTML 并下载，复制命令到下载目录终端运行即可发布');
+    const safe = ((data.title || 'game').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'game');
+    downloadBlob(safe + '.html', html, 'text/html;charset=utf-8');
+    toast('已导出 HTML 到本机下载目录');
+    if (openPlatform) window.open('https://www.bilibili.com/toy/publish/', '_blank');
   }
 
   // 创作设定：把已存的创作信息填回设置抽屉里的输入框

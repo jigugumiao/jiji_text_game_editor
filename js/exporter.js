@@ -844,7 +844,7 @@ __STORY_DATA__
     return code;
   }
   function bodyBgFromCSS(css){ if (!css) return '#0a0c12'; if (css[0] === '#' || css.indexOf('gradient') >= 0) return css; return css; }
-    function buildItemViewerHTML(model){
+    function buildItemViewerHTML(model, id){
       const bgCode = 'null'; // embed 模式：scene 背景透明
       const bodyBg = 'transparent'; // embed 模式：body 背景透明
       function rep(s, find, val) { return s.split(find).join(val); }
@@ -859,7 +859,7 @@ __STORY_DATA__
       viewer = rep(viewer, '__LOCK_ROTATION__', model.lockRotation ? 'true' : 'false');
       viewer = rep(viewer, '__EMBED__', 'true');
       viewer = rep(viewer, '__EXIT_MESHES__', JSON.stringify(model.exitMeshes || (model.exitMesh ? [model.exitMesh] : [])).replace(/</g, '\\u003c'));
-      viewer = rep(viewer, '__MODEL_ID__', JSON.stringify(model.id || ''));
+      viewer = rep(viewer, '__MODEL_ID__', JSON.stringify((id != null) ? id : (model.id || '')));
       let wrap = ITEM_VIEWER_WRAP;
       wrap = rep(wrap, '__VIEWER_SCRIPT__', viewer);
       wrap = rep(wrap, '__MODEL_NAME_ESC__', escapeHtml(model.name || 'item'));
@@ -1501,7 +1501,7 @@ __STORY_DATA__
   let lastOptions = null;         // 最近一次选项所在位置 { block, idx }（跳回重选用）
   let recordedChoices = [];       // 沿路选项选择序列（读档重放用）
   let replaying = false;
-  let typing = false, currentHtml = '', fullLen = 0, revealed = 0, awaitingClick = false, itemOpen = false, bgMusic = null, fadingMusics = [], typingTimer = null, currentMsg = null;
+  let typing = false, currentHtml = '', fullLen = 0, revealed = 0, awaitingClick = false, itemOpen = false, currentItemId = null, bgMusic = null, fadingMusics = [], typingTimer = null, currentMsg = null;
   let currentBgSrc = '', currentBgColor = '', currentMusicName = null;
   const soundCache = {}; // 音效播放实例缓存（模板内使用，避免 stopAllMusic 引用未定义而崩溃）
   let vars = {}; // 变量运行时状态（由 startGame 从 DATA.variables 初始化）
@@ -2110,6 +2110,12 @@ __STORY_DATA__
     if (node.name){ for (const k in m){ if (m[k] && m[k].name === node.name) return m[k]; } }
     return null;
   }
+  function findAssetId(lib, node){
+    const m = DATA.assets[lib] || {};
+    if (node.id && m[node.id]) return node.id;
+    if (node.name){ for (const k in m){ if (m[k] && m[k].name === node.name) return k; } }
+    return null;
+  }
   function fadeOutMusic(audio){
     if (!audio) return;
     const startVol = audio.volume || 0;
@@ -2193,17 +2199,18 @@ __STORY_DATA__
       if (a && a.src){ const s = new Audio(a.src); s.volume = sfxMuted ? 0 : SFX_VOL; s.play().catch(function(){}); }
       advance();
     } else if (lib === 'item'){
-      openItem(a, node.hint);
+      openItem(a, node.hint, findAssetId('item', node));
     } else if (lib === 'overlay'){
       clearOverlay(); // 下一个叠层出现时，自动隐藏当前叠层
       setOverlay(a && a.src ? a.src : '');
       advance();
     }
   }
-  function openItem(a, hint){
+  function openItem(a, hint, id){
     if (!a){ advance(); return; }
+    currentItemId = (id != null) ? id : (a && a.id ? a.id : null);
     itemOpen = true;
-    frame.srcdoc = buildItemViewerHTML(a);
+    frame.srcdoc = buildItemViewerHTML(a, id);
     // 中下方提示文字（留空不提示）
     if (hint){
       itemHint.textContent = hint;

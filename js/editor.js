@@ -656,6 +656,40 @@
           } catch (err) { toast('复制失败：' + (err && err.message ? err.message : err)); }
         } });
       }
+      // 背景库 ⇄ 叠层库 互移（两者 asset 结构相同，仅 lib 不同；召唤指令 <召唤背景:名称> ⇄ <召唤叠层:名称>）
+      if (ds.kind === 'background' || ds.kind === 'overlay') {
+        const targetLib = (ds.kind === 'background') ? 'overlay' : 'background';
+        const targetCN = (targetLib === 'background') ? '背景库' : '叠层库';
+        const moveIcon = (targetLib === 'background') ? 'ic-image' : 'ic-layers';
+        items.push({ label: '移动到' + targetCN, icon: moveIcon, action: async function () {
+          try {
+            const asset = await window.Storage.getAsset(ds.kind, ds.id);
+            if (!asset) { toast('素材不存在，无法移动'); return; }
+            const fromCN = (ds.kind === 'background') ? '背景' : '叠层';
+            const toCN = (targetLib === 'background') ? '背景' : '叠层';
+            const aname = asset.name || ds.name;
+            await window.Storage.saveAsset(targetLib, asset);
+            await window.Storage.deleteAsset(ds.kind, ds.id);
+            const n = swapSummonKindEverywhere(fromCN, toCN, aname);
+            switchLib(targetLib); renderLibrary();
+            toast('已移动到' + targetCN + '：' + aname + (n ? '（同步改写 ' + n + ' 处召唤指令）' : ''));
+          } catch (err) { toast('移动失败：' + (err && err.message ? err.message : err)); }
+        } });
+        // 复制到另一库（保留原素材与原有召唤指令，仅新增一份到目标库）
+        items.push({ label: '复制到' + targetCN, icon: 'ic-copy', action: async function () {
+          try {
+            const asset = await window.Storage.getAsset(ds.kind, ds.id);
+            if (!asset) { toast('素材不存在，无法复制'); return; }
+            const aname = asset.name || ds.name;
+            const copyAsset = JSON.parse(JSON.stringify(asset));
+            delete copyAsset.id; // 去掉 id，让 saveAsset 自动分配新 id，避免跨库 id 冲突
+            delete copyAsset.key;
+            await window.Storage.saveAsset(targetLib, copyAsset);
+            renderLibrary();
+            toast('已复制到' + targetCN + '：' + aname);
+          } catch (err) { toast('复制失败：' + (err && err.message ? err.message : err)); }
+        } });
+      }
       // 已派生素材：可一键恢复原始（原图/原音频）
       if (ds.derived === '1') {
         items.push({ label: '恢复原始素材', icon: 'ic-undo', action: function () { restoreOriginalAsset(ds.kind, ds.id); } });

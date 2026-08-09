@@ -2454,6 +2454,10 @@ async function collectRuntimeData(inline) {
         // GLB 始终内联
         assets.item[a.id] = {
           name: a.name, glb: a.glb || '', exitMesh: a.exitMesh || null,
+          // ⚠️ 必须带上 exitMeshes（复数）：查看器靠它判断哪些 mesh 是「结束物体」，
+          // 若只传 exitMesh（单数），当物品只有 exitMeshes 时 __EXIT_MESHES__ 会变空，
+          // 导致 EXIT_MESHES.indexOf 永远 -1、notifyExit 永不触发、绑定块不出现。
+          exitMeshes: a.exitMeshes || (a.exitMesh ? [a.exitMesh] : []),
           interactions: a.interactions || {}, sounds: a.sounds || {},
           defaultView: a.defaultView || null, bg: a.bg || null,
           lockRotation: !!a.lockRotation, chains: a.chains || [],

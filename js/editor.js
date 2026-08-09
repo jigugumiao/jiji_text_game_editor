@@ -715,6 +715,7 @@
       { label: '粘贴', icon: 'ic-clipboard', action: function () { ctxPaste(); } },
       { label: '全选', icon: 'ic-select-all', action: function () { ctxSelectAll(); } },
       { separator: true },
+      { label: '文字样式', icon: 'ic-type', submenu: buildStyleSubmenu() },
       { label: '插入素材', icon: 'ic-plus', submenu: buildInsertAssetMenu() },
       { separator: true },
       { label: '插入「停顿」到选中后', icon: 'ic-pause', action: function () { insertPauseAfterSelection(); } },
@@ -729,10 +730,75 @@
       { label: '粘贴', icon: 'ic-clipboard', action: function () { ctxPaste(); } },
       { label: '全选', icon: 'ic-select-all', action: function () { ctxSelectAll(); } },
       { separator: true },
+      { label: '排版', icon: 'ic-align-left', submenu: buildTypesetSubmenu() },
       { label: '插入素材', icon: 'ic-plus', submenu: buildInsertAssetMenu() },
       { separator: true },
       { label: '插入「停顿」到当前行末', icon: 'ic-pause', action: function () { insertPauseBelow(); } },
       { label: 'AI 续写', icon: 'ic-sparkles', action: function () { if (typeof openAIQuickMenu === 'function') openAIQuickMenu(); else toast('未找到 AI 菜单'); } },
+    ];
+  }
+  // 右键「文字样式」子菜单（选中文字时）：复用文字工具栏的样式 + 字号逻辑
+  function revealToolbarForColor() {
+    const f = document.getElementById('bbcode-float');
+    if (f) f.classList.remove('hidden'); // 色板弹层挂在浮动工具栏内，需先让其可见
+  }
+  function triggerToolbarBb(tag) {
+    const b = document.querySelector('.bbcode-btns .bb[data-tag="' + tag + '"]');
+    if (b) { revealToolbarForColor(); b.click(); }
+  }
+  function bbWrap(open, close) {
+    const ta = storyText, st = ta.scrollTop;
+    smartWrap(ta, open, close, '文字');
+    ta.scrollTop = st; commitEdit();
+  }
+  function bbSetSize(n) { bbWrap('[size=' + n + ']', '[/size]'); }
+  function buildStyleSubmenu() {
+    return [
+      { label: '粗体', icon: 'ic-bold', action: function () { bbWrap('[b]', '[/b]'); } },
+      { label: '斜体', icon: 'ic-italic', action: function () { bbWrap('[i]', '[/i]'); } },
+      { label: '下划线', icon: 'ic-underline', action: function () { bbWrap('[u]', '[/u]'); } },
+      { label: '删除线', icon: 'ic-strikethrough', action: function () { bbWrap('[s]', '[/s]'); } },
+      { label: '瞬显', icon: 'ic-zap', action: function () { bbWrap('[瞬显]', '[/瞬显]'); } },
+      { separator: true },
+      { label: '颜色', icon: 'ic-palette', action: function () { revealToolbarForColor(); const b = document.getElementById('bb-color-btn'); if (b) b.click(); } },
+      { label: '阴影', icon: 'ic-type', action: function () { triggerToolbarBb('shadow'); } },
+      { label: '发光', icon: 'ic-sparkles', action: function () { triggerToolbarBb('glow'); } },
+      { label: '记号笔', icon: 'ic-highlighter', action: function () { triggerToolbarBb('highlight'); } },
+      { separator: true },
+      { label: '字号 14', icon: 'ic-type', action: function () { bbSetSize('14'); } },
+      { label: '字号 18', icon: 'ic-type', action: function () { bbSetSize('18'); } },
+      { label: '字号 24', icon: 'ic-type', action: function () { bbSetSize('24'); } },
+      { label: '字号 32', icon: 'ic-type', action: function () { bbSetSize('32'); } },
+      { label: '字号 48', icon: 'ic-type', action: function () { bbSetSize('48'); } },
+    ];
+  }
+  // 右键「排版」子菜单（未选中文字时）：复用文字工具栏的排版逻辑（不含「清除」）
+  function bbAlign(tag) {
+    const ta = storyText, st = ta.scrollTop;
+    const r = getRange(ta); let s = r.start, e = r.end;
+    if (!(e > s)) {
+      const val = ta.value, cur = s;
+      s = val.lastIndexOf('\n', cur - 1) + 1;
+      const le = val.indexOf('\n', cur);
+      e = le === -1 ? val.length : le;
+    }
+    let lineText = ta.value.slice(s, e);
+    lineText = lineText.replace(/\[(left|center|right)\]|\[\/(left|center|right)\]/g, '');
+    lineText = '[' + tag + ']' + lineText + '[/' + tag + ']';
+    ta.value = ta.value.slice(0, s) + lineText + ta.value.slice(e);
+    if (document.activeElement === ta) try { ta.setSelectionRange(s, s + lineText.length); } catch (_) {}
+    ta.scrollTop = st; commitEdit();
+  }
+  function buildTypesetSubmenu() {
+    return [
+      { label: '左对齐', icon: 'ic-align-left', action: function () { bbAlign('left'); } },
+      { label: '居中对齐', icon: 'ic-align-center', action: function () { bbAlign('center'); } },
+      { label: '右对齐', icon: 'ic-align-right', action: function () { bbAlign('right'); } },
+      { separator: true },
+      { label: '换行', icon: 'ic-corner-up-left', action: function () {
+        const ta = storyText, r = getRange(ta);
+        window.BBCode.insertAtRange(ta, r.start, '[br]'); commitEdit();
+      } },
     ];
   }
   function libraryItems() {

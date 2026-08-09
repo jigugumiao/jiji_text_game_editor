@@ -618,8 +618,9 @@
       if (ds.kind === 'background' && ds.solid === '1') {
         items.push({ label: '重选颜色', icon: 'ic-color', action: function () { openSolidRePick(ds.kind, ds.id); } });
       }
-      // 图片（背景）/ 音频（音乐/音效）支持再编辑：调参 + 重新压缩，原图/原音频归档保留
-      else if (ds.kind === 'background' || ds.kind === 'music' || ds.kind === 'sound') {
+      // 图片（背景，非 GIF）/ 音频（音乐/音效）支持再编辑：调参 + 重新压缩，原图/原音频归档保留
+      // GIF 背景不提供「再编辑」（无压缩/调参，原样保留动画）
+      else if ((ds.kind === 'background' && ds.gif !== '1') || ds.kind === 'music' || ds.kind === 'sound') {
         items.push({ label: '再编辑（调参 / 压缩）', icon: 'ic-pencil', action: function () { openReEditModal(ds.kind, ds.id); } });
       }
       // 音乐库 ⇄ 音效库 互移（两者 asset 结构相同，仅 lib 不同）
@@ -2067,8 +2068,15 @@
       importBundle(f);
       if (wasActive !== 'item') toast('「' + f.name + '」已自动归入物品库');
     }
-    // 图片 → 背景库
-    if (images.length) importFiles(images, 'background', 'image');
+    // 图片：GIF 默认归入叠层库（动画叠层），静态图进背景库；若当前正停在背景库，GIF 也进背景库以支持背景动图
+    const gifs = [], stills = [];
+    for (const f of images) (isGifFile(f) ? gifs : stills).push(f);
+    if (stills.length) importFiles(stills, 'background', 'image');
+    for (const f of gifs) {
+      const targetLib = (activeLib === 'background') ? 'background' : 'overlay';
+      await importFiles([f], targetLib, 'image');
+      if (targetLib === 'overlay') toast('「' + f.name + '」是 GIF，已自动归入叠层库');
+    }
     // 音频 → 按时长归类
     for (const f of audios) {
       let dur = NaN;
@@ -3393,6 +3401,8 @@
     if (info.id != null) card.dataset.id = info.id;
     if (info.name != null) card.dataset.name = info.name;
     if (info.derived) card.dataset.derived = '1';
+    // 标记 GIF（原样保存、保留动画、不提供调参/压缩）
+    if (info.src && info.src.indexOf('data:image/gif') === 0) card.dataset.gif = '1';
     // 横屏=拖动添加；竖屏=点按添加（竖屏若可拖拽，点击会被拖动吞掉导致不插入）
     card.draggable = isLandscapeNow();
     const meta = document.createElement('div'); meta.className = 'asset-meta';
@@ -3474,6 +3484,12 @@
   }
 
   // ============ 导入 ============
+  // 判断文件是否为 GIF：GIF 不压缩、不调参，原样保存以保留动画
+  function isGifFile(f) {
+    if (!f) return false;
+    if ((f.type || '') === 'image/gif') return true;
+    return /\.gif$/i.test(f.name || '');
+  }
   function readFileAsDataUrl(file) {
     return new Promise((res, rej) => {
       const r = new FileReader();
@@ -4255,9 +4271,17 @@ self.onmessage = function (e) {
   async function importFiles(files, lib, kind) {
     const arr = Array.from(files || []);
     if (kind === 'image') {
-      // 背景图：逐张打开处理面板，用户调参后保存（多张则串行队列）
+      // 图片：逐张处理；GIF 不压缩、不调参，原样保存（保留动画），其余图打开调参面板
       let done = 0;
       for (const f of arr) {
+        if (isGifFile(f)) {
+          try {
+            const src = await readFileAsDataUrl(f);
+            await window.Storage.saveAsset(lib, { name: f.name, src, gif: '1' });
+            done++;
+          } catch (e) { console.error('GIF 保存失败：', f && f.name, e); }
+          continue;
+        }
         await new Promise((resolve) => {
           openImageProcessor(f, {
             name: f.name,
@@ -4272,7 +4296,7 @@ self.onmessage = function (e) {
       }
       if (lib === 'background') focusLibrary('background');
       else { renderLibrary(); saveNow(); }
-      toast('已导入 ' + done + ' 张背景图');
+      toast('已导入 ' + done + ' 张图片素材');
       return;
     }
     if (kind === 'audio') {
@@ -4696,17 +4720,26 @@ self.onmessage = function (e) {
           await importBundleAsTodo(f, item.name); // GLB 场景包，整体以待办名入库
           focusLibrary('item'); // 上传后切到物品库并刷新，立即显示新模型
         } else if (item.kind === 'background') {
-          // 打开处理面板：上传后弹出，可调分辨率/颜色级数/亮度等，确认后保存
-          openImageProcessor(f, {
-            name: item.name,
-            onApply: async (src) => {
-              await window.Storage.saveAsset('background', { name: item.name, src });
-              focusLibrary('background'); // 上传后切到背景库并刷新，立即显示新图
-              showTodoPreview(row, src);  // 行内实时预览
-              setTimeout(() => refreshTodo(), 1600); // 延迟刷新：先让用户看到预览，刷新后该项因已补齐而从待办消失
-            },
-            onSkip: () => {}
-          });
+          // GIF：不压缩、不调参，直接以原图保存（保留动画）
+          if (isGifFile(f)) {
+            const src = await readFileAsDataUrl(f);
+            await window.Storage.saveAsset('background', { name: item.name, src, gif: '1' });
+            focusLibrary('background');
+            showTodoPreview(row, src);
+            setTimeout(() => refreshTodo(), 1600);
+          } else {
+            // 打开处理面板：上传后弹出，可调分辨率/颜色级数/亮度等，确认后保存
+            openImageProcessor(f, {
+              name: item.name,
+              onApply: async (src) => {
+                await window.Storage.saveAsset('background', { name: item.name, src });
+                focusLibrary('background'); // 上传后切到背景库并刷新，立即显示新图
+                showTodoPreview(row, src);  // 行内实时预览
+                setTimeout(() => refreshTodo(), 1600); // 延迟刷新：先让用户看到预览，刷新后该项因已补齐而从待办消失
+              },
+              onSkip: () => {}
+            });
+          }
         } else {
           const dataUrl = await readFileAsDataUrl(f);
           await window.Storage.saveAsset(item.kind, { name: item.name, src: dataUrl });

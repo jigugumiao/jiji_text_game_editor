@@ -178,7 +178,18 @@ function playSound(id) {
 }
 function triggerMeshInteraction(meshName, hitObj) {
   const entry = interactions[meshName];
-  if (!entry) return false;
+  const isExit = EXIT_MESHES.indexOf(meshName) >= 0;
+  if (!entry) {
+    // 结束物体（绑定了剧情块）即便没有配置交互动作，也应允许触发跳转；
+    // 仅校验交互链门禁与「已触发一次」限制，不播放动画。
+    if (isExit) {
+      if (!_chainUnlocked(meshName)) return false;
+      if (_triggered[meshName]) return false;
+      _triggered[meshName] = true;
+      return true;
+    }
+    return false;
+  }
   const clipName = (typeof entry === 'string') ? entry : (entry.clip || '');
   const soundId = (typeof entry === 'string') ? '' : (entry.sound || '');
   const respond = (typeof entry === 'string') ? true : (entry.respond !== false);

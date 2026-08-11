@@ -8,6 +8,9 @@
 const ITEM_VIEWER_SOURCE = String.raw`import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 
 const MODEL_NAME = __MODEL_NAME__;
 const MODEL_BLOB = __MODEL_BLOB__;
@@ -16,17 +19,22 @@ const LOCK_ROTATION = __LOCK_ROTATION__; // 关闭手动旋转：true 时禁止�
 const EMBED = __EMBED__;
 const EXIT_MESHES = __EXIT_MESHES__;
 const MODEL_ID = __MODEL_ID__;
+const FOV = __FOV__;
+const DOF = __DOF__;
+let _composer = null, _bokeh = null, _dofFocusObj = null;
+const _dofTmp = new THREE.Vector3();
 
 const scene = new THREE.Scene();
 scene.background = __SCENE_BG__;
 
 const container = document.getElementById('viewer');
-const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.01, 5000);
+const camera = new THREE.PerspectiveCamera(FOV, container.clientWidth / container.clientHeight, 0.01, 5000);
 camera.position.set(3, 2, 5);
 
 const PIXEL_SIZE = 2;
 const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
 renderer.setPixelRatio(1);
+renderer.setClearColor(0x000000, 0); // 显式透明清除，确保 embed 模式背景可透出
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 container.appendChild(renderer.domElement);
@@ -133,6 +141,9 @@ function loadModel() {
   loader.load(blobUrl, (gltf) => {
     currentModel = gltf.scene;
     scene.add(currentModel);
+    if (DOF && DOF.enabled && DOF.focusObject) {
+      _dofFocusObj = currentModel.getObjectByName(DOF.focusObject) || null;
+    }
     if (gltf.animations && gltf.animations.length > 0) {
       mixer = new THREE.AnimationMixer(currentModel);
       animActions = gltf.animations.map(clip => {
@@ -230,6 +241,34 @@ function toggleAction(action, pingpong, autoReturn) {
 function maybeDeleteAfter(uid) {
   if (deleteFlag[uid]) { const obj = triggerObj[uid]; if (obj && obj.parent) obj.parent.remove(obj); deleteFlag[uid] = false; triggerObj[uid] = null; }
 }
+function ensureComposer() {
+  if (_composer) return;
+  _composer = new EffectComposer(renderer);
+  _composer.addPass(new RenderPass(scene, camera));
+  _bokeh = new BokehPass(scene, camera, {
+    focus: 10.0,
+    aperture: (DOF && DOF.aperture) || 0.025,
+    maxblur: (DOF && DOF.maxblur) || 0.01,
+    width: renderer.domElement.width || container.clientWidth,
+    height: renderer.domElement.height || container.clientHeight
+  });
+  _composer.addPass(_bokeh);
+  // 关键修复：BokehShader 默认 `gl_FragColor.a = 1.0` 会把透明背景强制写成不透明，
+  // embed 模式（scene.background=null、body 透明）下会盖住剧情底图导致背景透不出。
+  // 去掉该行保留原始 alpha（col.a/41），并把混合改成 NoBlending，让全屏 quad 直接覆盖画布，
+  // 避免逐帧半透明叠加产生残影/拖影。
+  if (_bokeh.materialBokeh && _bokeh.materialBokeh.fragmentShader) {
+    _bokeh.materialBokeh.fragmentShader = _bokeh.materialBokeh.fragmentShader.split('gl_FragColor.a = 1.0;').join('');
+    _bokeh.materialBokeh.needsUpdate = true;
+  }
+  if (_bokeh.materialBokeh) _bokeh.materialBokeh.blending = THREE.NoBlending;
+}
+function updateDofFocus() {
+  const tgt = (_dofFocusObj && _dofFocusObj.getWorldPosition)
+    ? _dofFocusObj.getWorldPosition(_dofTmp)
+    : (controls ? controls.target : new THREE.Vector3());
+  if (_bokeh && _bokeh.uniforms) _bokeh.uniforms['focus'].value = camera.position.distanceTo(tgt);
+}
 function initInteraction() {
   raycaster = new THREE.Raycaster();
   const el = renderer.domElement;
@@ -255,6 +294,7 @@ window.addEventListener('resize', () => {
   const w = container.clientWidth, h = container.clientHeight;
   if (w === 0 || h === 0) return;
   camera.aspect = w / h; camera.updateProjectionMatrix(); resizeView();
+  if (_composer) _composer.setSize(renderer.domElement.width || w, renderer.domElement.height || h);
 });
 
 // ============ 内置简易动画 ============
@@ -291,7 +331,18 @@ function animate(time) {
     PRESET_ANIMS[p.name].apply(p.obj, t, p.base, p.amp);
     if (p.t >= 1) { p.obj.position.y = p.base.y; p.obj.rotation.x = p.base.rx; p.obj.rotation.y = p.base.ry; p.obj.rotation.z = p.base.rz; activePresets.splice(i, 1); if (p.del && p.obj.parent) p.obj.parent.remove(p.obj); }
   }
-  controls.update(); renderer.render(scene, camera);
+  controls.update();
+  if (DOF && DOF.enabled && _composer) {
+    ensureComposer();
+    if (_bokeh && _bokeh.uniforms) {
+      _bokeh.uniforms['aperture'].value = (DOF && DOF.aperture) || 0.025;
+      _bokeh.uniforms['maxblur'].value = (DOF && DOF.maxblur) || 0.01;
+    }
+    updateDofFocus();
+    _composer.render();
+  } else {
+    renderer.render(scene, camera);
+  }
 }
 animate();
 
@@ -860,6 +911,8 @@ __STORY_DATA__
       viewer = rep(viewer, '__EMBED__', 'true');
       viewer = rep(viewer, '__EXIT_MESHES__', JSON.stringify(model.exitMeshes || (model.exitMesh ? [model.exitMesh] : [])).replace(/</g, '\\u003c'));
       viewer = rep(viewer, '__MODEL_ID__', JSON.stringify((id != null) ? id : (model.id || '')));
+      viewer = rep(viewer, '__FOV__', JSON.stringify(typeof model.fov === 'number' ? model.fov : 50));
+      viewer = rep(viewer, '__DOF__', JSON.stringify(model.dof || null).replace(/</g, '\\u003c'));
       let wrap = ITEM_VIEWER_WRAP;
       wrap = rep(wrap, '__VIEWER_SCRIPT__', viewer);
       wrap = rep(wrap, '__MODEL_NAME_ESC__', escapeHtml(model.name || 'item'));
@@ -2469,6 +2522,8 @@ async function collectRuntimeData(inline) {
           defaultView: a.defaultView || null, bg: a.bg || null,
           lockRotation: !!a.lockRotation, chains: a.chains || [],
           exitBindings: a.exitBindings || {},
+          fov: (typeof a.fov === 'number') ? a.fov : 50,
+          dof: a.dof || null,
         };
       } else {
         if (a.kind === 'solid') {

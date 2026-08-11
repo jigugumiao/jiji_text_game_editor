@@ -390,6 +390,8 @@ async function importSceneBundle(json) {
       defaultView: m.defaultView || null,
       lockRotation: !!m.lockRotation,
       bg: m.bg || null,
+      fov: (typeof m.fov === 'number') ? m.fov : 50,
+      dof: m.dof || null,
     };
     await saveAsset('item', item);
     imported.push(item);

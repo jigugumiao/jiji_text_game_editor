@@ -253,7 +253,7 @@ function ensureComposer() {
     height: renderer.domElement.height || container.clientHeight
   });
   _composer.addPass(_bokeh);
-  // 关键修复：BokehShader 默认 `gl_FragColor.a = 1.0` 会把透明背景强制写成不透明，
+  // 关键修复：BokehShader 默认 'gl_FragColor.a = 1.0' 会把透明背景强制写成不透明，
   // embed 模式（scene.background=null、body 透明）下会盖住剧情底图导致背景透不出。
   // 去掉该行保留原始 alpha（col.a/41），并把混合改成 NoBlending，让全屏 quad 直接覆盖画布，
   // 避免逐帧半透明叠加产生残影/拖影。

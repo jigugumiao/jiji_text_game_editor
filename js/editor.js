@@ -612,7 +612,7 @@
       items.push({ label: '重命名素材', icon: 'ic-pencil', action: function () { handleRenameAsset(ds.kind, ds.id, ds.name); } });
       // 物品库：设置结束物体 → 剧情块的绑定（右键进入设置面板）
       if (ds.kind === 'item') {
-        items.push({ label: '设置结束物体绑定', icon: 'ic-link', action: function () { openItemExitSettings(ds.kind, ds.id); } });
+        items.push({ label: '结束物体绑定剧情块...', icon: 'ic-link', action: function () { openItemExitSettings(ds.kind, ds.id); } });
       }
       // 纯色背景：再编辑改为「重选颜色」（纯色无图可压缩，复用纯色生成器并预填当前色）
       if (ds.kind === 'background' && ds.solid === '1') {

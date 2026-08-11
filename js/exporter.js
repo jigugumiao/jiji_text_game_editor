@@ -11,6 +11,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const MODEL_NAME = __MODEL_NAME__;
 const MODEL_BLOB = __MODEL_BLOB__;
@@ -41,6 +42,15 @@ container.appendChild(renderer.domElement);
 renderer.domElement.style.width = '100%';
 renderer.domElement.style.height = '100%';
 renderer.domElement.style.imageRendering = 'pixelated';
+
+// HDRI / IBL 环境光照：用程序化 RoomEnvironment 经 PMREMGenerator 生成环境贴图，
+// 让 PBR 材质（金属/玻璃）拥有真实反射与高光；只做光照、不显示背景，不盖 embed 透明底图。
+const HDRI = __HDRI__;
+if (HDRI) {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmrem.dispose();
+}
 
 function resizeView() {
   const w = container.clientWidth;
@@ -332,7 +342,7 @@ function animate(time) {
     if (p.t >= 1) { p.obj.position.y = p.base.y; p.obj.rotation.x = p.base.rx; p.obj.rotation.y = p.base.ry; p.obj.rotation.z = p.base.rz; activePresets.splice(i, 1); if (p.del && p.obj.parent) p.obj.parent.remove(p.obj); }
   }
   controls.update();
-  if (DOF && DOF.enabled && _composer) {
+  if (DOF && DOF.enabled) {
     ensureComposer();
     if (_bokeh && _bokeh.uniforms) {
       _bokeh.uniforms['aperture'].value = (DOF && DOF.aperture) || 0.025;
@@ -913,6 +923,7 @@ __STORY_DATA__
       viewer = rep(viewer, '__MODEL_ID__', JSON.stringify((id != null) ? id : (model.id || '')));
       viewer = rep(viewer, '__FOV__', JSON.stringify(typeof model.fov === 'number' ? model.fov : 50));
       viewer = rep(viewer, '__DOF__', JSON.stringify(model.dof || null).replace(/</g, '\\u003c'));
+      viewer = rep(viewer, '__HDRI__', JSON.stringify((model.hdri !== false)));
       let wrap = ITEM_VIEWER_WRAP;
       wrap = rep(wrap, '__VIEWER_SCRIPT__', viewer);
       wrap = rep(wrap, '__MODEL_NAME_ESC__', escapeHtml(model.name || 'item'));
@@ -2524,6 +2535,7 @@ async function collectRuntimeData(inline) {
           exitBindings: a.exitBindings || {},
           fov: (typeof a.fov === 'number') ? a.fov : 50,
           dof: a.dof || null,
+          hdri: (a.hdri !== false),
         };
       } else {
         if (a.kind === 'solid') {

@@ -22,7 +22,7 @@ const EXIT_MESHES = __EXIT_MESHES__;
 const MODEL_ID = __MODEL_ID__;
 const FOV = __FOV__;
 const DOF = __DOF__;
-let _composer = null, _bokeh = null, _dofFocusObj = null;
+let _composer = null, _bokeh = null, _dofFocusObj = null, _modelCenter = new THREE.Vector3();
 const _dofTmp = new THREE.Vector3();
 
 const scene = new THREE.Scene();
@@ -68,14 +68,22 @@ controls.maxDistance = 1000;
 // 关闭手动旋转：锁定后禁用轨道旋转，但保留缩放/平移，并固定在默认视角
 if (LOCK_ROTATION) controls.enableRotate = false;
 
-const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
-keyLight.position.set(5, 8, 6);
-scene.add(keyLight);
-const fillLight = new THREE.DirectionalLight(0x88aaff, 0.5);
-fillLight.position.set(-6, 3, -4);
-scene.add(fillLight);
-scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.5));
+// 灯光布光：HDRI 开启时依赖 RoomEnvironment IBL 做主光源（金属/玻璃真实反射），
+// 仅保留一盏柔和方向光提供造型方向感；HDRI 关闭时用经典四灯均匀照亮。
+if (HDRI) {
+  const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+  keyLight.position.set(5, 8, 6);
+  scene.add(keyLight);
+} else {
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
+  keyLight.position.set(5, 8, 6);
+  scene.add(keyLight);
+  const fillLight = new THREE.DirectionalLight(0x88aaff, 0.5);
+  fillLight.position.set(-6, 3, -4);
+  scene.add(fillLight);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.5));
+}
 
 let currentModel = null;
 let blobUrl = null;
@@ -179,6 +187,8 @@ function loadModel() {
     controls.minDistance = maxDim * 0.05;
     controls.maxDistance = maxDim * 20;
     controls.update();
+    // 记录模型世界中心（重新居中后恒为原点），供 DOF 默认对焦使用
+    _modelCenter.set(0, 0, 0);
     if (DEFAULT_VIEW && DEFAULT_VIEW.pos && DEFAULT_VIEW.target) {
       camera.position.fromArray(DEFAULT_VIEW.pos);
       controls.target.fromArray(DEFAULT_VIEW.target);
@@ -276,7 +286,7 @@ function ensureComposer() {
 function updateDofFocus() {
   const tgt = (_dofFocusObj && _dofFocusObj.getWorldPosition)
     ? _dofFocusObj.getWorldPosition(_dofTmp)
-    : (controls ? controls.target : new THREE.Vector3());
+    : _modelCenter;
   if (_bokeh && _bokeh.uniforms) _bokeh.uniforms['focus'].value = camera.position.distanceTo(tgt);
 }
 function initInteraction() {

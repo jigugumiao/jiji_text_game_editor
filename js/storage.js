@@ -377,7 +377,7 @@ async function importSceneBundle(json) {
   const imported = [];
   for (const m of models) {
     const id = m.id || uid('itm');
-    const item = {
+    const item = Object.assign({}, m, {
       id,
       name: m.name || '未命名物品',
       glb: m.glb || '',
@@ -392,7 +392,8 @@ async function importSceneBundle(json) {
       bg: m.bg || null,
       fov: (typeof m.fov === 'number') ? m.fov : 50,
       dof: m.dof || null,
-    };
+      hdri: (m.hdri !== false),
+    });
     await saveAsset('item', item);
     imported.push(item);
   }

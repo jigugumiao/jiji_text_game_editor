@@ -613,7 +613,6 @@
       // 物品库：设置结束物体 → 剧情块的绑定（右键进入设置面板）
       if (ds.kind === 'item') {
         items.push({ label: '设置结束物体绑定', icon: 'ic-link', action: function () { openItemExitSettings(ds.kind, ds.id); } });
-        items.push({ label: '3D 显示设置', icon: 'ic-box', action: function () { openItem3DSettings(ds.kind, ds.id); } });
       }
       // 纯色背景：再编辑改为「重选颜色」（纯色无图可压缩，复用纯色生成器并预填当前色）
       if (ds.kind === 'background' && ds.solid === '1') {
@@ -4592,72 +4591,7 @@ self.onmessage = function (e) {
       });
     };
   }
-  // ============ 物品：3D 显示设置（FOV / 景深 / HDRI） ============
-  // 右键物品卡 → 3D 显示设置：配置查看器相机视角、背景虚化与程序化环境光照。
-  async function openItem3DSettings(lib, id) {
-    const asset = await window.Storage.getAsset(lib, id);
-    if (!asset) { toast('素材不存在'); return; }
-    const fov = (typeof asset.fov === 'number') ? asset.fov : 50;
-    const dof = asset.dof || { enabled: false, focusObject: '', aperture: 0.025, maxblur: 0.01 };
-    const hdri = (asset.hdri !== false);
-    const box = $('#gen-box');
-    const esc = function (s) { return escapeHtml(String(s == null ? '' : s)); };
-    // 制作器 HDRI 预设名（用于显示当前所选环境）
-    const HDRI_PRESETS = { urban: '都市夜景', indoor: '室内普通', blue: '蓝色室内', purple: '紫色室内', snow: '雪地', grotto: '山涧', forest: '森林' };
-    const envKey = asset.envMap || '';
-    const envName = envKey ? (HDRI_PRESETS[envKey] || envKey) : '（未设置 / 经典四灯）';
-    let html = '<h3><svg class="ico" aria-hidden="true"><use href="#ic-box"/></svg> 3D 显示设置</h3>';
-    html += '<div class="gen-note">调整该物品在查看器里的视角（FOV）、背景虚化（景深）与环境光照（HDRI）。设置会保存到该物品素材，试玩/导出后自动生效。</div>';
-    // FOV
-    html += field('视角 FOV（默认 50）', '<input type="number" id="i3d-fov" min="10" max="120" step="1" value="' + esc(fov) + '" style="width:100px">');
-    // HDRI 当前所选环境（只读展示，来自制作器导入时携带的 HDRI）+ 启用开关
-    html += field('环境光照 HDRI（金属/玻璃真实反射）',
-      '<div style="font-size:12px;line-height:1.6">' +
-      '当前环境：<b>' + esc(envName) + '</b>' +
-      (envKey ? '' : '<br><span style="color:#8b93a3">未从制作器导入 HDRI，启用后将使用程序化 RoomEnvironment 近似光照</span>') +
-      '<br><label style="display:flex;align-items:center;gap:6px;margin-top:6px"><input type="checkbox" id="i3d-hdri"' + (hdri ? ' checked' : '') + '> 启用环境光照</label>' +
-      '</div>');
-    // 景深 开关
-    html += field('景深 / 背景虚化', '<label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="i3d-dof"' + (dof.enabled ? ' checked' : '') + '> 启用</label>');
-    // 对焦物体（用结束物体列表，无则给「整体中心」）
-    const exitMeshes = (asset.exitMeshes && asset.exitMeshes.length) ? asset.exitMeshes : (asset.exitMesh ? [asset.exitMesh] : []);
-    const meshOpts = ['<option value="">（模型整体中心）</option>'].concat(
-      exitMeshes.map(function (m) {
-        return '<option value="' + esc(m) + '"' + ((dof.focusObject || '') === m ? ' selected' : '') + '>' + esc(m) + '</option>';
-      })
-    ).join('');
-    html += field('对焦物体', '<select id="i3d-focus" style="width:100%">' + meshOpts + '</select>');
-    html += field('光圈 aperture（越大越虚）', '<input type="number" id="i3d-aperture" min="0" max="0.2" step="0.001" value="' + esc(dof.aperture) + '" style="width:100px">');
-    html += field('最大模糊 maxblur', '<input type="number" id="i3d-maxblur" min="0" max="0.05" step="0.001" value="' + esc(dof.maxblur) + '" style="width:100px">');
-    html += '<div style="display:flex;gap:8px;margin-top:12px">'
-          + '<button class="btn btn-primary" id="i3d-save">保存设置</button>'
-          + '<button class="btn" id="i3d-cancel">取消</button></div>';
-    box.innerHTML = html;
-    $('#gen-modal').classList.remove('hidden');
-    $('#i3d-cancel').onclick = function () { closeGen(); };
-    $('#i3d-save').onclick = function () {
-      const newFov = parseFloat($('#i3d-fov').value);
-      const newHdri = $('#i3d-hdri').checked;
-      const dofEnabled = $('#i3d-dof').checked;
-      const focus = $('#i3d-focus').value;
-      const aperture = parseFloat($('#i3d-aperture').value);
-      const maxblur = parseFloat($('#i3d-maxblur').value);
-      asset.fov = isNaN(newFov) ? 50 : newFov;
-      asset.hdri = newHdri;
-      asset.dof = {
-        enabled: dofEnabled,
-        focusObject: focus || '',
-        aperture: isNaN(aperture) ? 0.025 : aperture,
-        maxblur: isNaN(maxblur) ? 0.01 : maxblur
-      };
-      window.Storage.saveAsset('item', asset).then(function () {
-        closeGen(); renderLibrary(); saveNow();
-        toast('已保存 3D 显示设置');
-      }).catch(function (err) {
-        closeGen(); alert('保存失败：' + (err && err.message ? err.message : err));
-      });
-    };
-  }
+  // 物品显示设置（FOV / 景深 / HDRI）完全由导入文件决定，不做编辑器内二次配置 UI。
   function openSolidGen(presetName, editAsset) {
     const box = $('#gen-box');
     const presets = ['#000000|纯黑', '#ffffff|纯白', '#3a6ea5|天蓝', '#c0392b|朱红', '#27ae60|草绿', '#f1c40f|明黄', '#8e44ad|紫罗兰', '#ecf0f1|浅灰', '#2c3e50|深蓝灰', '#e67e22|橙'];

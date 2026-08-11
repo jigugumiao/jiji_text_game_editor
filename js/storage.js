@@ -398,7 +398,7 @@ async function importSceneBundle(json) {
       lockRotation: !!m.lockRotation,
       bg: m.bg || null,
       fov: (typeof m.fov === 'number') ? m.fov : 50,
-      dof: m.dof || null,
+      dof: null, // 景深效果已整体移除（v25.4.40），导入时强制丢弃
       // hdri 布尔：legacy 物品用 m.hdri；携带 envMap 的物品恒为 true（将由真实 HDRI 接管）
       hdri: (m.hdri !== false),
       // 制作器所选 HDRI：key + 内联 base64 + 类型，查看器据此加载真实环境

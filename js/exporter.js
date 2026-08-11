@@ -8,9 +8,6 @@
 const ITEM_VIEWER_SOURCE = String.raw`import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
@@ -23,9 +20,6 @@ const EMBED = __EMBED__;
 const EXIT_MESHES = __EXIT_MESHES__;
 const MODEL_ID = __MODEL_ID__;
 const FOV = __FOV__;
-const DOF = __DOF__;
-let _composer = null, _bokeh = null, _dofFocusObj = null, _modelCenter = new THREE.Vector3();
-const _dofTmp = new THREE.Vector3();
 
 const scene = new THREE.Scene();
 scene.background = __SCENE_BG__;
@@ -269,9 +263,6 @@ function loadModel() {
   loader.load(blobUrl, (gltf) => {
     currentModel = gltf.scene;
     scene.add(currentModel);
-    if (DOF && DOF.enabled && DOF.focusObject) {
-      _dofFocusObj = currentModel.getObjectByName(DOF.focusObject) || null;
-    }
     if (gltf.animations && gltf.animations.length > 0) {
       mixer = new THREE.AnimationMixer(currentModel);
       animActions = gltf.animations.map(clip => {
@@ -297,8 +288,6 @@ function loadModel() {
     controls.minDistance = maxDim * 0.05;
     controls.maxDistance = maxDim * 20;
     controls.update();
-    // 记录模型世界中心（重新居中后恒为原点），供 DOF 默认对焦使用
-    _modelCenter.set(0, 0, 0);
     // 应用制作器所选的真实 HDRI 环境光照（异步加载，加载完成后写入 scene.environment + 逐材质 envMap）
     if (_useRealHdri) {
       applyEnvironment({ envMap: ENV_MAP, envExposure: ENV_EXPOSURE, envRotation: ENV_ROTATION });
@@ -375,34 +364,6 @@ function toggleAction(action, pingpong, autoReturn) {
 function maybeDeleteAfter(uid) {
   if (deleteFlag[uid]) { const obj = triggerObj[uid]; if (obj && obj.parent) obj.parent.remove(obj); deleteFlag[uid] = false; triggerObj[uid] = null; }
 }
-function ensureComposer() {
-  if (_composer) return;
-  _composer = new EffectComposer(renderer);
-  _composer.addPass(new RenderPass(scene, camera));
-  _bokeh = new BokehPass(scene, camera, {
-    focus: 10.0,
-    aperture: (DOF && DOF.aperture) || 0.025,
-    maxblur: (DOF && DOF.maxblur) || 0.01,
-    width: renderer.domElement.width || container.clientWidth,
-    height: renderer.domElement.height || container.clientHeight
-  });
-  _composer.addPass(_bokeh);
-  // 关键修复：BokehShader 默认 'gl_FragColor.a = 1.0' 会把透明背景强制写成不透明，
-  // embed 模式（scene.background=null、body 透明）下会盖住剧情底图导致背景透不出。
-  // 去掉该行保留原始 alpha（col.a/41），并把混合改成 NoBlending，让全屏 quad 直接覆盖画布，
-  // 避免逐帧半透明叠加产生残影/拖影。
-  if (_bokeh.materialBokeh && _bokeh.materialBokeh.fragmentShader) {
-    _bokeh.materialBokeh.fragmentShader = _bokeh.materialBokeh.fragmentShader.split('gl_FragColor.a = 1.0;').join('');
-    _bokeh.materialBokeh.needsUpdate = true;
-  }
-  if (_bokeh.materialBokeh) _bokeh.materialBokeh.blending = THREE.NoBlending;
-}
-function updateDofFocus() {
-  const tgt = (_dofFocusObj && _dofFocusObj.getWorldPosition)
-    ? _dofFocusObj.getWorldPosition(_dofTmp)
-    : _modelCenter;
-  if (_bokeh && _bokeh.uniforms) _bokeh.uniforms['focus'].value = camera.position.distanceTo(tgt);
-}
 function initInteraction() {
   raycaster = new THREE.Raycaster();
   const el = renderer.domElement;
@@ -428,7 +389,6 @@ window.addEventListener('resize', () => {
   const w = container.clientWidth, h = container.clientHeight;
   if (w === 0 || h === 0) return;
   camera.aspect = w / h; camera.updateProjectionMatrix(); resizeView();
-  if (_composer) _composer.setSize(renderer.domElement.width || w, renderer.domElement.height || h);
 });
 
 // ============ 内置简易动画 ============
@@ -466,17 +426,7 @@ function animate(time) {
     if (p.t >= 1) { p.obj.position.y = p.base.y; p.obj.rotation.x = p.base.rx; p.obj.rotation.y = p.base.ry; p.obj.rotation.z = p.base.rz; activePresets.splice(i, 1); if (p.del && p.obj.parent) p.obj.parent.remove(p.obj); }
   }
   controls.update();
-  if (DOF && DOF.enabled) {
-    ensureComposer();
-    if (_bokeh && _bokeh.uniforms) {
-      _bokeh.uniforms['aperture'].value = (DOF && DOF.aperture) || 0.025;
-      _bokeh.uniforms['maxblur'].value = (DOF && DOF.maxblur) || 0.01;
-    }
-    updateDofFocus();
-    _composer.render();
-  } else {
-    renderer.render(scene, camera);
-  }
+  renderer.render(scene, camera);
 }
 animate();
 
@@ -1046,7 +996,6 @@ __STORY_DATA__
       viewer = rep(viewer, '__EXIT_MESHES__', JSON.stringify(model.exitMeshes || (model.exitMesh ? [model.exitMesh] : [])).replace(/</g, '\\u003c'));
       viewer = rep(viewer, '__MODEL_ID__', JSON.stringify((id != null) ? id : (model.id || '')));
       viewer = rep(viewer, '__FOV__', JSON.stringify(typeof model.fov === 'number' ? model.fov : 50));
-      viewer = rep(viewer, '__DOF__', JSON.stringify(model.dof || null).replace(/</g, '\\u003c'));
       viewer = rep(viewer, '__HDRI__', JSON.stringify((model.hdri !== false)));
       // 制作器所选 HDRI：key + 内联 base64 + 类型 + 曝光/旋转，查看器据此加载真实环境
       viewer = rep(viewer, '__ENV_MAP__', JSON.stringify(model.envMap || ''));
@@ -2664,7 +2613,6 @@ async function collectRuntimeData(inline) {
           lockRotation: !!a.lockRotation, chains: a.chains || [],
           exitBindings: a.exitBindings || {},
           fov: (typeof a.fov === 'number') ? a.fov : 50,
-          dof: a.dof || null,
           hdri: (a.hdri !== false),
           envMap: a.envMap || '',
           envExposure: (typeof a.envExposure === 'number') ? a.envExposure : 1.0,

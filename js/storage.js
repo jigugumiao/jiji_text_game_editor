@@ -374,9 +374,16 @@ async function importSceneBundle(json) {
     throw new Error('文件格式不对：不是 glb-scene-bundle 场景包');
   }
   const models = json.models || [];
+  // 制作器导出的 HDRI 资源（内联 base64 + 类型表），用于还原所选环境光照
+  const bundleHdri = json.hdri || {};
+  const bundleHdriData = bundleHdri.HDRI_DATA || {};
+  const bundleHdriMap = bundleHdri.HDRI_MAP || {};
   const imported = [];
   for (const m of models) {
     const id = m.id || uid('itm');
+    const envMap = m.envMap || '';
+    const hdriData = (envMap && bundleHdriData[envMap]) || '';
+    const hdriType = (envMap && bundleHdriMap[envMap] && bundleHdriMap[envMap].type) || 'hdr';
     const item = Object.assign({}, m, {
       id,
       name: m.name || '未命名物品',
@@ -392,7 +399,14 @@ async function importSceneBundle(json) {
       bg: m.bg || null,
       fov: (typeof m.fov === 'number') ? m.fov : 50,
       dof: m.dof || null,
+      // hdri 布尔：legacy 物品用 m.hdri；携带 envMap 的物品恒为 true（将由真实 HDRI 接管）
       hdri: (m.hdri !== false),
+      // 制作器所选 HDRI：key + 内联 base64 + 类型，查看器据此加载真实环境
+      envMap: envMap,
+      envExposure: (typeof m.envExposure === 'number') ? m.envExposure : 1.0,
+      envRotation: (typeof m.envRotation === 'number') ? m.envRotation : 0,
+      hdriData: hdriData,
+      hdriType: hdriType,
     });
     await saveAsset('item', item);
     imported.push(item);

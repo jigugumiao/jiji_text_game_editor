@@ -12,6 +12,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
 
 const MODEL_NAME = __MODEL_NAME__;
 const MODEL_BLOB = __MODEL_BLOB__;
@@ -43,13 +45,121 @@ renderer.domElement.style.width = '100%';
 renderer.domElement.style.height = '100%';
 renderer.domElement.style.imageRendering = 'pixelated';
 
-// HDRI / IBL 环境光照：用程序化 RoomEnvironment 经 PMREMGenerator 生成环境贴图，
-// 让 PBR 材质（金属/玻璃）拥有真实反射与高光；只做光照、不显示背景，不盖 embed 透明底图。
+// HDRI / IBL 环境光照：若物品携带制作器所选的 HDRI（envMap + 内联 base64），则加载真实环境贴图，
+// 让 PBR 材质（金属/玻璃）拥有该环境的真实反射与高光；未携带 envMap 的 legacy 物品回退到
+// 程序化 RoomEnvironment。HDRI 只做光照、不显示背景，不盖 embed 透明底图。
 const HDRI = __HDRI__;
-if (HDRI) {
-  const pmrem = new THREE.PMREMGenerator(renderer);
+const ENV_MAP = __ENV_MAP__;
+const ENV_EXPOSURE = __ENV_EXPOSURE__;
+const ENV_ROTATION = __ENV_ROTATION__;
+const _hdriData = __HDRI_DATA__;
+const _hdriType = __HDRI_TYPE__;
+// 把制作器内联的 HDRI 注册进全局表，供 loadHDRIRaw 读取（与制作器 runtime 一致）
+window.HDRI_MAP = window.HDRI_MAP || {};
+if (ENV_MAP) window.HDRI_MAP[ENV_MAP] = { key: ENV_MAP, type: _hdriType || 'hdr' };
+window.HDRI_DATA = window.HDRI_DATA || {};
+if (ENV_MAP && _hdriData) window.HDRI_DATA[ENV_MAP] = _hdriData;
+const _useRealHdri = HDRI && !!ENV_MAP;
+
+// ============ HDRI 环境贴图烘焙器（移植自 3D交互制作器，逐模型照明） ============
+// 把等距柱状 HDRI 预过滤成供 PBR 使用的环境贴图（PMREM），按 key 缓存避免重复加载。
+const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
+const _hdriRawCache = new Map();
+const _hdriEnvCache = new Map();
+function loadHDRIRaw(key) {
+  if (!key || !window.HDRI_MAP || !window.HDRI_MAP[key]) return Promise.resolve(null);
+  if (_hdriRawCache.has(key)) return _hdriRawCache.get(key);
+  const opt = window.HDRI_MAP[key];
+  const uri = (window.HDRI_DATA && window.HDRI_DATA[key]) || opt.file;
+  const loader = opt.type === 'exr' ? new EXRLoader() : new RGBELoader();
+  const p = new Promise((resolve, reject) => {
+    loader.load(
+      uri,
+      (tex) => {
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.needsUpdate = true;
+        resolve(tex);
+      },
+      undefined,
+      (err) => { _hdriRawCache.delete(key); reject(err); }
+    );
+  });
+  _hdriRawCache.set(key, p);
+  return p;
+}
+// 生成「按经度旋转后的等距柱状贴图」：全屏着色器把源贴图采样 uv.x 平移（水平环绕）。
+function bakeRotatedEquirect(rawTex, offsetU) {
+  const w = rawTex.image.width, h = rawTex.image.height;
+  const rt = new THREE.WebGLRenderTarget(w, h, {
+    type: rawTex.type, format: rawTex.format,
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    wrapS: THREE.RepeatWrapping, depthBuffer: false, stencilBuffer: false
+  });
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { src: { value: rawTex }, offsetU: { value: offsetU } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: 'precision highp float; varying vec2 vUv; uniform sampler2D src; uniform float offsetU; void main(){ vec2 uv = vUv; uv.x = fract(uv.x + offsetU); gl_FragColor = texture2D(src, uv); }',
+    depthTest: false, depthWrite: false
+  });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+  const sceneR = new THREE.Scene(); sceneR.add(quad);
+  const camR = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const prev = renderer.getRenderTarget();
+  renderer.setRenderTarget(rt);
+  renderer.render(sceneR, camR);
+  renderer.setRenderTarget(prev);
+  mat.dispose(); quad.geometry.dispose();
+  rt.texture.mapping = THREE.EquirectangularReflectionMapping;
+  return rt;
+}
+function getHDRIEnv(key, rotation) {
+  const rot = (typeof rotation === 'number') ? rotation : 0;
+  const q = Math.round(rot * 1000) / 1000;
+  const ck = key + '@' + q;
+  if (_hdriEnvCache.has(ck)) return _hdriEnvCache.get(ck);
+  const p = loadHDRIRaw(key).then((raw) => {
+    if (!raw) return null;
+    const offsetU = (q / (Math.PI * 2)) % 1;
+    let envTex;
+    if (Math.abs(offsetU) < 1e-4) {
+      envTex = pmrem.fromEquirectangular(raw).texture;
+    } else {
+      const rotated = bakeRotatedEquirect(raw, offsetU);
+      envTex = pmrem.fromEquirectangular(rotated.texture).texture;
+      rotated.dispose();
+    }
+    return envTex;
+  });
+  _hdriEnvCache.set(ck, p);
+  return p;
+}
+// 应用环境：HDRI 照明 + 曝光 + 逐材质 envMap（让该模型的 PBR 材质受环境反射）
+function applyEnvironment(node) {
+  const key = (node && node.envMap) || 'urban';
+  const exposure = (node && typeof node.envExposure === 'number') ? node.envExposure : 1.0;
+  const rotation = (node && typeof node.envRotation === 'number') ? node.envRotation : 0;
+  renderer.toneMappingExposure = exposure;
+  return getHDRIEnv(key, rotation).then((envTex) => {
+    if (!envTex) return;
+    scene.environment = envTex;
+    if (currentModel) {
+      currentModel.traverse((o) => {
+        if (o.isMesh && o.material) {
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach((m) => { m.envMap = envTex; m.needsUpdate = true; });
+        }
+      });
+    }
+  });
+}
+// legacy 回退：未携带真实 HDRI 的旧物品（HDRI 开启但无 envMap）→ 程序化 RoomEnvironment 做 IBL
+if (HDRI && !_useRealHdri) {
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  pmrem.dispose();
 }
 
 function resizeView() {
@@ -189,6 +299,10 @@ function loadModel() {
     controls.update();
     // 记录模型世界中心（重新居中后恒为原点），供 DOF 默认对焦使用
     _modelCenter.set(0, 0, 0);
+    // 应用制作器所选的真实 HDRI 环境光照（异步加载，加载完成后写入 scene.environment + 逐材质 envMap）
+    if (_useRealHdri) {
+      applyEnvironment({ envMap: ENV_MAP, envExposure: ENV_EXPOSURE, envRotation: ENV_ROTATION });
+    }
     if (DEFAULT_VIEW && DEFAULT_VIEW.pos && DEFAULT_VIEW.target) {
       camera.position.fromArray(DEFAULT_VIEW.pos);
       controls.target.fromArray(DEFAULT_VIEW.target);
@@ -934,6 +1048,12 @@ __STORY_DATA__
       viewer = rep(viewer, '__FOV__', JSON.stringify(typeof model.fov === 'number' ? model.fov : 50));
       viewer = rep(viewer, '__DOF__', JSON.stringify(model.dof || null).replace(/</g, '\\u003c'));
       viewer = rep(viewer, '__HDRI__', JSON.stringify((model.hdri !== false)));
+      // 制作器所选 HDRI：key + 内联 base64 + 类型 + 曝光/旋转，查看器据此加载真实环境
+      viewer = rep(viewer, '__ENV_MAP__', JSON.stringify(model.envMap || ''));
+      viewer = rep(viewer, '__ENV_EXPOSURE__', JSON.stringify((typeof model.envExposure === 'number') ? model.envExposure : 1.0));
+      viewer = rep(viewer, '__ENV_ROTATION__', JSON.stringify((typeof model.envRotation === 'number') ? model.envRotation : 0));
+      viewer = rep(viewer, '__HDRI_DATA__', JSON.stringify(model.hdriData || '').replace(/</g, '\\u003c'));
+      viewer = rep(viewer, '__HDRI_TYPE__', JSON.stringify(model.hdriType || 'hdr'));
       let wrap = ITEM_VIEWER_WRAP;
       wrap = rep(wrap, '__VIEWER_SCRIPT__', viewer);
       wrap = rep(wrap, '__MODEL_NAME_ESC__', escapeHtml(model.name || 'item'));
@@ -2546,6 +2666,11 @@ async function collectRuntimeData(inline) {
           fov: (typeof a.fov === 'number') ? a.fov : 50,
           dof: a.dof || null,
           hdri: (a.hdri !== false),
+          envMap: a.envMap || '',
+          envExposure: (typeof a.envExposure === 'number') ? a.envExposure : 1.0,
+          envRotation: (typeof a.envRotation === 'number') ? a.envRotation : 0,
+          hdriData: a.hdriData || '',
+          hdriType: a.hdriType || 'hdr',
         };
       } else {
         if (a.kind === 'solid') {

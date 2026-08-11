@@ -4602,12 +4602,21 @@ self.onmessage = function (e) {
     const hdri = (asset.hdri !== false);
     const box = $('#gen-box');
     const esc = function (s) { return escapeHtml(String(s == null ? '' : s)); };
+    // 制作器 HDRI 预设名（用于显示当前所选环境）
+    const HDRI_PRESETS = { urban: '都市夜景', indoor: '室内普通', blue: '蓝色室内', purple: '紫色室内', snow: '雪地', grotto: '山涧', forest: '森林' };
+    const envKey = asset.envMap || '';
+    const envName = envKey ? (HDRI_PRESETS[envKey] || envKey) : '（未设置 / 经典四灯）';
     let html = '<h3><svg class="ico" aria-hidden="true"><use href="#ic-box"/></svg> 3D 显示设置</h3>';
     html += '<div class="gen-note">调整该物品在查看器里的视角（FOV）、背景虚化（景深）与环境光照（HDRI）。设置会保存到该物品素材，试玩/导出后自动生效。</div>';
     // FOV
     html += field('视角 FOV（默认 50）', '<input type="number" id="i3d-fov" min="10" max="120" step="1" value="' + esc(fov) + '" style="width:100px">');
-    // HDRI 开关
-    html += field('环境光照 HDRI（金属/玻璃真实反射）', '<label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="i3d-hdri"' + (hdri ? ' checked' : '') + '> 启用</label>');
+    // HDRI 当前所选环境（只读展示，来自制作器导入时携带的 HDRI）+ 启用开关
+    html += field('环境光照 HDRI（金属/玻璃真实反射）',
+      '<div style="font-size:12px;line-height:1.6">' +
+      '当前环境：<b>' + esc(envName) + '</b>' +
+      (envKey ? '' : '<br><span style="color:#8b93a3">未从制作器导入 HDRI，启用后将使用程序化 RoomEnvironment 近似光照</span>') +
+      '<br><label style="display:flex;align-items:center;gap:6px;margin-top:6px"><input type="checkbox" id="i3d-hdri"' + (hdri ? ' checked' : '') + '> 启用环境光照</label>' +
+      '</div>');
     // 景深 开关
     html += field('景深 / 背景虚化', '<label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="i3d-dof"' + (dof.enabled ? ' checked' : '') + '> 启用</label>');
     // 对焦物体（用结束物体列表，无则给「整体中心」）

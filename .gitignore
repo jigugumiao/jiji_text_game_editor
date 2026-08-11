@@ -21,3 +21,6 @@ Thumbs.db
 
 # 本地部署状态文件（含 htmlto.link 部署 token，勿入库）
 .htmltolink.json
+
+# 临时测试/验证脚手架（无头渲染对比等），不入仓库
+_dof_hdri_test/

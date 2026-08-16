@@ -2337,7 +2337,7 @@
     const isBool = (type === 'boolean');
     const items = [{ label: '读取', sub: isBool ? '{' + name + ':是|否}' : '{' + name + '}', act: 'read' }];
     items.push({ label: '赋值', sub: '<变量:' + name + '=>', act: 'assign' });
-    if (!isBool) { items.push({ label: '+1', sub: '<变量:' + name + '+1>', act: 'inc' }); items.push({ label: '-1', sub: '<变量:' + name + '-1>', act: 'dec' }); }
+    if (type === 'number') { items.push({ label: '+1', sub: '<变量:' + name + '+1>', act: 'inc' }); items.push({ label: '-1', sub: '<变量:' + name + '-1>', act: 'dec' }); }
     if (optCtx) items.push({ label: '作为条件', sub: ',条件:' + name, act: 'cond' });
     _varPop.innerHTML = '';
     const title = document.createElement('div'); title.className = 'vp-title'; title.textContent = '插入「' + name + '」语句';

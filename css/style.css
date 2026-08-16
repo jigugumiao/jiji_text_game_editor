@@ -142,7 +142,7 @@ body.dark .var-type,
 body.dark .var-value,
 body.dark .var-del { background: var(--bg); color: var(--text); }
 body.dark .var-del:hover { background: var(--rose-soft); }
-body.dark #var-popover { background: var(--bg-soft); border-color: var(--border); }
+body.dark #var-popover, body.dark #block-drop-menu { background: var(--bg-soft); border-color: var(--border); }
 /* 暗色：预览态标签与暂停线 */
 body.dark .pv-cmd.bg { border-color: var(--accent-soft-2); }
 body.dark .pv-cmd.item { border-color: rgba(217,143,92,.45); }
@@ -518,12 +518,12 @@ body.portrait .lib-footer .btn { width: 100%; }
 .var-row.var-header .var-th-type { flex: 0 0 auto; }
 .var-row.var-header .var-th-val { flex: 0 0 92px; }
 .var-row.var-header .var-th-del { flex: 0 0 auto; width: 32px; }
-#var-popover { position: fixed; z-index: 9999; display: none; flex-direction: column; min-width: 158px; padding: 6px; gap: 3px; background: #fffdf8; border: 1px solid rgba(138,109,59,0.4); border-radius: 12px; box-shadow: 0 14px 40px rgba(60,40,10,0.28); font-size: 13px; }
-#var-popover.show { display: flex; }
-#var-popover .vp-title { padding: 2px 8px 6px; color: #8a6d3b; font-weight: 700; border-bottom: 1px solid rgba(138,109,59,0.2); margin-bottom: 2px; }
-#var-popover .vp-item { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px; cursor: pointer; color: #2a2118; background: transparent; border: 0; text-align: left; width: 100%; font-family: inherit; font-size: 13px; }
-#var-popover .vp-item:hover { background: rgba(176,137,104,0.16); }
-#var-popover .vp-item .vp-sub { color: #9a8a6a; font-size: 11px; margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+#var-popover, #block-drop-menu { position: fixed; z-index: 9999; display: none; flex-direction: column; min-width: 158px; padding: 6px; gap: 3px; background: #fffdf8; border: 1px solid rgba(138,109,59,0.4); border-radius: 12px; box-shadow: 0 14px 40px rgba(60,40,10,0.28); font-size: 13px; }
+#var-popover.show, #block-drop-menu.show { display: flex; }
+#var-popover .vp-title, #block-drop-menu .vp-title { padding: 2px 8px 6px; color: #8a6d3b; font-weight: 700; border-bottom: 1px solid rgba(138,109,59,0.2); margin-bottom: 2px; }
+#var-popover .vp-item, #block-drop-menu .vp-item { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px; cursor: pointer; color: #2a2118; background: transparent; border: 0; text-align: left; width: 100%; font-family: inherit; font-size: 13px; }
+#var-popover .vp-item:hover, #block-drop-menu .vp-item:hover { background: rgba(176,137,104,0.16); }
+#var-popover .vp-item .vp-sub, #block-drop-menu .vp-item .vp-sub { color: #9a8a6a; font-size: 11px; margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .asset-card {
   position: relative; display: flex; aspect-ratio: 5 / 1; background: #fff; border: 1px solid var(--border);
   border-radius: var(--radius); padding: 0; cursor: grab; transition: .15s; overflow: hidden; box-shadow: var(--shadow-sm);
@@ -550,8 +550,6 @@ body.portrait .lib-footer .btn { width: 100%; }
 .asset-ren:hover { color: var(--accent-strong); background: #fff; }
 .asset-play { right: 57px; color: var(--green); cursor: pointer; font-size: 13px; }
 .asset-play:hover { color: #15803d; background: #fff; }
-/* 剧情块库：跳转按钮贴在卡片右下角（浮于渐变层之上） */
-.asset-jump { position: absolute; bottom: 3px; right: 3px; z-index: 2; }
 /* 音乐库顶部「停止音乐」功能块：与素材卡同构但标绿，提示它是指令而非素材 */
 .stop-music-card { border-color: #86efac; background: #f0fdf4; }
 .stop-music-card:hover { border-color: #22c55e; background: #ecfdf5; }
@@ -562,8 +560,6 @@ body.portrait .lib-footer .btn { width: 100%; }
 .block-card.block-main:hover { border-color: var(--violet-border); background: #f8ece4; }
 .block-card.block-main .asset-name { color: var(--violet); }
 .block-card.block-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-.asset-jump { background: #fff; border: 1px solid var(--border-strong); color: var(--text-2); cursor: pointer; font-size: 12px; padding: 3px 8px; border-radius: 7px; flex-shrink: 0; }
-.asset-jump:hover { color: var(--accent-strong); border-color: var(--accent); background: var(--accent-soft); }
 
 /* 编辑器列头的「当前剧情块」指示器 */
 .block-chip {
@@ -1728,7 +1724,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 @keyframes menuIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 
 /* 变量浮层淡入 */
-#var-popover.show { animation: popIn .14s ease; }
+#var-popover.show, #block-drop-menu.show { animation: popIn .14s ease; }
 @keyframes popIn { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: none; } }
 
 /* 分支图浮动窗口淡入 */
@@ -1745,7 +1741,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
   .btn:hover, .icon-btn:hover, .mini-btn:hover, .btn-ai:hover, .btn-danger-ghost:hover,
   .asset-card:hover, .block-card:hover, .ai-hook-card:hover, .about-bili:hover, .project-card:hover { transform: none; }
   .modal:not(.hidden), .modal:not(.hidden) .modal-box, .dropdown-menu.open,
-  #var-popover.show, #block-graph-panel:not(.hidden), #toast { animation: none; }
+  #var-popover.show, #block-drop-menu.show, #block-graph-panel:not(.hidden), #toast { animation: none; }
 }
 
 /* ===== 设置：外观 预览 ===== */

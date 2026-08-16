@@ -1945,10 +1945,10 @@
         let info;
         try { info = JSON.parse(blockData); } catch { return; }
         if (info && info.name) {
-          // 拖剧情块 = 吸附到行首/行尾生成可编辑文字的选项
+          // 拖剧情块 = 弹出选择：作为选项插入 / 作为跳转插入（吸附到行首/行尾）
           const off = getCaretOffsetFromPoint(storyText, e.clientX, e.clientY);
           const offset = off == null ? storyText.selectionStart : snapToLineEdge(storyText, off);
-          insertBlockOption(info.name, offset);
+          openBlockDropMenu(info.name, offset, e.clientX, e.clientY);
         }
         return;
       }
@@ -2746,10 +2746,6 @@
       sub.textContent = (isMain ? '游戏默认从这里开始 · ' : '') + lines + ' 行';
       meta.appendChild(sub);
       card.appendChild(meta);
-      // 操作：插入「跳转」指令（光标处）
-      const jump = document.createElement('button'); jump.className = 'asset-jump'; jump.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-corner-up-left"/></svg> 跳转'; jump.title = '在光标处插入 <剧情块:名称>';
-      jump.addEventListener('click', (e) => { e.stopPropagation(); insertBlockJump(name); });
-      card.appendChild(jump);
       if (!isMain) {
         const ren = document.createElement('button'); ren.className = 'asset-ren'; ren.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg>'; ren.title = '重命名（自动更新所有引用）';
         ren.addEventListener('click', (e) => { e.stopPropagation(); handleRenameBlock(name); });
@@ -2975,6 +2971,56 @@
     if (document.activeElement === ta) ta.focus();
     ta.scrollTop = st;
     commitEdit();
+  }
+  // 拖入剧情块时的选择菜单：作为选项插入 <选项:"",块名> / 作为跳转插入 <剧情块:块名>
+  let _blkPop = null, _blkPopOutside = null, _blkPopEsc = null;
+  function openBlockDropMenu(name, offset, px, py) {
+    if (!_blkPop) { _blkPop = document.createElement('div'); _blkPop.id = 'block-drop-menu'; document.body.appendChild(_blkPop); }
+    _blkPop.innerHTML = '';
+    const title = document.createElement('div'); title.className = 'vp-title'; title.textContent = '插入剧情块「' + name + '」';
+    _blkPop.appendChild(title);
+    const mk = function (label, sub, act) {
+      const b = document.createElement('button'); b.className = 'vp-item'; b.type = 'button';
+      b.innerHTML = '<span>' + label + '</span><span class="vp-sub">' + escapeHtml(sub) + '</span>';
+      b.addEventListener('click', function (e) { e.stopPropagation(); closeBlockDropMenu(); doBlockDropAction(act, name, offset); });
+      _blkPop.appendChild(b);
+    };
+    mk('作为选项插入', '<选项:"",' + name + '>', 'option');
+    mk('作为跳转插入', '<剧情块:' + name + '>', 'jump');
+    const W = 240;
+    _blkPop.style.left = Math.max(8, Math.min(px, window.innerWidth - W - 8)) + 'px';
+    _blkPop.style.top = (py + 12) + 'px';
+    _blkPop.classList.add('show');
+    if (_blkPopOutside) document.removeEventListener('mousedown', _blkPopOutside);
+    _blkPopOutside = function (e) { if (_blkPop && !_blkPop.contains(e.target)) closeBlockDropMenu(); };
+    setTimeout(function () { document.addEventListener('mousedown', _blkPopOutside); }, 0);
+    if (_blkPopEsc) document.removeEventListener('keydown', _blkPopEsc);
+    _blkPopEsc = function (e) { if (e.key === 'Escape') closeBlockDropMenu(); };
+    document.addEventListener('keydown', _blkPopEsc);
+  }
+  function closeBlockDropMenu() {
+    if (_blkPop) _blkPop.classList.remove('show');
+    if (_blkPopOutside) { document.removeEventListener('mousedown', _blkPopOutside); _blkPopOutside = null; }
+    if (_blkPopEsc) { document.removeEventListener('keydown', _blkPopEsc); _blkPopEsc = null; }
+  }
+  function doBlockDropAction(act, name, offset) {
+    if (act === 'option') {
+      // 作为选项插入：<选项:"",块名>，光标落在两引号之间等待输入文字
+      const ta = storyText; const st = ta.scrollTop;
+      offset = Math.max(0, Math.min(offset, ta.value.length));
+      const before = ta.value.slice(0, offset);
+      const after = ta.value.slice(offset);
+      const insertStr = '<选项:"",' + name + '>';
+      ta.value = before + insertStr + after;
+      const caret = (before + insertStr).length - ('",' + name + '>').length;
+      try { ta.setSelectionRange(caret, caret); } catch (e) {}
+      if (document.activeElement === ta) ta.blur();
+      ta.scrollTop = st;
+      commitEdit();
+    } else if (act === 'jump') {
+      // 作为跳转插入：<剧情块:块名>（独占一行）
+      insertAtOffset('<剧情块:' + name + '>', offset, 0);
+    }
   }
   // 添加选项按钮：把光标移到本行末尾，再在行尾追加 <选项:"">（不换行）
   // 光标落在两个引号之间等待输入文字（仅写文字 = 仅推进；后接 ,块名 = 分支跳转）

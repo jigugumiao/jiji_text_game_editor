@@ -5614,9 +5614,9 @@ self.onmessage = function (e) {
                 opts.forEach(o => {
                   if (o.text == null || o.text === '') pushIssue(prefix, n, 'error', '随机句子的句子内容不能为空（如 <随机句子:"你好">）');
                 });
-                const reW = /"([\s\S]*?)"\s*=\s*(\S+)/g; let wm;
+                const reW = /"([\s\S]*?)"\s*=\s*([^\s,]+)/g; let wm;  // 权重段到逗号/空白即止，避免贪婪吃掉后续句子
                 while ((wm = reW.exec(rm[1])) !== null) {
-                  if (!/^[1-9]\d*$/.test(wm[2])) pushIssue(prefix, n, 'error', '随机句子权重必须是正整数（如 ="8"），不允许 0、负数或小数');
+                  if (!/^[1-9]\d*$/.test(wm[2])) pushIssue(prefix, n, 'error', '随机句子权重必须是正整数（写在句子引号外，如 "文本"=8），不允许 0、负数或小数');
                 }
               }
             }

@@ -604,6 +604,20 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   #item-frame { width: 100%; height: 100%; border: 0; transform: scale(0.3); opacity: 0; transition: transform 0.3s ease-out, opacity 0.3s ease-out; }
   #item-overlay.open #item-frame { transform: scale(1); opacity: 1; }
   #end-card { display: none; align-items: center; color: #9fb0c8; margin-top: 18px; padding-bottom: 4vh; }
+  /* ===== 玩家输入：游戏中弹出输入框，引导文字 + 文本输入（移动端自动拉起输入法） ===== */
+  #player-input-overlay { position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center;
+    background: rgba(4,6,12,0.62); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); padding: 20px; }
+  #player-input-overlay .pi-box { width: min(92vw, 460px); background: rgba(16,21,33,0.96); border: 1px solid rgba(120,160,255,0.42);
+    border-radius: 16px; padding: 22px 22px 20px; box-shadow: 0 18px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.07);
+    display: flex; flex-direction: column; gap: 14px; animation: piIn 0.22s ease; }
+  @keyframes piIn { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  #player-input-overlay .pi-prompt { font-size: 17px; line-height: 1.6; color: #eaf1ff; white-space: pre-wrap; word-break: break-word; }
+  #player-input-overlay .pi-input { width: 100%; box-sizing: border-box; padding: 13px 14px; font-size: 18px; font-family: inherit; color: #f3f7ff;
+    background: rgba(8,11,18,0.92); border: 1px solid rgba(120,160,255,0.5); border-radius: 11px; outline: none; }
+  #player-input-overlay .pi-input:focus { border-color: #5a9bff; box-shadow: 0 0 0 3px rgba(58,134,255,0.25); }
+  #player-input-overlay .pi-submit { align-self: flex-end; padding: 11px 30px; font-size: 16px; border-radius: 11px; cursor: pointer;
+    color: #eaf1ff; background: rgba(58,134,255,0.42); border: 1px solid #5a9bff; transition: 0.16s; }
+  #player-input-overlay .pi-submit:hover { background: rgba(58,134,255,0.62); }
   #start-screen { position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; }
   #start-screen.hidden { display: none; }
   /* 开场背景图案：垂直铺满画面（高=100%，宽按比例），居中，无图时回退默认深色 */
@@ -1486,7 +1500,7 @@ __STORY_DATA__
     const lineNo = messages.length; // 已完成文字行数
     const _curLineEl = currentMsg || msgList.lastElementChild;
     const lineText = _curLineEl ? (_curLineEl.textContent || '').trim().slice(0, 200) : '';
-    const compact = { choices: recordedChoices.slice(), block: curBlock, idx: curIdx, line: lineNo, lineText: lineText, music: currentMusicName, t: Date.now() };
+    const compact = { choices: recordedChoices.slice(), block: curBlock, idx: curIdx, line: lineNo, lineText: lineText, music: currentMusicName, vars: Object.assign({}, vars), t: Date.now() };
     // 本地兜底（同步、必成功）
     try { localStorage.setItem(GAME_KEY + '_' + slot, JSON.stringify(compact)); } catch(e){}
     // 云存档（B站账号隔离、跨设备持久化）：懒加载 SDK 后尝试，失败不影响本地
@@ -1554,6 +1568,8 @@ __STORY_DATA__
     // 读档重建变量：先从变量库默认值重置，再由 fastReplay 沿重放路径精确应用一次 <变量> 操作。
     // 否则 vars 会叠加在「当前运行时值」之上，导致多次读档时变量变动被重复累加。
     vars = Object.assign({}, (DATA.variables) || {});
+    // 读档还原「玩家输入」等运行时变量（旧存档无此字段则跳过，行为不变）
+    if (save.vars && typeof save.vars === 'object') Object.assign(vars, save.vars);
     fastReplay(recordedChoices.slice(), targetBlock, targetIdx);
   }
   if (tbSave) tbSave.addEventListener('click', function(e){ e.stopPropagation(); saveMenu.classList.contains('open') ? closeMenus() : openSaveMenu(); });
@@ -1644,6 +1660,7 @@ __STORY_DATA__
   let lastOptions = null;         // 最近一次选项所在位置 { block, idx }（跳回重选用）
   let recordedChoices = [];       // 沿路选项选择序列（读档重放用）
   let replaying = false;
+  let inputPending = false;       // 玩家输入弹窗进行中：期间屏蔽 stage 点击推进
   let typing = false, currentHtml = '', fullLen = 0, revealed = 0, awaitingClick = false, itemOpen = false, currentItemId = null, bgMusic = null, fadingMusics = [], typingTimer = null, currentMsg = null;
   let currentBgSrc = '', currentBgColor = '', currentMusicName = null;
   const soundCache = {}; // 音效播放实例缓存（模板内使用，避免 stopAllMusic 引用未定义而崩溃）
@@ -1946,6 +1963,7 @@ __STORY_DATA__
     else if (n.type === 'return') { doReturn(); }
     else if (n.type === 'returnrechoose') { doReturnRechoose(); }
     else if (n.type === 'varop') { applyVarOps(n.ops); advance(); }
+    else if (n.type === 'playerinput') { doPlayerInput(n); }
     else if (n.type === 'options') { presentOptions(n); }
     else advance();
   }
@@ -2093,6 +2111,45 @@ __STORY_DATA__
     } else if (n.type === 'stopmusic'){ stopAllMusic(); }
     else if (n.type === 'clearoverlay'){ clearOverlay(); }
     // pause / title 重放阶段跳过（不影响已显示文字）
+  }
+  // ===== 玩家输入：游戏中弹出输入框，引导文字 + 文本输入（移动端自动拉起输入法）=====
+  let _piOverlay = null;
+  function ensurePlayerInputOverlay(){
+    if (_piOverlay) return _piOverlay;
+    const ov = document.createElement('div');
+    ov.id = 'player-input-overlay';
+    ov.className = 'player-input-overlay';
+    ov.innerHTML = '<div class="pi-box">' +
+      '<div class="pi-prompt"></div>' +
+      '<input class="pi-input" type="text" maxlength="8" autocomplete="off" autocapitalize="off" autocorrect="off" />' +
+      '<button class="pi-submit" type="button">确定</button>' +
+      '</div>';
+    // 阻止冒泡到 #stage 的点击/长按监听，避免误触推进剧情或触发「长按看原图」
+    ov.addEventListener('pointerdown', function(e){ e.stopPropagation(); });
+    ov.addEventListener('click', function(e){ e.stopPropagation(); });
+    document.body.appendChild(ov);
+    _piOverlay = ov;
+    return ov;
+  }
+  function doPlayerInput(n){
+    inputPending = true;
+    const overlay = ensurePlayerInputOverlay();
+    const promptEl = overlay.querySelector('.pi-prompt');
+    const inputEl = overlay.querySelector('.pi-input');
+    const submitEl = overlay.querySelector('.pi-submit');
+    const varName = n.name;
+    if (n.prompt && n.prompt.length){ promptEl.textContent = n.prompt; promptEl.style.display = 'block'; }
+    else { promptEl.style.display = 'none'; }
+    inputEl.value = '';
+    overlay.style.display = 'flex';
+    setTimeout(function(){ try { inputEl.focus(); } catch(e){} }, 30); // 聚焦以拉起输入法
+    function onInput(){ const arr = Array.from(inputEl.value); if (arr.length > 8) inputEl.value = arr.slice(0, 8).join(''); }
+    function cleanup(){ submitEl.removeEventListener('click', submitInput); inputEl.removeEventListener('keydown', onKey); inputEl.removeEventListener('input', onInput); }
+    function submitInput(e){ if (e){ e.stopPropagation(); e.preventDefault(); } cleanup(); const val = Array.from(inputEl.value).slice(0, 8).join(''); vars[varName] = val; overlay.style.display = 'none'; inputPending = false; advance(); }
+    function onKey(e){ if (e.key === 'Enter'){ e.preventDefault(); submitInput(); } }
+    submitEl.addEventListener('click', submitInput);
+    inputEl.addEventListener('keydown', onKey);
+    inputEl.addEventListener('input', onInput);
   }
   function stopMusic(){
     // 3 秒内渐出当前背景音乐
@@ -2441,6 +2498,7 @@ __STORY_DATA__
   _stageEl.addEventListener('contextmenu', function(e){ if (_revealing || _justRevealed) e.preventDefault(); });
   // 点击：跳过打字 / 继续停顿（在 #stage 或 #message-list 上均可）
   _stageEl.addEventListener('click', function(){
+    if (inputPending) return; // 玩家输入弹窗进行中，忽略背景点击
     if (_justRevealed) return; // 长按刚结束，吞掉这次点击
     if (saveMenu.classList.contains('open') || loadMenu.classList.contains('open')) { closeMenus(); return; }
     if (historyOpen) return; // 文字历史打开时，stage 点击不推进剧情（面板已自管滚动/关闭）
@@ -2469,6 +2527,7 @@ function parseStoryForExport(src) {
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
   const RE_OPTION = /<选项:\s*"([^"]*)"\s*(?:,\s*([^>]*?))?\s*>/g;
+  const RE_PLAYER_INPUT = /^<玩家输入变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*,\s*"([\s\S]*?)"\s*>$/;
   const CN = { '背景': 'background', '物品': 'item', '叠层': 'overlay', '音乐': 'music', '音效': 'sound' };
   const lines = (src || '').split(/\r?\n/);
   const story = [];
@@ -2506,6 +2565,7 @@ function parseStoryForExport(src) {
       });
       if (ops.length) story.push({ type: 'varop', ops: ops });
     }
+    else if ((m = t.match(RE_PLAYER_INPUT))) { flush(); story.push({ type: 'playerinput', name: m[1], prompt: m[2] }); }
     else if ((m = t.match(RE_BLOCK))) { flush(); story.push({ type: 'block', name: m[1].trim() }); }
     else if (RE_RETURN.test(t)) { flush(); story.push({ type: 'return' }); }
     else if (RE_RETURN_RECHOOSE.test(t)) { flush(); story.push({ type: 'returnrechoose' }); }
@@ -2557,7 +2617,7 @@ function computeStartNode(src, charOffset) {
     const isCmd =
       RE_PAUSE.test(t) || RE_SUMMON.test(t) || RE_TITLE.test(t) || RE_DIVIDER.test(t) ||
       t === '<停止音乐>' || t === '<清除叠层>' || RE_BLOCK.test(t) || RE_RETURN.test(t) || RE_RETURN_RECHOOSE.test(t) ||
-      t.indexOf('<选项:') >= 0 || t.indexOf('<变量:') === 0;
+      t.indexOf('<选项:') >= 0 || t.indexOf('<变量:') === 0 || t.indexOf('<玩家输入变量:') === 0;
     if (isCmd) { flush(); nodeStartLines.push(i); }
     else { if (bufStart == null) bufStart = i; }
   }

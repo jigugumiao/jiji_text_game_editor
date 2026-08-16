@@ -96,6 +96,8 @@
   const RE_OPTION = /<选项:\s*"([^"]*)"\s*(?:,\s*([^>]*?))?\s*>/g;
   // 变量操作：<变量:名=值> / <变量:名+数> / <变量:名-数>（独占一行；一行可含多个，按 <变量:...> 逐个提取）
   const RE_VAR_OP = /<变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*([=+\-])\s*([^<>]*?)\s*>/g;
+  // 玩家输入：<玩家输入变量:变量名,"引导文字">（独占一行；引导文字可空 "")
+  const RE_PLAYER_INPUT = /^<玩家输入变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*,\s*"([\s\S]*?)"\s*>$/;
 
   const DEFAULT_TEXT =
     '// 欢迎来到剧情编辑器！这段示例文字会带你快速了解核心功能。\n' +
@@ -183,6 +185,9 @@
         }
         if (ops.length) { flush(); story.push({ type: 'varop', ops: ops }); }
         else buf.push(line); // 形如 <变量:...> 但格式无法识别 → 当普通文本
+      } else if ((m = t.match(RE_PLAYER_INPUT))) {
+        flush();
+        story.push({ type: 'playerinput', name: m[1], prompt: m[2] });
       } else if (t.indexOf('<选项:') >= 0) {
         flush();
         const options = [];
@@ -220,6 +225,7 @@
       else if (n.type === 'return') out.push('<跳回>');
       else if (n.type === 'returnrechoose') out.push('<跳回重选>');
       else if (n.type === 'varop') out.push(n.ops.map(o => '<变量:' + o.name + (o.op === '=' ? '=' : o.op) + o.val + '>').join(''));
+      else if (n.type === 'playerinput') out.push('<玩家输入变量:' + n.name + ',"' + (n.prompt || '') + '">');
       else if (n.type === 'options') out.push(n.options.map(o => '<选项:"' + (o.text || '') + '"' + (o.block ? ',' + o.block : '') + '>').join(' '));
     }
     return out.join('\n');
@@ -301,6 +307,8 @@
             ops.push(escapeHtml(vm[1] + ' ' + sym + ' ' + vm[3].trim()));
           }
           html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 变量：' + (ops.join('，') || '（格式有误）') + '</span></div>';
+        } else if ((m = t.match(RE_PLAYER_INPUT))) {
+          html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 玩家输入 → 变量「' + escapeHtml(m[1]) + '」' + (m[2] ? '：' + escapeHtml(m[2]) : '') + '</span></div>';
         } else if (t.indexOf('<选项:') >= 0) {
           const opts = [];
           let om; RE_OPTION.lastIndex = 0;
@@ -2338,6 +2346,7 @@
     const items = [{ label: '读取', sub: isBool ? '{' + name + ':是|否}' : '{' + name + '}', act: 'read' }];
     items.push({ label: '赋值', sub: '<变量:' + name + '=>', act: 'assign' });
     if (type === 'number') { items.push({ label: '+1', sub: '<变量:' + name + '+1>', act: 'inc' }); items.push({ label: '-1', sub: '<变量:' + name + '-1>', act: 'dec' }); }
+    if (type === 'text') { items.push({ label: '玩家输入', sub: '<玩家输入变量:' + name + ',"">', act: 'input' }); }
     if (optCtx) items.push({ label: '作为条件', sub: ',条件:' + name, act: 'cond' });
     _varPop.innerHTML = '';
     const title = document.createElement('div'); title.className = 'vp-title'; title.textContent = '插入「' + name + '」语句';
@@ -2379,6 +2388,26 @@
     else if (act === 'assign') { setVal('<变量:' + name + '=>', ('<变量:' + name + '=').length); }
     else if (act === 'inc') { setVal('<变量:' + name + '+1>'); }
     else if (act === 'dec') { setVal('<变量:' + name + '-1>'); }
+    else if (act === 'input') {
+      const open = '<玩家输入变量:' + name + ',"';
+      const close = '">';
+      const before = v.slice(0, range.start);
+      const after = v.slice(range.end);
+      const lineStart = before.lastIndexOf('\n') + 1;
+      const afterNl = after.indexOf('\n');
+      const lineEnd = afterNl === -1 ? v.length : range.end + afterNl;
+      const lineText = v.slice(lineStart, lineEnd).trim();
+      const placeholder = v.slice(range.start, range.end).trim();
+      let pre = '', post = '';
+      // 当前行只有占位符/空白 → 整行替换为指令；否则把指令放到独立新行，避免混入正文
+      if (lineText !== '' && lineText !== placeholder) { pre = '\n'; post = '\n'; }
+      ta.value = before + pre + open + close + post + after;
+      const caret = (before + pre + open).length; // 落在两个引号之间，方便直接输入引导文字
+      try { ta.setSelectionRange(caret, caret); } catch (e) {}
+      if (document.activeElement === ta) ta.blur();
+      commitEdit();
+      return;
+    }
     else if (act === 'cond') {
       let nv = v.slice(0, range.start) + v.slice(range.end);
       const ls = optCtx.lineStart;
@@ -5453,6 +5482,10 @@ self.onmessage = function (e) {
             // 嵌套计数已在前面处理
           } else if (t === '<否则>') {
             // 嵌套计数已在前面处理
+          } else if ((m = t.match(RE_PLAYER_INPUT))) {
+            const vn = m[1];
+            if (!knownVars.has(vn)) pushIssue(prefix, n, 'warning', '玩家输入指向的变量「' + vn + '」未定义（请在素材库·变量库定义，或用 <变量:' + vn + '=值> 赋值）');
+            else if (varTypeMap[vn] && varTypeMap[vn] !== 'text') pushIssue(prefix, n, 'warning', '玩家输入只能用于「文本」类型变量，「' + vn + '」是 ' + varTypeMap[vn] + ' 类型');
           } else if (t.startsWith('<变量')) {
             const vm = t.match(/^<变量:([\s\S]*)>$/);
             if (!vm) pushIssue(prefix, n, 'error', '变量指令格式不正确（如 <变量:金币=10> 或 <变量:金币-3>）');

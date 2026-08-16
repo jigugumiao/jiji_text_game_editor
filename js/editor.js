@@ -3115,6 +3115,11 @@
     if (input == null) return;
     const newName = input.trim();
     if (!newName || newName === name) return;
+    // 命名规则：只允许 中文/字母/数字/下划线（与素材名全局清洗规则一致）
+    if (!/^[\u4e00-\u9fa5A-Za-z0-9_]+$/.test(newName)) {
+      alert('剧情块名只能包含 中文 / 字母 / 数字 / 下划线，不能包含空格或特殊符号（如 - / * + . 等）。');
+      return;
+    }
     const oldName = name;
     const finalName = window.Storage.renameBlock(name, newName);
     // 同步更新编辑器文本框里对该块的引用（<剧情块:旧名> / <选项:"文字",旧名>），
@@ -4573,13 +4578,18 @@ self.onmessage = function (e) {
     const input = prompt('重命名素材「' + oldName + '」', oldName);
     if (input == null || !input.trim() || input.trim() === oldName) return;
     let safe = input.trim();
+    // 命名规则：只允许 中文/字母/数字/下划线（与素材名全局清洗规则一致）
+    if (!/^[\u4e00-\u9fa5A-Za-z0-9_]+$/.test(safe)) {
+      alert('素材名只能包含 中文 / 字母 / 数字 / 下划线，不能包含空格或特殊符号（如 - / * + . 等）。');
+      return;
+    }
     // 检测同名：如果同一个库里已有其他素材叫这个名字，自动在后面加序号
     const all = await window.Storage.getAllAssets(lib);
     const others = all.filter(a => a.id !== id).map(a => a.name);
     if (others.includes(safe)) {
       let n = 2;
-      while (others.includes(safe + ' (' + n + ')')) n++;
-      safe = safe + ' (' + n + ')';
+      while (others.includes(safe + '_' + n)) n++;
+      safe = safe + '_' + n;
       toast('名称重复，已自动改为「' + safe + '」');
     }
     try { await window.Storage.renameAsset(lib, id, safe); }

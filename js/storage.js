@@ -282,9 +282,25 @@ async function migrateLegacyIfNeeded() {
 //   derived:  true 表示当前 src 是经再编辑派生的版本；恢复原始后清回 false
 //   edit:     最近一次再编辑配方 { tool:'image'|'audio', editedAt }（仅作记录，不影响运行）
 
+// 名称统一清洗：素材 / 剧情块 / 变量命名只允许 中文/字母/数字/下划线，
+// 特殊符号（空格 - / * + . 等）一律替换为下划线，连续下划线合并、去首尾；空结果用兜底名。
+// 所有命名入口（导入取名、AI 生成、复制、重命名）都经此函数，保证存库名永远合法。
+const NAME_INVALID_CHARS = /[^\u4e00-\u9fa5A-Za-z0-9_]+/g;
+function sanitizeName(name, fallback) {
+  let s = String(name == null ? '' : name).trim();
+  s = s.replace(NAME_INVALID_CHARS, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+  return s || (fallback || '未命名');
+}
+// 校验名称是否合法（供编辑端在输入时拦截并提示，避免静默清洗造成困惑）
+function isNameValid(name) {
+  return /^[\u4e00-\u9fa5A-Za-z0-9_]+$/.test(String(name == null ? '' : name).trim());
+}
+
 async function saveAsset(lib, asset) {
   if (!LIBS.includes(lib)) throw new Error('未知素材库: ' + lib);
   if (!asset.id) asset.id = uid(lib.slice(0, 3));
+  // 名字统一清洗：保证所有入口（导入文件名 / AI 生成 / 重命名）存库名只含 中文/字母/数字/下划线
+  if (asset.name != null) asset.name = sanitizeName(asset.name, '未命名素材');
   const key = _assetKey(lib, asset.id);
   // 多项目架构迁移兜底：覆盖写入前，清理「同 lib+id 但 key 不同」的残留记录
   // （典型是早期无命名空间前缀的旧记录 key=lib:id）。否则新记录(p1::lib:id)写入后，
@@ -363,7 +379,7 @@ async function renameAsset(lib, id, newName) {
   if (!k) throw new Error('素材不存在');
   const rec = await idbGet(STORE_ASSETS, k);
   if (!rec) throw new Error('素材不存在');
-  const updated = Object.assign({}, rec, { name: newName });
+  const updated = Object.assign({}, rec, { name: sanitizeName(newName, rec.name) });
   await idbPut(STORE_ASSETS, updated);
   return updated;
 }
@@ -522,13 +538,13 @@ function setBlockText(name, text) {
   else { blk.blocks = blk.blocks || {}; blk.blocks[name] = text == null ? '' : String(text); }
   saveBlocks(blk);
 }
-// 新建剧情块，返回内部名（自动处理重名）
+// 新建剧情块，返回内部名（自动处理重名；名字统一清洗为合法字符）
 function addBlock(suggestName) {
   const blk = loadBlocks();
   blk.blocks = blk.blocks || {};
-  let base = (suggestName && String(suggestName).trim()) || '新对话';
+  let base = sanitizeName(suggestName, '新对话');
   let name = base, n = 2;
-  while (name === MAIN_BLOCK || blk.blocks[name] != null) { name = base + ' ' + n; n++; }
+  while (name === MAIN_BLOCK || blk.blocks[name] != null) { name = base + '_' + n; n++; }
   blk.blocks[name] = '';
   saveBlocks(blk);
   return name;
@@ -536,12 +552,12 @@ function addBlock(suggestName) {
 // 重命名剧情块（不可重命名主剧情）。同时把其它块及主剧情里对该块的引用一并更新。
 function renameBlock(oldName, newName) {
   if (oldName === MAIN_BLOCK) return false;
-  newName = (newName && String(newName).trim()) || oldName;
+  newName = sanitizeName(newName, oldName);
   const blk = loadBlocks();
   blk.blocks = blk.blocks || {};
   if (blk.blocks[oldName] == null) return false;
   let finalName = newName, n = 2;
-  while (finalName === MAIN_BLOCK || (blk.blocks[finalName] != null && finalName !== oldName)) { finalName = newName + ' ' + n; n++; }
+  while (finalName === MAIN_BLOCK || (blk.blocks[finalName] != null && finalName !== oldName)) { finalName = newName + '_' + n; n++; }
   blk.blocks[finalName] = blk.blocks[oldName];
   if (finalName !== oldName) delete blk.blocks[oldName];
   // 更新引用：<对话块:旧名> / <剧情块:旧名>（兼容旧写法）与 <选项:"文字",旧名>

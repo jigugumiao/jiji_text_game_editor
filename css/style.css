@@ -1375,6 +1375,22 @@ body.dark .ctx-menu .ctx-sep { background: rgba(255,255,255,0.12); }
   content: '›'; margin-left: auto; padding-left: 8px; opacity: .55;
   font-size: 15px; line-height: 1;
 }
+/* 随机跳转子菜单：勾选剧情块（checkable）与「插入所选」确认项 */
+.ctx-sub .ctx-item.ctx-checkable.ctx-checked {
+  background: rgba(58,134,255,0.20); color: #1d5fd4; font-weight: 600;
+}
+.ctx-sub .ctx-item.ctx-checkable.ctx-checked::after {
+  content: '✓'; margin-left: auto; padding-left: 8px; font-weight: 700;
+}
+.ctx-sub .ctx-item.ctx-confirm {
+  color: #1d5fd4; font-weight: 600;
+}
+.ctx-sub .ctx-item.ctx-confirm:hover { background: rgba(58,134,255,0.16); }
+body.dark .ctx-sub .ctx-item.ctx-checkable.ctx-checked {
+  background: rgba(110,160,255,0.30); color: #bcd3ff;
+}
+body.dark .ctx-sub .ctx-item.ctx-confirm { color: #9cc0ff; }
+body.dark .ctx-sub .ctx-item.ctx-confirm:hover { background: rgba(110,160,255,0.20); }
 body.dark .ctx-sub {
   background: #1b2030; color: #e9eef7;
   border-color: rgba(255,255,255,0.12);

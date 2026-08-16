@@ -91,6 +91,18 @@
   const RE_DIVIDER = /^<分割线(?::\s*(.*?)\s*)?>$/;
   // 分支剧情：<剧情块:名>（兼容旧 <对话块:名>）跳转、<选项:"文字",块名> 选项、<跳回> 返回、<跳回重选> 回到上一步重选
   const RE_BLOCK = /^<(?:对话块|剧情块):\s*(.*?)\s*>$/;
+  // 随机跳转：<随机跳转:块A,块B>（平均）/ <随机跳转:块A=50,块B=30>（正整数权重，缺省 1）。块名不可含 , 或 =。
+  const RE_RANDOM_JUMP = /^<随机跳转:([\s\S]*?)>$/;
+  function parseRandJump(body) {
+    const options = (body || '').split(',')
+      .map(function (s) {
+        const seg = s.trim(); if (!seg) return null;
+        const eq = seg.indexOf('=');
+        return eq < 0 ? { name: seg, weight: null }
+                      : { name: seg.slice(0, eq).trim(), weight: parseFloat(seg.slice(eq + 1)) };
+      }).filter(Boolean);
+    return { type: 'randblock', options: options };
+  }
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
   const RE_OPTION = /<选项:\s*"([^"]*)"\s*(?:,\s*([^>]*?))?\s*>/g;
@@ -170,6 +182,9 @@
       } else if ((m = t.match(RE_BLOCK))) {
         flush();
         story.push({ type: 'block', name: m[1].trim() });
+      } else if ((m = t.match(RE_RANDOM_JUMP))) {
+        flush();
+        story.push(parseRandJump(m[1]));
       } else if (RE_RETURN.test(t)) {
         flush();
         story.push({ type: 'return' });
@@ -222,6 +237,7 @@
       else if (n.type === 'divider') out.push('<分割线:' + (n.text || '') + '>');
       else if (n.type === 'stopmusic') out.push('<停止音乐>');
       else if (n.type === 'block') out.push('<剧情块:' + (n.name || '') + '>');
+      else if (n.type === 'randblock') out.push('<随机跳转:' + (n.options || []).map(o => o.name + (o.weight != null ? '=' + o.weight : '')).join(',') + '>');
       else if (n.type === 'return') out.push('<跳回>');
       else if (n.type === 'returnrechoose') out.push('<跳回重选>');
       else if (n.type === 'varop') out.push(n.ops.map(o => '<变量:' + o.name + (o.op === '=' ? '=' : o.op) + o.val + '>').join(''));
@@ -299,6 +315,9 @@
           html += '<div class="pv-line"><span class="pv-cmd return"><svg class="ico" aria-hidden="true"><use href="#ic-corner-up-left"/></svg> 跳回重选（返回上一步，重新做出选择）</span></div>';
         }         else if ((m = t.match(RE_BLOCK))) {
           html += '<div class="pv-line"><span class="pv-cmd block"><svg class="ico" aria-hidden="true"><use href="#ic-box"/></svg> 进入剧情块：' + escapeHtml(m[1]) + '</span></div>';
+        } else if ((m = t.match(RE_RANDOM_JUMP))) {
+          const opts = parseRandJump(m[1]).options.map(function (o) { return escapeHtml(o.name) + (o.weight != null ? '(' + o.weight + ')' : ''); }).join('，');
+          html += '<div class="pv-line"><span class="pv-cmd option"><svg class="ico" aria-hidden="true"><use href="#ic-shuffle"/></svg> 随机跳转：' + opts + '</span></div>';
         } else if (t.indexOf('<变量:') === 0) {
           const ops = [];
           let vm; RE_VAR_OP.lastIndex = 0;
@@ -984,13 +1003,38 @@
       { kind: 'music', label: '音乐', icon: 'ic-music' },
       { kind: 'sound', label: '音效', icon: 'ic-volume' },
       { kind: 'block', label: '选项', icon: 'ic-comment' },
+      { kind: 'randblock', label: '随机跳转', icon: 'ic-shuffle' },
     ];
     return cats.map(function (c) {
       if (c.kind === 'block') {
         return { label: c.label, icon: c.icon, submenu: function () { return buildBlockOptionSubmenu(); }, action: function () { insertOptionEmpty(); } };
       }
+      if (c.kind === 'randblock') {
+        return { label: c.label, icon: c.icon, submenu: function () { return buildRandJumpSubmenu(); }, action: function () { insertRandJumpTemplate(); } };
+      }
       return { label: c.label, icon: c.icon, submenu: function () { return buildAssetSubmenu(c.kind); }, action: function () { insertSummonTemplate(c.kind); } };
     });
+  }
+  // 右键「插入 → 随机跳转」：列出全部剧情块，勾选多个后插入 <随机跳转:块A,块B>（权重可自行补 =n）。
+  // 顶层「随机跳转」点一下插入占位模板 <随机跳转:块A,块B>。
+  function insertRandJumpTemplate() { insertAtCursor('<随机跳转:块A,块B>'); }
+  async function buildRandJumpSubmenu() {
+    const items = [];
+    let names = [];
+    try { names = await window.Storage.listBlockNames() || []; } catch (e) { names = []; }
+    if (!names.length) return items;
+    names.forEach(function (nm) {
+      const disp = (nm === MAIN_BLOCK) ? '主剧情' : nm;
+      items.push({ label: disp, name: nm, icon: 'ic-circle-dot', checkable: true });
+    });
+    items.push({ separator: true });
+    items.push({ label: '✓ 插入所选', icon: 'ic-check', confirm: true, action: function (names) { confirmRandJump(names); } });
+    return items;
+  }
+  function confirmRandJump(names) {
+    const list = (names || []).filter(Boolean);
+    if (list.length < 2) { toast('至少勾选两个剧情块'); return; }
+    insertAtCursor('<随机跳转:' + list.join(',') + '>');
   }
   // 右键「插入 → 选项」子菜单：列出全部剧情块，点选插入 <选项:"文字",块名>（光标落在「文字」可直接打字）。
   // 顶层「选项」点一下插入空白 <选项:"">（仅文字=纯推进；后接 ,块名=分支跳转），与素材类「输入名称…」一致。
@@ -1031,7 +1075,8 @@
     items.forEach(function (it) {
       if (it.separator) { const s = document.createElement('div'); s.className = 'ctx-sep'; panel.appendChild(s); return; }
       const row = document.createElement('div');
-      row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '');
+      row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '') + (it.checkable ? ' ctx-checkable' : '') + (it.confirm ? ' ctx-confirm' : '');
+      if (it.name) row.setAttribute('data-name', it.name);
       const ico = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       ico.setAttribute('class', 'ctx-ico'); ico.setAttribute('aria-hidden', 'true');
       const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
@@ -1052,6 +1097,21 @@
           ev.stopPropagation();
           hideContextMenu();
           try { if (it.action) it.action(); } catch (e) { console.error(e); }
+        });
+      } else if (it.checkable) {
+        // 勾选项：点击切换选中态，不关闭菜单
+        row.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          row.classList.toggle('ctx-checked');
+        });
+      } else if (it.confirm) {
+        // 确认项：收集本面板内已勾选项的 name，传给 action 后关闭菜单
+        row.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          hideContextMenu();
+          const names = [];
+          panel.querySelectorAll('.ctx-checkable.ctx-checked').forEach(function (r) { const nm = r.getAttribute('data-name'); if (nm) names.push(nm); });
+          try { if (it.action) it.action(names); } catch (e) { console.error(e); }
         });
       } else {
         row.addEventListener('click', function (ev) { ev.stopPropagation(); hideContextMenu(); try { if (it.action) it.action(); } catch (e) { console.error(e); } });
@@ -2836,6 +2896,12 @@
           const target = bm[1].trim();
           edges.push({ from: name, to: target, label: '进入剧情块', charIndex: raw.indexOf(line), kind: 'block' });
         }
+        const rm = line.trim().match(RE_RANDOM_JUMP);
+        if (rm) {
+          parseRandJump(rm[1]).options.forEach((o) => {
+            edges.push({ from: name, to: o.name, label: o.weight != null ? '随机(' + o.weight + ')' : '随机', charIndex: raw.indexOf(line), kind: 'rand' });
+          });
+        }
       });
     });
     // 2) 自「主剧情」做 BFS 分层；不可达块放到最右侧
@@ -2888,6 +2954,7 @@
     let svg = '<defs>' +
       '<marker id="bgp-arrow-opt" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="var(--violet)"/></marker>' +
       '<marker id="bgp-arrow-block" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="var(--amber)"/></marker>' +
+      '<marker id="bgp-arrow-rand" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="var(--green)"/></marker>' +
       '</defs>';
     edges.forEach((e) => {
       if (!e.to || !names.includes(e.to)) return; // 无目标的选项仅推进，不画连线
@@ -2902,8 +2969,9 @@
       const mx = (x1 + x2) / 2;
       const c1x = mx, c1y = y1 + off, c2x = mx, c2y = y2 + off;
       const isOpt = e.kind === 'option';
-      const stroke = isOpt ? 'var(--violet)' : 'var(--amber)';
-      const marker = isOpt ? 'url(#bgp-arrow-opt)' : 'url(#bgp-arrow-block)';
+      const isRand = e.kind === 'rand';
+      const stroke = isOpt ? 'var(--violet)' : (isRand ? 'var(--green)' : 'var(--amber)');
+      const marker = isOpt ? 'url(#bgp-arrow-opt)' : (isRand ? 'url(#bgp-arrow-rand)' : 'url(#bgp-arrow-block)');
       svg += '<path d="M' + x1 + ',' + y1 + ' C' + c1x + ',' + c1y + ' ' + c2x + ',' + c2y + ' ' + x2 + ',' + y2 +
         '" fill="none" stroke="' + stroke + '" stroke-width="2" marker-end="' + marker + '" opacity="0.9"/>';
       const lw = _labelWidth(e.label);
@@ -5447,7 +5515,7 @@ self.onmessage = function (e) {
           return;
         }
         // 指令标签内嵌套标签检测：如 <当:<选项:...>>、<召唤背景:<变量:金币>> 等（两个「<」之间不含「>」即视为嵌套）
-        if (/<[^>]*<[^>]*>/.test(t) && /<(召唤|选项|当|否则|变量|停顿|标题|分割线|剧情块|对话块|跳回|跳回重选|停止音乐)/.test(t)) {
+        if (/<[^>]*<[^>]*>/.test(t) && /<(召唤|选项|当|否则|变量|停顿|标题|分割线|剧情块|对话块|跳回|跳回重选|停止音乐|随机跳转)/.test(t)) {
           pushIssue(prefix, n, 'error', '指令标签内部不应再嵌套另一个尖括号标签（发现「<> 内嵌套 <>」，请把内层指令拆到独立一行）');
           return;
         }
@@ -5460,7 +5528,7 @@ self.onmessage = function (e) {
           pushIssue(prefix, n, 'error', '不应在主剧情块使用<跳回>或者<跳回重选>');
           return;
         }
-        const afterCmd = t.match(/^(<(?:召唤(?:背景|物品|音乐|音效|叠层):[^>]*>|<分割线(?::[^>]*)?>|停顿(?::\s*\d+)?>|<(?:对话块|剧情块):[^>]*>|<跳回>|<跳回重选>))\s*(\S[\s\S]*)$/);
+        const afterCmd = t.match(/^(<(?:召唤(?:背景|物品|音乐|音效|叠层):[^>]*>|<分割线(?::[^>]*)?>|停顿(?::\s*\d+)?>|<(?:对话块|剧情块):[^>]*>|<随机跳转:[^>]*>|<跳回>|<跳回重选>))\s*(\S[\s\S]*)$/);
         if (afterCmd) {
           pushIssue(prefix, n, 'error', '指令「' + afterCmd[1] + '」后方不应跟文字（如需文字请另起一行）');
           return;
@@ -5490,6 +5558,27 @@ self.onmessage = function (e) {
             if (!bm) pushIssue(prefix, n, 'error', '剧情块指令格式不正确（如 <剧情块:名称>）');
             else if (!bm[1].trim()) pushIssue(prefix, n, 'error', '剧情块名称不能为空（如 <剧情块:名称>）');
             else if (!blockNames.has(bm[1].trim())) pushIssue(prefix, n, 'warning', '未找到名为「' + bm[1].trim() + '」的剧情块，跳转可能无效');
+          } else if (t.startsWith('<随机跳转')) {
+            const rm = t.match(RE_RANDOM_JUMP);
+            if (!rm) pushIssue(prefix, n, 'error', '随机跳转指令格式不正确（如 <随机跳转:块A,块B> 或 <随机跳转:块A=50,块B=30>）');
+            else {
+              const segs = rm[1].split(',').map(s => s.trim());
+              if (segs.filter(Boolean).length < 2) pushIssue(prefix, n, 'error', '随机跳转至少需要列出两个剧情块（如 <随机跳转:块A,块B>）');
+              const seen = {};
+              segs.forEach(seg => {
+                if (!seg) { pushIssue(prefix, n, 'error', '随机跳转中存在空段（块与块之间不要留空逗号）'); return; }
+                const eq = seg.indexOf('=');
+                const nm = (eq < 0 ? seg : seg.slice(0, eq)).trim();
+                const wStr = eq < 0 ? null : seg.slice(eq + 1).trim();
+                if (!nm) pushIssue(prefix, n, 'error', '随机跳转块名不能为空（如 <随机跳转:块A,块B>）');
+                if (wStr != null && !/^[1-9]\d*$/.test(wStr)) pushIssue(prefix, n, 'error', '随机跳转权重必须是正整数（如 =50），不允许 0、负数或小数');
+                if (nm && !blockNames.has(nm)) pushIssue(prefix, n, 'warning', '随机跳转指向的剧情块「' + nm + '」未找到，跳转可能无效');
+                if (nm) {
+                  if (seen[nm]) pushIssue(prefix, n, 'warning', '随机跳转中「' + nm + '」重复出现，会获得多次机会');
+                  seen[nm] = true;
+                }
+              });
+            }
           } else if (t.indexOf('<选项:') >= 0) {
             const opts = []; let om;
             reOpt.lastIndex = 0;
@@ -5545,7 +5634,7 @@ self.onmessage = function (e) {
               });
             }
           } else {
-            pushIssue(prefix, n, 'error', '无法识别的指令「' + t + '」（识别的指令：停顿/召唤/剧情块/选项/跳回/跳回重选）');
+            pushIssue(prefix, n, 'error', '无法识别的指令「' + t + '」（识别的指令：停顿/召唤/剧情块/随机跳转/选项/跳回/跳回重选）');
           }
         }
         if (t.startsWith('[') && t.endsWith(']') && !/^\[(?:b|i|u|s|color=|size=|center|left|right|br|shadow=|glow=|highlight=)[\]\=]/.test(t) && !/\[\/(?:b|i|u|s|color|size|center|left|right|shadow|glow|highlight)\]/.test(t)) {

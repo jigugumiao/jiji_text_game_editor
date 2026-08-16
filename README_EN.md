@@ -12,7 +12,7 @@ A **pure front-end** (vanilla HTML + JavaScript, zero dependencies, zero build s
 
 ## Features
 
-- **Story writing**: a text editor supporting `{variable}` substitution, `<标题:...>` floating title overlays, and `<召唤X:名称>` summon commands (image / item / music / sound).
+- **Story writing**: a text editor supporting `{variable}` substitution, `<标题:...>` floating title overlays, and `<召唤X:名称>` summon commands (background / overlay / item / music / sound). Overlays suit transparent PNG characters or props; use `<清除叠层>` to hide the active overlay and continue the story.
 - **Right-click to insert assets**: right-click anywhere in the text to open a multi-level menu and insert images / items / music / sound effects (or type a name manually); the summon command is inserted and the cursor lands on the name.
 - **Asset library**: unified management of the image library (backgrounds / solid colors), items, music, and sound effects; solid-color backgrounds support "re-pick color" re-editing; you can generate backgrounds with AI.
 - **AI assistant** (`js/ai.js`): a full-text assistant with continuation, outlining, rewriting, note-based control of line count / style, etc. (bring your own LLM API).
@@ -42,6 +42,7 @@ There is an importable sample adventure in [`examples/sample-adventure/`](exampl
 
 - Background music `<召唤音乐:主题曲>`
 - Background switching `<召唤背景:...>`
+- Character overlays `<召唤叠层:...>` / `<清除叠层>`
 - Inline images `@image#1:...`
 - Floating titles `<标题:...>`
 - Variables `<变量:勇气=1>` / `{勇气}`

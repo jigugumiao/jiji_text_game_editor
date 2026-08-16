@@ -615,6 +615,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   #player-input-overlay .pi-input { width: 100%; box-sizing: border-box; padding: 13px 14px; font-size: 18px; font-family: inherit; color: #f3f7ff;
     background: rgba(8,11,18,0.92); border: 1px solid rgba(120,160,255,0.5); border-radius: 11px; outline: none; }
   #player-input-overlay .pi-input:focus { border-color: #5a9bff; box-shadow: 0 0 0 3px rgba(58,134,255,0.25); }
+  #player-input-overlay .pi-input::placeholder { color: #8a93a6; opacity: 1; }
   #player-input-overlay .pi-submit { align-self: flex-end; padding: 11px 30px; font-size: 16px; border-radius: 11px; cursor: pointer;
     color: #eaf1ff; background: rgba(58,134,255,0.42); border: 1px solid #5a9bff; transition: 0.16s; }
   #player-input-overlay .pi-submit:hover { background: rgba(58,134,255,0.62); }
@@ -2140,12 +2141,14 @@ __STORY_DATA__
     const varName = n.name;
     if (n.prompt && n.prompt.length){ promptEl.textContent = n.prompt; promptEl.style.display = 'block'; }
     else { promptEl.style.display = 'none'; }
+    // 占位灰字直接读取变量当前文本；玩家不输入直接确定则沿用原值
     inputEl.value = '';
+    inputEl.placeholder = (vars[varName] != null) ? String(vars[varName]) : '';
     overlay.style.display = 'flex';
     setTimeout(function(){ try { inputEl.focus(); } catch(e){} }, 30); // 聚焦以拉起输入法
     function onInput(){ const arr = Array.from(inputEl.value); if (arr.length > 8) inputEl.value = arr.slice(0, 8).join(''); }
     function cleanup(){ submitEl.removeEventListener('click', submitInput); inputEl.removeEventListener('keydown', onKey); inputEl.removeEventListener('input', onInput); }
-    function submitInput(e){ if (e){ e.stopPropagation(); e.preventDefault(); } cleanup(); const val = Array.from(inputEl.value).slice(0, 8).join(''); vars[varName] = val; overlay.style.display = 'none'; inputPending = false; advance(); }
+    function submitInput(e){ if (e){ e.stopPropagation(); e.preventDefault(); } cleanup(); const val = Array.from(inputEl.value).slice(0, 8).join(''); if (val) vars[varName] = val; overlay.style.display = 'none'; inputPending = false; advance(); }
     function onKey(e){ if (e.key === 'Enter'){ e.preventDefault(); submitInput(); } }
     submitEl.addEventListener('click', submitInput);
     inputEl.addEventListener('keydown', onKey);

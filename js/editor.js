@@ -979,6 +979,7 @@
     const close = '>';
     const ta = storyText;
     const wasRO = ta.readOnly; ta.readOnly = false;
+    const st = ta.scrollTop; // 记住滚动位置，避免 focus+setSelectionRange 触发浏览器滚动跳页
     try {
       const r = ctxInsertRange();
       const s = r.s, e = r.e;
@@ -990,6 +991,7 @@
       const pos = (before + padBefore + open).length; // 光标落在「:」与「>」之间，直接输入素材名称
       ta.focus();
       try { ta.setSelectionRange(pos, pos); } catch (_) {}
+      ta.scrollTop = st; // 恢复原滚动位置
       commitEdit();
       toast('已插入召唤指令，请填写素材名称');
     } finally { ta.readOnly = wasRO; }
@@ -999,6 +1001,7 @@
     const txt = '<召唤' + cn + ':' + name + '>';
     const ta = storyText;
     const wasRO = ta.readOnly; ta.readOnly = false;
+    const st = ta.scrollTop; // 记住滚动位置，避免 focus+setSelectionRange 触发浏览器滚动跳页
     try {
       const r = ctxInsertRange();
       const s = r.s, e = r.e;
@@ -1010,6 +1013,7 @@
       const pos = (before + insert).length;
       ta.focus();
       try { ta.setSelectionRange(pos, pos); } catch (_) {}
+      ta.scrollTop = st; // 恢复原滚动位置
       commitEdit();
       toast('已插入：' + txt);
     } finally { ta.readOnly = wasRO; }

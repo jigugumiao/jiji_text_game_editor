@@ -191,6 +191,9 @@
       } else if (t === '<停止音乐>') {
         flush();
         story.push({ type: 'stopmusic' });
+      } else if (t === '<清除叠层>') {
+        flush();
+        story.push({ type: 'clearoverlay' });
       } else if ((m = t.match(RE_BLOCK))) {
         flush();
         story.push({ type: 'block', name: m[1].trim() });
@@ -251,6 +254,7 @@
       else if (n.type === 'title') out.push('<标题:' + (n.text || '') + '>');
       else if (n.type === 'divider') out.push('<分割线:' + (n.text || '') + '>');
       else if (n.type === 'stopmusic') out.push('<停止音乐>');
+      else if (n.type === 'clearoverlay') out.push('<清除叠层>');
       else if (n.type === 'block') out.push('<剧情块:' + (n.name || '') + '>');
       else if (n.type === 'randblock') out.push('<随机跳转:' + (n.options || []).map(o => o.name + (o.weight != null ? '=' + o.weight : '')).join(',') + '>');
       else if (n.type === 'randtext') out.push('<随机句子:' + (n.options || []).map(o => '"' + o.text + '"' + (o.weight != null ? '=' + o.weight : '')).join(',') + '>');
@@ -325,6 +329,8 @@
             : '<span class="pv-divider-line"></span>') + '</div>';
         } else if (t === '<停止音乐>') {
           html += '<div class="pv-line"><span class="pv-cmd music"><svg class="ico" aria-hidden="true"><use href="#ic-stop"/></svg> 停止音乐</span></div>';
+        } else if (t === '<清除叠层>') {
+          html += '<div class="pv-line"><span class="pv-cmd overlay"><svg class="ico" aria-hidden="true"><use href="#ic-stop"/></svg> 清除叠层</span></div>';
         } else if (RE_RETURN.test(t)) {
           html += '<div class="pv-line"><span class="pv-cmd return"><svg class="ico" aria-hidden="true"><use href="#ic-corner-up-left"/></svg> 跳回（返回上一层对话）</span></div>';
         } else if (RE_RETURN_RECHOOSE.test(t)) {
@@ -5572,7 +5578,7 @@ self.onmessage = function (e) {
           pushIssue(prefix, n, 'error', '不应在主剧情块使用<跳回>或者<跳回重选>');
           return;
         }
-        const afterCmd = t.match(/^(<(?:召唤(?:背景|物品|音乐|音效|叠层):[^>]*>|<分割线(?::[^>]*)?>|停顿(?::\s*\d+)?>|<(?:对话块|剧情块):[^>]*>|<随机跳转:[^>]*>|<随机句子:[^>]*>|<跳回>|<跳回重选>))\s*(\S[\s\S]*)$/);
+        const afterCmd = t.match(/^(<(?:召唤(?:背景|物品|音乐|音效|叠层):[^>]*>|<分割线(?::[^>]*)?>|停顿(?::\s*\d+)?>|<(?:对话块|剧情块):[^>]*>|<随机跳转:[^>]*>|<随机句子:[^>]*>|<跳回>|<跳回重选>|<清除叠层>))\s*(\S[\s\S]*)$/);
         if (afterCmd) {
           pushIssue(prefix, n, 'error', '指令「' + afterCmd[1] + '」后方不应跟文字（如需文字请另起一行）');
           return;
@@ -5673,6 +5679,8 @@ self.onmessage = function (e) {
             // 标题指令：合法
           } else if (t === '<停止音乐>') {
             // 停止音乐：合法
+          } else if (t === '<清除叠层>') {
+            // 清除叠层：合法
           } else if ((m = t.match(/^<当:([\s\S]*)>$/))) {
             checkCond(prefix, n, m[1]);
           } else if (t === '</当>') {

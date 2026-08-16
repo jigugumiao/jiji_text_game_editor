@@ -103,6 +103,18 @@
       }).filter(Boolean);
     return { type: 'randblock', options: options };
   }
+  // 随机句子：<随机句子:"文本1","文本2">（随机挑一句显示）/ <随机句子:"文本1"=8,"文本2"=5>（正整数权重，缺省 1）。
+  // 引号内文本可含逗号；文本不可含英文双引号；权重缺省均分。
+  const RE_RANDOM_TEXT = /^<随机句子:([\s\S]*?)>$/;
+  function parseRandText(body) {
+    const options = [];
+    const re = /"([\s\S]*?)"\s*(?:=\s*([1-9]\d*))?/g;
+    let m;
+    while ((m = re.exec(body || '')) !== null) {
+      options.push({ text: m[1], weight: m[2] != null ? parseInt(m[2], 10) : null });
+    }
+    return { type: 'randtext', options: options };
+  }
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
   const RE_OPTION = /<选项:\s*"([^"]*)"\s*(?:,\s*([^>]*?))?\s*>/g;
@@ -185,6 +197,9 @@
       } else if ((m = t.match(RE_RANDOM_JUMP))) {
         flush();
         story.push(parseRandJump(m[1]));
+      } else if ((m = t.match(RE_RANDOM_TEXT))) {
+        flush();
+        story.push(parseRandText(m[1]));
       } else if (RE_RETURN.test(t)) {
         flush();
         story.push({ type: 'return' });
@@ -238,6 +253,7 @@
       else if (n.type === 'stopmusic') out.push('<停止音乐>');
       else if (n.type === 'block') out.push('<剧情块:' + (n.name || '') + '>');
       else if (n.type === 'randblock') out.push('<随机跳转:' + (n.options || []).map(o => o.name + (o.weight != null ? '=' + o.weight : '')).join(',') + '>');
+      else if (n.type === 'randtext') out.push('<随机句子:' + (n.options || []).map(o => '"' + o.text + '"' + (o.weight != null ? '=' + o.weight : '')).join(',') + '>');
       else if (n.type === 'return') out.push('<跳回>');
       else if (n.type === 'returnrechoose') out.push('<跳回重选>');
       else if (n.type === 'varop') out.push(n.ops.map(o => '<变量:' + o.name + (o.op === '=' ? '=' : o.op) + o.val + '>').join(''));
@@ -318,6 +334,9 @@
         } else if ((m = t.match(RE_RANDOM_JUMP))) {
           const opts = parseRandJump(m[1]).options.map(function (o) { return escapeHtml(o.name) + (o.weight != null ? '(' + o.weight + ')' : ''); }).join('，');
           html += '<div class="pv-line"><span class="pv-cmd option"><svg class="ico" aria-hidden="true"><use href="#ic-shuffle"/></svg> 随机跳转：' + opts + '</span></div>';
+        } else if ((m = t.match(RE_RANDOM_TEXT))) {
+          const opts = parseRandText(m[1]).options.map(function (o) { return '「' + escapeHtml(o.text) + '」' + (o.weight != null ? '(' + o.weight + ')' : ''); }).join('，');
+          html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-shuffle"/></svg> 随机句子：' + opts + '</span></div>';
         } else if (t.indexOf('<变量:') === 0) {
           const ops = [];
           let vm; RE_VAR_OP.lastIndex = 0;
@@ -1004,6 +1023,7 @@
       { kind: 'sound', label: '音效', icon: 'ic-volume' },
       { kind: 'block', label: '选项', icon: 'ic-comment' },
       { kind: 'randblock', label: '随机跳转', icon: 'ic-shuffle' },
+      { kind: 'randtext', label: '随机句子', icon: 'ic-type' },
     ];
     return cats.map(function (c) {
       if (c.kind === 'block') {
@@ -1012,8 +1032,18 @@
       if (c.kind === 'randblock') {
         return { label: c.label, icon: c.icon, submenu: function () { return buildRandJumpSubmenu(); }, action: function () { insertRandJumpTemplate(); } };
       }
+      if (c.kind === 'randtext') {
+        return { label: c.label, icon: c.icon, action: function () { insertRandTextTemplate(); } };
+      }
       return { label: c.label, icon: c.icon, submenu: function () { return buildAssetSubmenu(c.kind); }, action: function () { insertSummonTemplate(c.kind); } };
     });
+  }
+  // 右键「插入 → 随机句子」：插入占位模板 <随机句子:"文本1","文本2">，光标落在第一个引号内等待输入
+  function insertRandTextTemplate() {
+    insertAtCursor('<随机句子:"文本1","文本2">', 0);
+    const ta = storyText;
+    const idx = ta.value.lastIndexOf('<随机句子:"') + '<随机句子:"'.length;
+    try { ta.setSelectionRange(idx, idx + 2); } catch (e) {}
   }
   // 右键「插入 → 随机跳转」：列出全部剧情块，勾选多个后插入 <随机跳转:块A,块B>（权重可自行补 =n）。
   // 顶层「随机跳转」点一下插入占位模板 <随机跳转:块A,块B>。
@@ -5525,7 +5555,7 @@ self.onmessage = function (e) {
           return;
         }
         // 指令标签内嵌套标签检测：如 <当:<选项:...>>、<召唤背景:<变量:金币>> 等（两个「<」之间不含「>」即视为嵌套）
-        if (/<[^>]*<[^>]*>/.test(t) && /<(召唤|选项|当|否则|变量|停顿|标题|分割线|剧情块|对话块|跳回|跳回重选|停止音乐|随机跳转)/.test(t)) {
+        if (/<[^>]*<[^>]*>/.test(t) && /<(召唤|选项|当|否则|变量|停顿|标题|分割线|剧情块|对话块|跳回|跳回重选|停止音乐|随机跳转|随机句子)/.test(t)) {
           pushIssue(prefix, n, 'error', '指令标签内部不应再嵌套另一个尖括号标签（发现「<> 内嵌套 <>」，请把内层指令拆到独立一行）');
           return;
         }
@@ -5538,7 +5568,7 @@ self.onmessage = function (e) {
           pushIssue(prefix, n, 'error', '不应在主剧情块使用<跳回>或者<跳回重选>');
           return;
         }
-        const afterCmd = t.match(/^(<(?:召唤(?:背景|物品|音乐|音效|叠层):[^>]*>|<分割线(?::[^>]*)?>|停顿(?::\s*\d+)?>|<(?:对话块|剧情块):[^>]*>|<随机跳转:[^>]*>|<跳回>|<跳回重选>))\s*(\S[\s\S]*)$/);
+        const afterCmd = t.match(/^(<(?:召唤(?:背景|物品|音乐|音效|叠层):[^>]*>|<分割线(?::[^>]*)?>|停顿(?::\s*\d+)?>|<(?:对话块|剧情块):[^>]*>|<随机跳转:[^>]*>|<随机句子:[^>]*>|<跳回>|<跳回重选>))\s*(\S[\s\S]*)$/);
         if (afterCmd) {
           pushIssue(prefix, n, 'error', '指令「' + afterCmd[1] + '」后方不应跟文字（如需文字请另起一行）');
           return;
@@ -5568,6 +5598,24 @@ self.onmessage = function (e) {
             if (!bm) pushIssue(prefix, n, 'error', '剧情块指令格式不正确（如 <剧情块:名称>）');
             else if (!bm[1].trim()) pushIssue(prefix, n, 'error', '剧情块名称不能为空（如 <剧情块:名称>）');
             else if (!blockNames.has(bm[1].trim())) pushIssue(prefix, n, 'warning', '未找到名为「' + bm[1].trim() + '」的剧情块，跳转可能无效');
+          } else if (t.startsWith('<随机句子')) {
+            const rm = t.match(RE_RANDOM_TEXT);
+            if (!rm) pushIssue(prefix, n, 'error', '随机句子指令格式不正确（如 <随机句子:"文本1","文本2"> 或 <随机句子:"文本1"=8,"文本2"=5>）');
+            else {
+              const opts = parseRandText(rm[1]).options;
+              if (!opts.length) pushIssue(prefix, n, 'error', '随机句子至少需要一个句子（用英文双引号包裹，如 <随机句子:"你好">）');
+              else {
+                const leftover = rm[1].replace(/"([\s\S]*?)"\s*(?:=\s*[1-9]\d*)?/g, '').replace(/[\s,，]+/g, '').trim();
+                if (leftover) pushIssue(prefix, n, 'warning', '随机句子中存在无法解析的内容（检查引号是否成对闭合，如 <随机句子:"文本1","文本2">）');
+                opts.forEach(o => {
+                  if (o.text == null || o.text === '') pushIssue(prefix, n, 'error', '随机句子的句子内容不能为空（如 <随机句子:"你好">）');
+                });
+                const reW = /"([\s\S]*?)"\s*=\s*(\S+)/g; let wm;
+                while ((wm = reW.exec(rm[1])) !== null) {
+                  if (!/^[1-9]\d*$/.test(wm[2])) pushIssue(prefix, n, 'error', '随机句子权重必须是正整数（如 ="8"），不允许 0、负数或小数');
+                }
+              }
+            }
           } else if (t.startsWith('<随机跳转')) {
             const rm = t.match(RE_RANDOM_JUMP);
             if (!rm) pushIssue(prefix, n, 'error', '随机跳转指令格式不正确（如 <随机跳转:块A,块B> 或 <随机跳转:块A=50,块B=30>）');
@@ -5644,7 +5692,7 @@ self.onmessage = function (e) {
               });
             }
           } else {
-            pushIssue(prefix, n, 'error', '无法识别的指令「' + t + '」（识别的指令：停顿/召唤/剧情块/随机跳转/选项/跳回/跳回重选）');
+            pushIssue(prefix, n, 'error', '无法识别的指令「' + t + '」（识别的指令：停顿/召唤/剧情块/随机跳转/随机句子/选项/跳回/跳回重选）');
           }
         }
         if (t.startsWith('[') && t.endsWith(']') && !/^\[(?:b|i|u|s|color=|size=|center|left|right|br|shadow=|glow=|highlight=)[\]\=]/.test(t) && !/\[\/(?:b|i|u|s|color|size|center|left|right|shadow|glow|highlight)\]/.test(t)) {

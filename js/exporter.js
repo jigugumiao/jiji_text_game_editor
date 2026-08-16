@@ -1974,6 +1974,7 @@ __STORY_DATA__
     else if (n.type === 'divider') showDivider(n.text || '');
     else if (n.type === 'block') { callBlock(n.name); execCur(); }
     else if (n.type === 'randblock') { const picked = pickWeighted(n.options); if (picked && picked.name){ callBlock(picked.name); execCur(); } else { advance(); } }
+    else if (n.type === 'randtext') { const picked = pickWeighted(n.options); typeText(picked ? picked.text : ''); }
     else if (n.type === 'return') { doReturn(); }
     else if (n.type === 'returnrechoose') { doReturnRechoose(); }
     else if (n.type === 'varop') { applyVarOps(n.ops); advance(); }
@@ -2078,6 +2079,7 @@ __STORY_DATA__
       }
       if (n.type === 'block'){ callBlock(n.name); continue; }
       if (n.type === 'randblock'){ const picked = pickWeighted(n.options); if (picked && picked.name){ callBlock(picked.name); } else { curIdx++; } continue; }  // 读档重放现掷，不记录/不消费 choices
+      if (n.type === 'randtext'){ const picked = pickWeighted(n.options); fastApply({ type: 'text', content: picked ? picked.text : '' }); curIdx++; continue; }  // 读档重放现掷，按 text 重建可见消息
       if (n.type === 'return'){ doReturn(); continue; }
       if (n.type === 'returnrechoose'){ doReturn(); continue; }   // 重放阶段无 UI，退化为普通跳回
       if (n.type === 'varop'){ applyVarOps(n.ops); curIdx++; continue; }  // 重放阶段必须重建变量状态，否则读档后 {名} 变回字面量
@@ -2546,6 +2548,17 @@ function parseRandJump(body) {
     }).filter(Boolean);
   return { type: 'randblock', options: options };
 }
+// 随机句子指令：<随机句子:"文本1","文本2">（随机挑一句显示）/ <随机句子:"文本1"=8,"文本2"=5>（正整数权重，缺省 1）。
+// 引号内文本可含逗号；文本不可含英文双引号；权重缺省均分。
+function parseRandText(body) {
+  const options = [];
+  const re = /"([\s\S]*?)"\s*(?:=\s*([1-9]\d*))?/g;
+  let m;
+  while ((m = re.exec(body || '')) !== null) {
+    options.push({ text: m[1], weight: m[2] != null ? parseInt(m[2], 10) : null });
+  }
+  return { type: 'randtext', options: options };
+}
 function parseStoryForExport(src) {
   const RE_PAUSE = /^<停顿(?::\s*(\d+))?>$/;
   const RE_SUMMON = /^<召唤(背景|物品|音乐|音效|叠层):\s*(.*?)\s*>$/;
@@ -2553,6 +2566,7 @@ function parseStoryForExport(src) {
   const RE_DIVIDER = /^<分割线(?::\s*(.*?)\s*)?>$/;
   const RE_BLOCK = /^<(?:对话块|剧情块):\s*(.*?)\s*>$/;
   const RE_RANDOM_JUMP = /^<随机跳转:([\s\S]*?)>$/;
+  const RE_RANDOM_TEXT = /^<随机句子:([\s\S]*?)>$/;
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
   const RE_OPTION = /<选项:\s*"([^"]*)"\s*(?:,\s*([^>]*?))?\s*>/g;
@@ -2597,6 +2611,7 @@ function parseStoryForExport(src) {
     else if ((m = t.match(RE_PLAYER_INPUT))) { flush(); story.push({ type: 'playerinput', name: m[1], prompt: m[2] }); }
     else if ((m = t.match(RE_BLOCK))) { flush(); story.push({ type: 'block', name: m[1].trim() }); }
     else if ((m = t.match(RE_RANDOM_JUMP))) { flush(); story.push(parseRandJump(m[1])); }
+    else if ((m = t.match(RE_RANDOM_TEXT))) { flush(); story.push(parseRandText(m[1])); }
     else if (RE_RETURN.test(t)) { flush(); story.push({ type: 'return' }); }
     else if (RE_RETURN_RECHOOSE.test(t)) { flush(); story.push({ type: 'returnrechoose' }); }
     else if (t.indexOf('<选项:') >= 0) {
@@ -2635,6 +2650,7 @@ function computeStartNode(src, charOffset) {
   const RE_DIVIDER = /^<分割线(?::\s*(.*?)\s*)?>$/;
   const RE_BLOCK = /^<(?:对话块|剧情块):\s*(.*?)\s*>$/;
   const RE_RANDOM_JUMP = /^<随机跳转:([\s\S]*?)>$/;
+  const RE_RANDOM_TEXT = /^<随机句子:([\s\S]*?)>$/;
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
   let bufStart = null;
@@ -2647,7 +2663,7 @@ function computeStartNode(src, charOffset) {
     if (t === '') { flush(); continue; }           // 空行结束文本缓冲
     const isCmd =
       RE_PAUSE.test(t) || RE_SUMMON.test(t) || RE_TITLE.test(t) || RE_DIVIDER.test(t) ||
-      t === '<停止音乐>' || t === '<清除叠层>' || RE_BLOCK.test(t) || RE_RANDOM_JUMP.test(t) || RE_RETURN.test(t) || RE_RETURN_RECHOOSE.test(t) ||
+      t === '<停止音乐>' || t === '<清除叠层>' || RE_BLOCK.test(t) || RE_RANDOM_JUMP.test(t) || RE_RANDOM_TEXT.test(t) || RE_RETURN.test(t) || RE_RETURN_RECHOOSE.test(t) ||
       t.indexOf('<选项:') >= 0 || t.indexOf('<变量:') === 0 || t.indexOf('<玩家输入变量:') === 0;
     if (isCmd) { flush(); nodeStartLines.push(i); }
     else { if (bufStart == null) bufStart = i; }

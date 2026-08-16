@@ -2561,7 +2561,18 @@
         storyText.readOnly = wasRO;
       });
       const name = document.createElement('input'); name.className = 'var-name'; name.value = v.name; name.placeholder = '变量名';
-      name.onchange = () => { vars[idx].name = name.value.trim(); window.Storage.saveVars(vars); refreshTodo(); };
+      name.onchange = () => {
+        const nm = name.value.trim();
+        // 变量名合法性：与解析端一致（字母/下划线/中文开头，可含数字，不能以数字开头）
+        if (nm && !/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(nm)) {
+          if (/^[0-9]/.test(nm)) alert('不可以用纯数字开头作为变量名。');
+          else alert('变量名只能包含 字母 / 数字 / 下划线 / 中文，且不能以数字开头。');
+          name.value = vars[idx].name; // 还原为上次合法名
+          name.focus();
+          return;
+        }
+        vars[idx].name = nm; window.Storage.saveVars(vars); refreshTodo();
+      };
       const type = document.createElement('select'); type.className = 'var-type';
       [['number', '数字'], ['text', '文本'], ['boolean', '布尔']].forEach(([val, lab]) => {
         const o = document.createElement('option'); o.value = val; o.textContent = lab; if (v.type === val) o.selected = true; type.appendChild(o);

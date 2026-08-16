@@ -1970,7 +1970,7 @@ __STORY_DATA__
     else if (n.type === 'title') showTitle(n.text || '');
     else if (n.type === 'summon') doSummon(n);
     else if (n.type === 'stopmusic') stopMusic();
-    else if (n.type === 'clearoverlay') clearOverlay();
+    else if (n.type === 'clearoverlay') { clearOverlay(); advance(); }
     else if (n.type === 'divider') showDivider(n.text || '');
     else if (n.type === 'block') { callBlock(n.name); execCur(); }
     else if (n.type === 'randblock') { const picked = pickWeighted(n.options); if (picked && picked.name){ callBlock(picked.name); execCur(); } else { advance(); } }

@@ -71,6 +71,8 @@
 
   let text = '';
   let activeLib = 'background';
+  let libFilter = '';            // 右侧库顶部分类筛选关键字（按名称过滤当前库）
+  let _lastRenderedLib = null;  // 上次渲染的库，用于检测“切换库”以自动清空筛选
   const MAIN_BLOCK = (window.Storage && window.Storage.MAIN_BLOCK) ? window.Storage.MAIN_BLOCK : '__MAIN__';
   let activeBlock = MAIN_BLOCK;   // 当前正在编辑的剧情块（主剧情默认，置顶不可删）
   let currentProjectMode = 'game'; // 'game' 剧情游戏 | 'article' 通用文章
@@ -2560,7 +2562,36 @@
   function setLibCount(el, n, label) {
     el.textContent = label + ' · 共 ' + n + ' 项';
   }
+  // 取出库条目的名称（资产/剧情块/变量统一用 data-name 存储，便于通用筛选）
+  function getItemName(el) {
+    if (el && el.dataset && el.dataset.name) return el.dataset.name;
+    return '';
+  }
+  // 根据 libFilter 实时过滤当前库列表（隐藏不匹配项；无匹配显示提示）。切库时 libFilter 已被清空。
+  function applyLibFilter(list) {
+    const oldTip = list.querySelector('.lib-filter-nomatch');
+    if (oldTip) oldTip.remove();
+    const q = (libFilter || '').trim().toLowerCase();
+    if (!q) {
+      Array.prototype.forEach.call(list.children, function (el) { el.style.display = ''; });
+      return;
+    }
+    let visible = 0;
+    Array.prototype.forEach.call(list.children, function (el) {
+      const hit = getItemName(el).toLowerCase().indexOf(q) !== -1;
+      el.style.display = hit ? '' : 'none';
+      if (hit) visible++;
+    });
+    if (visible === 0) {
+      const tip = document.createElement('div');
+      tip.className = 'lib-filter-nomatch empty-tip';
+      tip.textContent = '没有匹配「' + libFilter.trim() + '」的条目';
+      list.appendChild(tip);
+    }
+  }
   function renderLibrary() {
+    // 切换到其它库时自动清空筛选
+    if (activeLib !== _lastRenderedLib) { libFilter = ''; _lastRenderedLib = activeLib; }
     libPanel.innerHTML = '';
     const tools = document.createElement('div');
     tools.className = 'lib-tools';
@@ -2570,6 +2601,36 @@
     const list = document.createElement('div');
     list.className = 'asset-list';
 
+    // 库顶部分类筛选框（所有库通用）：输入即过滤当前库条目，按名称快速定位
+    const filterBar = document.createElement('div');
+    filterBar.className = 'lib-filter';
+    const filterInput = document.createElement('input');
+    filterInput.type = 'text';
+    filterInput.className = 'lib-filter-input';
+    filterInput.placeholder = '按名称筛选当前库…';
+    filterInput.value = libFilter;
+    filterInput.setAttribute('aria-label', '按名称筛选当前库');
+    filterInput.addEventListener('input', function () {
+      libFilter = filterInput.value;
+      renderLibList(list, countEl, tools); // 仅重渲列表，不重建筛选框（保持焦点/光标）
+      applyLibFilter(list);
+      filterInput.focus();
+      const p = filterInput.value.length;
+      try { filterInput.setSelectionRange(p, p); } catch (e) {}
+    });
+    filterBar.appendChild(filterInput);
+
+    libPanel.appendChild(filterBar);
+    libPanel.appendChild(tools);
+    libPanel.appendChild(countEl);
+    libPanel.appendChild(list);
+    renderLibList(list, countEl, tools);
+    applyLibFilter(list);
+  }
+  // 渲染当前库的工具条 + 列表（筛选框输入时仅重渲此部分，避免焦点丢失）
+  function renderLibList(list, countEl, tools) {
+    list.innerHTML = '';
+    countEl.textContent = '加载中…';
     // 读取失败：明确报错 + 重试按钮（不再静默留空，避免「素材不显示=坏了」的误解）
     const showError = (msg) => {
       list.innerHTML = '<div class="lib-error"><svg class="ico" aria-hidden="true"><use href="#ic-alert"/></svg> 素材读取失败'
@@ -2592,32 +2653,32 @@
       tools.querySelector('#t-bg-noise').onclick = () => openNoiseGen();
       tools.querySelector('#t-bg-solid').onclick = () => openSolidGen();
       window.Storage.getAllAssets('background')
-        .then((assets) => { setLibCount(countEl, assets.length, '图片库'); renderBgCards(list, assets); })
+        .then((assets) => { setLibCount(countEl, assets.length, '图片库'); renderBgCards(list, assets); applyLibFilter(list); })
         .catch(showError);
     } else if (activeLib === 'item') {
       tools.innerHTML = '<button class="btn" id="t-item"><svg class="ico" aria-hidden="true"><use href="#ic-box"/></svg> 导入3D物品包</button>';
       tools.querySelector('#t-item').onclick = () => $('#file-item').click();
       window.Storage.getAllAssets('item')
-        .then((assets) => { setLibCount(countEl, assets.length, '物品库'); renderItemCards(list, assets); })
+        .then((assets) => { setLibCount(countEl, assets.length, '物品库'); renderItemCards(list, assets); applyLibFilter(list); })
         .catch(showError);
     } else if (activeLib === 'overlay') {
       tools.innerHTML = '<button class="btn" id="t-overlay-img"><svg class="ico" aria-hidden="true"><use href="#ic-image"/></svg> 导入图片（推荐 PNG）</button>'
         + '<div class="lib-tools-row lib-hint">叠层会显示在背景之上、文字之下，适合放透明背景的角色 / 物件</div>';
       tools.querySelector('#t-overlay-img').onclick = () => $('#file-overlay').click();
       window.Storage.getAllAssets('overlay')
-        .then((assets) => { setLibCount(countEl, assets.length, '叠层库'); renderOverlayCards(list, assets); })
+        .then((assets) => { setLibCount(countEl, assets.length, '叠层库'); renderOverlayCards(list, assets); applyLibFilter(list); })
         .catch(showError);
     } else if (activeLib === 'music') {
       tools.innerHTML = '<button class="btn" id="t-music"><svg class="ico" aria-hidden="true"><use href="#ic-music"/></svg> 导入音乐文件</button>';
       tools.querySelector('#t-music').onclick = () => { pendingAudioLib = 'music'; $('#file-audio').click(); };
       window.Storage.getAllAssets('music')
-        .then((assets) => { setLibCount(countEl, assets.length, '音乐库'); renderAudioCards(list, 'music', assets, true); })
+        .then((assets) => { setLibCount(countEl, assets.length, '音乐库'); renderAudioCards(list, 'music', assets, true); applyLibFilter(list); })
         .catch(showError);
     } else if (activeLib === 'sound') {
       tools.innerHTML = '<button class="btn" id="t-sound"><svg class="ico" aria-hidden="true"><use href="#ic-volume"/></svg> 导入音效文件</button>';
       tools.querySelector('#t-sound').onclick = () => { pendingAudioLib = 'sound'; $('#file-audio').click(); };
       window.Storage.getAllAssets('sound')
-        .then((assets) => { setLibCount(countEl, assets.length, '音效库'); renderAudioCards(list, 'sound', assets); })
+        .then((assets) => { setLibCount(countEl, assets.length, '音效库'); renderAudioCards(list, 'sound', assets); applyLibFilter(list); })
         .catch(showError);
     } else if (activeLib === 'dialogueblock') {
       tools.innerHTML = '<button class="btn" id="t-block-add">＋ 新建剧情块</button>'
@@ -2645,10 +2706,47 @@
       setLibCount(countEl, vars.length, '变量库');
       renderVariableList(list);
     }
+  }
 
-    libPanel.appendChild(tools);
-    libPanel.appendChild(countEl);
-    libPanel.appendChild(list);
+  // 变量改名：把所有剧情块正文里对该变量的引用一并改掉（全局变量，需遍历所有块）
+  // 覆盖：{旧名} / {旧名:格式}、<变量:旧名=…> / +N / -N、<玩家输入变量:旧名,…>、<当:…>/<否则当:…> 条件中的变量名
+  function renameVarEverywhere(oldName, newName) {
+    if (!oldName || oldName === newName) return 0;
+    const names = window.Storage.listBlockNames();
+    const escOld = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const reInterp = new RegExp('\\{\\s*(' + escOld + ')(?=[\\s}:]|\\})', 'g');   // {旧名} 或 {旧名:…}
+    const reVarOp = new RegExp('<变量:\\s*(' + escOld + ')(?=\\s*[=+\\-])', 'g'); // <变量:旧名=值> 等
+    const reInput = new RegExp('<玩家输入变量:\\s*(' + escOld + ')(?=\\s*,)', 'g'); // <玩家输入变量:旧名,"…">
+    const reCond = new RegExp('(^|[^A-Za-z0-9_\\u4e00-\\u9fa5])(' + escOld + ')(?=[^A-Za-z0-9_\\u4e00-\u9fa5]|$)', 'g'); // <当:> 条件里的变量名（整词）
+    let changed = 0;
+    names.forEach((nm) => {
+      let text, save;
+      if (nm === activeBlock) { text = storyText.value; save = function (v) { storyText.value = v; commitEdit(); }; }
+      else { text = window.Storage.getBlockText(nm) || ''; save = function (v) { window.Storage.setBlockText(nm, v); }; }
+      let nt = text
+        .replace(reInterp, function () { return '{' + newName; })
+        .replace(reVarOp, function () { return '<变量:' + newName; })
+        .replace(reInput, function () { return '<玩家输入变量:' + newName; });
+      // 逐行处理条件标签 <当:…> / <否则当:…>（取最后一个 > 之前作为条件表达式，避免被 > 运算符截断）
+      const lines = nt.split('\n');
+      let lineChanged = false;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const whenM = line.match(/^<(否则)?当:/);
+        if (whenM) {
+          const lastGt = line.lastIndexOf('>');
+          if (lastGt > 0) {
+            const openLen = whenM[0].length;
+            const expr = line.slice(openLen, lastGt);
+            const newExpr = expr.replace(reCond, function (m, pre) { return pre + newName; });
+            if (newExpr !== expr) { lines[i] = line.slice(0, openLen) + newExpr + line.slice(lastGt); lineChanged = true; }
+          }
+        }
+      }
+      if (lineChanged) nt = lines.join('\n');
+      if (nt !== text) { save(nt); changed++; }
+    });
+    return changed;
   }
 
   // 变量库：集中定义变量（名字/类型/初值）。正文用 {名} 读取、<变量:名=值> 赋值。
@@ -2671,6 +2769,7 @@
     list.appendChild(header);
     vars.forEach((v, idx) => {
       const row = document.createElement('div'); row.className = 'var-row';
+      row.dataset.name = v.name;
       const handle = document.createElement('div'); handle.className = 'var-handle'; handle.title = '拖到正文插入，或点击弹出语句菜单'; handle.textContent = '⠿'; handle.draggable = true;
       handle.addEventListener('dragstart', (e) => {
         if (!v.name) { e.preventDefault(); return; }
@@ -2691,16 +2790,31 @@
       });
       const name = document.createElement('input'); name.className = 'var-name'; name.value = v.name; name.placeholder = '变量名';
       name.onchange = () => {
+        const oldName = vars[idx].name;
         const nm = name.value.trim();
         // 变量名合法性：与解析端一致（字母/下划线/中文开头，可含数字，不能以数字开头）
         if (nm && !/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(nm)) {
           if (/^[0-9]/.test(nm)) alert('不可以用纯数字开头作为变量名。');
           else alert('变量名只能包含 字母 / 数字 / 下划线 / 中文，且不能以数字开头。');
-          name.value = vars[idx].name; // 还原为上次合法名
+          name.value = oldName; // 还原为上次合法名
           name.focus();
           return;
         }
-        vars[idx].name = nm; window.Storage.saveVars(vars); refreshTodo();
+        if (nm === oldName) return; // 没改
+        // 同名冲突：变量名全局唯一，重名会把引用指错
+        if (nm && window.Storage.getVars().some((v2, i2) => i2 !== idx && v2.name === nm)) {
+          alert('已存在同名变量「' + nm + '」，请换一个名字。');
+          name.value = oldName;
+          name.focus();
+          return;
+        }
+        vars[idx].name = nm; window.Storage.saveVars(vars);
+        // 同步更新正文所有剧情块里对该变量的引用（{旧名} / <变量:旧名=…> / <玩家输入变量:旧名,…> / <当:…> 条件）
+        if (oldName) {
+          const changed = renameVarEverywhere(oldName, nm);
+          if (changed) toast('已同步更新文本中 ' + changed + ' 处对该变量的「' + oldName + '」的引用');
+        }
+        renderVariableList(list); refreshTodo();
       };
       const type = document.createElement('select'); type.className = 'var-type';
       [['number', '数字'], ['text', '文本'], ['boolean', '布尔']].forEach(([val, lab]) => {
@@ -2835,6 +2949,7 @@
       card.className = 'asset-card block-card' + (isMain ? ' block-main' : '') + (name === activeBlock ? ' block-active' : '');
       card.dataset.kind = 'block';
       card.dataset.blockName = name;
+      card.dataset.name = name;
       card.draggable = true;
       const meta = document.createElement('div'); meta.className = 'asset-meta';
       const nm = document.createElement('div'); nm.className = 'asset-name';

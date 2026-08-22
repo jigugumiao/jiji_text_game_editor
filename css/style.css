@@ -576,12 +576,14 @@ body.portrait .lib-footer .btn { width: 100%; }
 .lib-error { color: var(--danger); font-size: 13px; text-align: center; padding: 22px 10px; line-height: 1.7; }
 .lib-error-detail { color: #b4546d; font-size: 11px; margin: 6px 0; word-break: break-all; }
 .lib-error .btn { margin-top: 8px; }
-/* 库顶部分类筛选框（所有素材库通用） */
-.lib-filter { padding: 10px 12px 10px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 2; background: var(--panel, #fff); }
+/* 库顶部分类筛选框（所有素材库通用）：背景跟随深色模式 */
+.lib-filter { padding: 10px 12px 10px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 2; background: var(--bg-soft); }
 .lib-filter-input { width: 100%; box-sizing: border-box; padding: 8px 10px 8px 30px; border: 1px solid var(--border-strong, #d7dce6); border-radius: 8px; font-size: 13px; font-family: inherit; color: var(--text); background: var(--bg-soft, #f4f6fb) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238a93a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>") no-repeat 9px center; }
 .lib-filter-input::placeholder { color: var(--text-3, #8a93a6); }
-.lib-filter-input:focus { outline: none; border-color: var(--accent, #5b8cff); box-shadow: 0 0 0 3px var(--accent-soft, rgba(91,140,255,.16)); background-color: #fff; }
+.lib-filter-input:focus { outline: none; border-color: var(--accent, #5b8cff); box-shadow: 0 0 0 3px var(--accent-soft, rgba(91,140,255,.16)); background-color: var(--bg-sunken); }
 .lib-filter-nomatch { color: var(--text-3, #8a93a6); }
+/* 深色模式下放大镜图标换成浅色描边 */
+body.dark .lib-filter-input { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23b6aea2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>"); }
 
 /* ===== 弹层 ===== */
 .modal { position: fixed; inset: 0; background: rgba(17,17,20,.34); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); z-index: 100; display: flex; flex-direction: column; }
@@ -1397,6 +1399,11 @@ body.dark .ctx-sub .ctx-item.ctx-checkable.ctx-checked {
 }
 body.dark .ctx-sub .ctx-item.ctx-confirm { color: #9cc0ff; }
 body.dark .ctx-sub .ctx-item.ctx-confirm:hover { background: rgba(110,160,255,0.20); }
+/* 确认项的未勾选提示态（如随机跳转的「勾选上方剧情块」）：置灰斜体，盖过 .ctx-confirm 的蓝色 */
+.ctx-sub .ctx-item.ctx-hint { color: #98a0b0; font-weight: 400; font-style: italic; }
+.ctx-sub .ctx-item.ctx-hint:hover { background: rgba(58,134,255,0.12); }
+body.dark .ctx-sub .ctx-item.ctx-hint { color: #77839a; }
+body.dark .ctx-sub .ctx-item.ctx-hint:hover { background: rgba(110,160,255,0.18); }
 body.dark .ctx-sub {
   background: #1b2030; color: #e9eef7;
   border-color: rgba(255,255,255,0.12);
@@ -1406,6 +1413,10 @@ body.dark .ctx-sub .ctx-item:hover { background: rgba(110,160,255,0.18); }
 body.dark .ctx-sub .ctx-item.danger { color: #ff8a8a; }
 body.dark .ctx-sub .ctx-item.danger:hover { background: rgba(255,120,120,0.18); }
 body.dark .ctx-sub .ctx-sep { background: rgba(255,255,255,0.12); }
+
+/* 子菜单素材过多：限高为一页 8 项（max-height 由 JS 按实际行高写入），超出滚动查看 */
+.ctx-sub.ctx-scroll { overflow-y: auto; overscroll-behavior: contain; }
+.ctx-sub.ctx-scroll::-webkit-scrollbar { width: 8px; }
 
 /* ============ 音频保存浮动窗 ============ */
 .save-float {

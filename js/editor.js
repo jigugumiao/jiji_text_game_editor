@@ -935,7 +935,11 @@
       showContextMenu(e.clientX, e.clientY, buildContextItems(e.target));
     });
     document.addEventListener('click', hideContextMenu);
-    document.addEventListener('scroll', hideContextMenu, true);
+    document.addEventListener('scroll', function (e) {
+      // 菜单/子菜单自身滚动（素材过多限高后）不关闭菜单；页面其他滚动仍关闭
+      if (e.target && e.target.closest && e.target.closest('#ctx-menu, .ctx-sub')) return;
+      hideContextMenu();
+    }, true);
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideContextMenu(); });
     window.addEventListener('blur', hideContextMenu);
   }
@@ -1070,7 +1074,8 @@
       items.push({ label: disp, name: nm, icon: 'ic-circle-dot', checkable: true });
     });
     items.push({ separator: true });
-    items.push({ label: '✓ 插入所选', icon: 'ic-check', confirm: true, action: function (names) { confirmRandJump(names); } });
+    // hint：一项都没勾时改显提示文案「勾选上方剧情块」，勾选后恢复「✓ 插入所选」（见 ctxMakePanel confirm 分支）
+    items.push({ label: '✓ 插入所选', hint: '勾选上方剧情块', icon: 'ic-check', confirm: true, action: function (names) { confirmRandJump(names); } });
     return items;
   }
   function confirmRandJump(names) {
@@ -1147,20 +1152,44 @@
           row.classList.toggle('ctx-checked');
         });
       } else if (it.confirm) {
-        // 确认项：收集本面板内已勾选项的 name，传给 action 后关闭菜单
+        // 确认项：收集本面板内已勾选项的 name，传给 action 后关闭菜单。
+        // 支持 hint：一项都没勾时改显提示文案（如「勾选上方剧情块」，置灰斜体、点击不关菜单），
+        // 勾选任意项后实时恢复正式文案。勾选项的 click 会 stopPropagation，
+        // 因此监听直接挂在各勾选项上而非面板委托。
+        const updateConfirmLabel = function () {
+          if (!it.hint) return;
+          const none = !panel.querySelector('.ctx-checkable.ctx-checked');
+          lbl.textContent = none ? it.hint : it.label;
+          row.classList.toggle('ctx-hint', none);
+        };
+        panel.querySelectorAll('.ctx-checkable').forEach(function (r) { r.addEventListener('click', updateConfirmLabel); });
         row.addEventListener('click', function (ev) {
           ev.stopPropagation();
+          if (it.hint && !panel.querySelector('.ctx-checkable.ctx-checked')) return; // 未勾选：仅提示，不插入不关闭
           hideContextMenu();
           const names = [];
           panel.querySelectorAll('.ctx-checkable.ctx-checked').forEach(function (r) { const nm = r.getAttribute('data-name'); if (nm) names.push(nm); });
           try { if (it.action) it.action(names); } catch (e) { console.error(e); }
         });
+        updateConfirmLabel(); // 初始即为未勾选态 → 先显示提示文案
       } else {
         row.addEventListener('click', function (ev) { ev.stopPropagation(); hideContextMenu(); try { if (it.action) it.action(); } catch (e) { console.error(e); } });
       }
       panel.appendChild(row);
     });
     return panel;
+  }
+  // 子菜单条目过多时限高：一页最多显示 8 项，其余滚动查看。
+  // 高度按第 8 项的实际底边计算（面板已在 DOM 中），分隔线/内边距天然计入，不依赖写死的行高。
+  const CTX_SUB_MAX_ROWS = 8;
+  function clampCtxPanelRows(panel) {
+    const rows = panel.querySelectorAll('.ctx-item');
+    if (rows.length <= CTX_SUB_MAX_ROWS) return;
+    const edge = rows[CTX_SUB_MAX_ROWS - 1]; // 第 8 项
+    const pb = parseFloat(getComputedStyle(panel).paddingBottom) || 0;
+    const top = panel.getBoundingClientRect().top;
+    panel.style.maxHeight = Math.ceil(edge.getBoundingClientRect().bottom - top + pb) + 'px';
+    panel.classList.add('ctx-scroll'); // 超出部分滚动查看
   }
   function ctxOwnerDepth(anchorRow) {
     const sub = anchorRow.closest ? anchorRow.closest('.ctx-sub') : null;
@@ -1176,6 +1205,7 @@
     const panel = ctxMakePanel(items);
     panel.__depth = ownerDepth + 1;
     document.body.appendChild(panel);
+    clampCtxPanelRows(panel); // 素材过多时限高为 8 项，可滚动
     ctxSubPanels.push(panel);
     const r = anchorRow.getBoundingClientRect();
     const pw = panel.offsetWidth, ph = panel.offsetHeight;

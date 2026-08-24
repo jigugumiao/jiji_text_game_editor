@@ -2766,7 +2766,7 @@
       renderDialogueBlocks(list);
     } else if (activeLib === 'variable') {
       tools.innerHTML = '<button class="btn" id="t-var-add"><svg class="ico" aria-hidden="true"><use href="#ic-plus"/></svg> 新建变量</button>'
-        + '<div class="lib-tools-row lib-hint">正文用 {变量名} 读取、&lt;变量:名=值&gt; 赋值、&lt;当:条件&gt; 做条件分支</div>';
+        + '<div class="lib-tools-row lib-hint">正文用 {变量名} 读取、&lt;变量:名=值&gt; 赋值、&lt;选项:"文字",块名,条件:表达式&gt; 做条件选项</div>';
       tools.querySelector('#t-var-add').onclick = () => {
         const vars = window.Storage.getVars();
         vars.push({ name: '', type: 'number', value: 0 });
@@ -2782,7 +2782,7 @@
   }
 
   // 变量改名：把所有剧情块正文里对该变量的引用一并改掉（全局变量，需遍历所有块）
-  // 覆盖：{旧名} / {旧名:格式}、<变量:旧名=…> / +N / -N、<玩家输入变量:旧名,…>、<当:…>/<否则当:…> 条件中的变量名、<选项:…,条件:旧名…> 条件中的变量名
+  // 覆盖：{旧名} / {旧名:格式}、<变量:旧名=…> / +N / -N、<玩家输入变量:旧名,…>、<选项:…,条件:旧名…> 条件中的变量名
   function renameVarEverywhere(oldName, newName) {
     if (!oldName || oldName === newName) return 0;
     const names = window.Storage.listBlockNames();
@@ -2813,20 +2813,10 @@
     return changed;
   }
 
-  // 单行条件指令里的变量名改写（<当:…>/<否则当:…> 与 <选项:"文字",块名,条件:…>），返回 { line, changed }
+  // 选项条件指令里的变量名改写（<选项:"文字",块名,条件:…>），返回 { line, changed }
   function rewriteCondVarsInLine(line, reCond, newName) {
     let newLine = line;
-    const whenM = line.match(/^<(否则)?当:/);
-    if (whenM) {
-      const lastGt = line.lastIndexOf('>');
-      if (lastGt > 0) {
-        const openLen = whenM[0].length;
-        const expr = line.slice(openLen, lastGt);
-        const newExpr = expr.replace(reCond, function (m, pre) { return pre + newName; });
-        if (newExpr !== expr) { newLine = line.slice(0, openLen) + newExpr + line.slice(lastGt); }
-      }
-    }
-    // 选项行的条件变量：<选项:"文字",块名,条件:金币>=5>（同一套整词规则；条件允许 < > <= >= 运算符）
+    // 选项行的条件变量：<选项:"文字",块名,条件:金币>=5>（整词规则；条件允许 < > <= >= 运算符）
     if (newLine.indexOf('<选项:') >= 0) {
       const TAG = '<选项:';
       const repls = [];
@@ -2910,7 +2900,7 @@
           return;
         }
         vars[idx].name = nm; window.Storage.saveVars(vars);
-        // 同步更新正文所有剧情块里对该变量的引用（{旧名} / <变量:旧名=…> / <玩家输入变量:旧名,…> / <当:…> 条件）
+        // 同步更新正文所有剧情块里对该变量的引用（{旧名} / <变量:旧名=…> / <玩家输入变量:旧名,…> / <选项:…,条件:旧名…> 条件）
         if (oldName) {
           const changed = renameVarEverywhere(oldName, nm);
           if (changed) toast('已同步更新文本中 ' + changed + ' 处对该变量的「' + oldName + '」的引用');
@@ -5744,14 +5734,13 @@ self.onmessage = function (e) {
     // 校验条件表达式：非空，且至少引用一个已定义变量
     function checkCond(prefix, n, condStr) {
       const c = (condStr || '').trim();
-      if (!c) { pushIssue(prefix, n, 'error', '条件块/条件选项缺少条件表达式（如 <当:金币>=10>）'); return; }
+      if (!c) { pushIssue(prefix, n, 'error', '条件选项缺少条件表达式（如 <选项:"文字",块名,条件:金币>=10>）'); return; }
       const toks = c.match(/[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*/g) || [];
       const known = toks.filter(tk => knownVars.has(tk));
       if (!known.length) pushIssue(prefix, n, 'warning', '条件「' + c + '」似乎没有引用任何已定义的变量');
     }
     for (const blk of blocksToCheck) {
       const prefix = blk.name === MAIN_BLOCK ? '' : ('【' + blk.name + '】');
-      let whenDepth = 0;
       const lines = blk.text.split(/\r?\n/);
       lines.forEach((raw, i) => {
         const n = i + 1;
@@ -5771,23 +5760,14 @@ self.onmessage = function (e) {
             else if (disp && varTypeMap[vname] && varTypeMap[vname] !== 'boolean') pushIssue(prefix, n, 'warning', '显示映射 {' + vname + ':真|假} 仅用于布尔变量');
           });
         }
-        // 条件块 <当:>/</当>/<否则> 嵌套计数
-        if (/^<当:[\s\S]*>$/.test(t)) {
-          whenDepth++;
-        } else if (t === '</当>') {
-          if (whenDepth <= 0) pushIssue(prefix, n, 'error', '</当> 没有对应的 <当:> 条件块');
-          else whenDepth--;
-        } else if (t === '<否则>') {
-          if (whenDepth <= 0) pushIssue(prefix, n, 'error', '<否则> 必须写在 <当:> 条件块内部');
-        }
         if (t.includes('<') && !t.includes('>')) {
           pushIssue(prefix, n, 'error', '「<」没有对应的「>」（指令未闭合，指令用尖括号）');
           return;
         }
-        // 指令标签内嵌套标签检测：如 <当:<选项:...>>、<召唤背景:<变量:金币>> 等。
-        // 条件表达式里允许 <、<= 运算符（<当:金币<5>、条件:金币<=5），因此内层 < 必须紧跟指令关键字才算嵌套。
-        if (new RegExp('<[^>]*<(?:召唤|选项|当|否则|变量|停顿|标题|分割线|剧情块|对话块|跳回|跳回重选|停止音乐|随机跳转|随机句子)[^>]*>').test(t)
-            && /<(召唤|选项|当|否则|变量|停顿|标题|分割线|剧情块|对话块|跳回|跳回重选|停止音乐|随机跳转|随机句子)/.test(t)) {
+        // 指令标签内嵌套标签检测：如 <召唤背景:<变量:金币>> 等。
+        // 条件表达式里允许 <、<= 运算符（条件:金币<=5），因此内层 < 必须紧跟指令关键字才算嵌套。
+        if (new RegExp('<[^>]*<(?:召唤|选项|变量|停顿|标题|分割线|剧情块|对话块|跳回|跳回重选|停止音乐|随机跳转|随机句子)[^>]*>').test(t)
+            && /<(召唤|选项|变量|停顿|标题|分割线|剧情块|对话块|跳回|跳回重选|停止音乐|随机跳转|随机句子)/.test(t)) {
           pushIssue(prefix, n, 'error', '指令标签内部不应再嵌套另一个尖括号标签（发现「<> 内嵌套 <>」，请把内层指令拆到独立一行）');
           return;
         }
@@ -5895,12 +5875,8 @@ self.onmessage = function (e) {
             // 停止音乐：合法
           } else if (t === '<清除叠层>') {
             // 清除叠层：合法
-          } else if ((m = t.match(/^<当:([\s\S]*)>$/))) {
-            checkCond(prefix, n, m[1]);
-          } else if (t === '</当>') {
-            // 嵌套计数已在前面处理
-          } else if (t === '<否则>') {
-            // 嵌套计数已在前面处理
+          } else if (t.indexOf('<当:') === 0 || t === '</当>' || t === '<否则>') {
+            pushIssue(prefix, n, 'error', '「' + t + '」是已移除的条件块指令；条件功能请用 <选项:"文字",块名,条件:表达式> 实现');
           } else if ((m = t.match(RE_PLAYER_INPUT))) {
             const vn = m[1];
             if (!knownVars.has(vn)) pushIssue(prefix, n, 'warning', '玩家输入指向的变量「' + vn + '」未定义（请在素材库·变量库定义，或用 <变量:' + vn + '=值> 赋值）');
@@ -5938,7 +5914,6 @@ self.onmessage = function (e) {
         const close = (checkText.match(new RegExp('\\[/' + tag + '\\]', 'g')) || []).length;
         if (open !== close) pushIssue(prefix, 0, 'warning', 'BBCode [' + tag + '=…] 与 [/]' + tag + ' 数量不一致（' + open + ' 开 / ' + close + ' 闭）');
       }
-      if (whenDepth > 0) pushIssue(prefix, 0, 'error', '有 <当:> 条件块未闭合（缺少 </当>）');
     }
     return issues;
   }

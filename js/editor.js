@@ -2782,7 +2782,7 @@
   }
 
   // 变量改名：把所有剧情块正文里对该变量的引用一并改掉（全局变量，需遍历所有块）
-  // 覆盖：{旧名} / {旧名:格式}、<变量:旧名=…> / +N / -N、<玩家输入变量:旧名,…>、<当:…>/<否则当:…> 条件中的变量名
+  // 覆盖：{旧名} / {旧名:格式}、<变量:旧名=…> / +N / -N、<玩家输入变量:旧名,…>、<当:…>/<否则当:…> 条件中的变量名、<选项:…,条件:旧名…> 条件中的变量名
   function renameVarEverywhere(oldName, newName) {
     if (!oldName || oldName === newName) return 0;
     const names = window.Storage.listBlockNames();
@@ -2790,7 +2790,7 @@
     const reInterp = new RegExp('\\{\\s*(' + escOld + ')(?=[\\s}:]|\\})', 'g');   // {旧名} 或 {旧名:…}
     const reVarOp = new RegExp('<变量:\\s*(' + escOld + ')(?=\\s*[=+\\-])', 'g'); // <变量:旧名=值> 等
     const reInput = new RegExp('<玩家输入变量:\\s*(' + escOld + ')(?=\\s*,)', 'g'); // <玩家输入变量:旧名,"…">
-    const reCond = new RegExp('(^|[^A-Za-z0-9_\\u4e00-\\u9fa5])(' + escOld + ')(?=[^A-Za-z0-9_\\u4e00-\u9fa5]|$)', 'g'); // <当:> 条件里的变量名（整词）
+    const reCond = new RegExp('(^|[^A-Za-z0-9_\\u4e00-\\u9fa5])(' + escOld + ')(?=[^A-Za-z0-9_\\u4e00-\u9fa5]|$)', 'g'); // 条件表达式里的变量名（整词）
     let changed = 0;
     names.forEach((nm) => {
       let text, save;
@@ -2800,26 +2800,54 @@
         .replace(reInterp, function () { return '{' + newName; })
         .replace(reVarOp, function () { return '<变量:' + newName; })
         .replace(reInput, function () { return '<玩家输入变量:' + newName; });
-      // 逐行处理条件标签 <当:…> / <否则当:…>（取最后一个 > 之前作为条件表达式，避免被 > 运算符截断）
+      // 逐行处理条件类指令（条件里允许 < > <= >= 运算符，取「真正的闭合 >」作为表达式边界）
       const lines = nt.split('\n');
       let lineChanged = false;
       for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const whenM = line.match(/^<(否则)?当:/);
-        if (whenM) {
-          const lastGt = line.lastIndexOf('>');
-          if (lastGt > 0) {
-            const openLen = whenM[0].length;
-            const expr = line.slice(openLen, lastGt);
-            const newExpr = expr.replace(reCond, function (m, pre) { return pre + newName; });
-            if (newExpr !== expr) { lines[i] = line.slice(0, openLen) + newExpr + line.slice(lastGt); lineChanged = true; }
-          }
-        }
+        const rw = rewriteCondVarsInLine(lines[i], reCond, newName);
+        if (rw.changed) { lines[i] = rw.line; lineChanged = true; }
       }
       if (lineChanged) nt = lines.join('\n');
       if (nt !== text) { save(nt); changed++; }
     });
     return changed;
+  }
+
+  // 单行条件指令里的变量名改写（<当:…>/<否则当:…> 与 <选项:"文字",块名,条件:…>），返回 { line, changed }
+  function rewriteCondVarsInLine(line, reCond, newName) {
+    let newLine = line;
+    const whenM = line.match(/^<(否则)?当:/);
+    if (whenM) {
+      const lastGt = line.lastIndexOf('>');
+      if (lastGt > 0) {
+        const openLen = whenM[0].length;
+        const expr = line.slice(openLen, lastGt);
+        const newExpr = expr.replace(reCond, function (m, pre) { return pre + newName; });
+        if (newExpr !== expr) { newLine = line.slice(0, openLen) + newExpr + line.slice(lastGt); }
+      }
+    }
+    // 选项行的条件变量：<选项:"文字",块名,条件:金币>=5>（同一套整词规则；条件允许 < > <= >= 运算符）
+    if (newLine.indexOf('<选项:') >= 0) {
+      const TAG = '<选项:';
+      const repls = [];
+      for (const o of extractOptionLine(newLine)) {
+        if (!o.ok) continue;
+        const sp = splitOptionExtra(o.extra);
+        if (!sp.condition) continue;
+        const newCond = sp.condition.replace(reCond, function (m, pre) { return pre + newName; });
+        if (newCond !== sp.condition) {
+          const body = newLine.slice(o.index + TAG.length, o.close);
+          const bStart = body.indexOf(sp.condition);
+          if (bStart >= 0) {
+            const abs = o.index + TAG.length + bStart;
+            repls.push({ start: abs, end: abs + sp.condition.length, text: newCond });
+          }
+        }
+      }
+      repls.sort(function (a, b) { return b.start - a.start; }); // 从后往前替换，偏移不受前面改动影响
+      for (const r of repls) { newLine = newLine.slice(0, r.start) + r.text + newLine.slice(r.end); }
+    }
+    return { line: newLine, changed: newLine !== line };
   }
 
   // 变量库：集中定义变量（名字/类型/初值）。正文用 {名} 读取、<变量:名=值> 赋值。

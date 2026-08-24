@@ -19,7 +19,7 @@ for (const [tag, src] of [['editor.js', editorSrc], ['exporter.js', exporterSrc]
 }
 assert.doesNotMatch(editorSrc, /const reOpt = \/<选项:/, 'editor.js 不应再保留旧正则 reOpt');
 
-// 从 editor.js 原样提取两个纯函数并运行（测试真实源码，不复制实现）
+// 从 editor.js 原样提取纯函数并运行（测试真实源码，不复制实现）
 function grab(name) {
   const m = editorSrc.match(new RegExp('function ' + name + '\\s*\\([^)]*\\) \\{[\\s\\S]*?\\n  \\}'));
   assert.ok(m, 'source contains ' + name);
@@ -27,7 +27,7 @@ function grab(name) {
 }
 const ctx = {};
 vm.createContext(ctx);
-vm.runInContext(grab('extractOptionLine') + '\n' + grab('splitOptionExtra'), ctx);
+vm.runInContext(grab('extractOptionLine') + '\n' + grab('splitOptionExtra') + '\n' + grab('rewriteCondVarsInLine'), ctx);
 
 // —— 用户案例 ——
 {
@@ -115,6 +115,65 @@ vm.runInContext(grab('extractOptionLine') + '\n' + grab('splitOptionExtra'), ctx
   assert.equal(evalOneCond(sp.condition), false, '力量=10 时 力量>=20 为假 → 选项应隐藏');
   vars.力量 = 25;
   assert.equal(evalOneCond(sp.condition), true, '力量=25 时 力量>=20 为真 → 选项应显示');
+}
+
+// —— < 与 <= 运算符（第二类尖括号，曾误判为「嵌套标签」/ 截断）——
+{
+  // 单 < 比较：<选项:"偷摸进村",潜入,条件:警戒<5>
+  const oLt = ctx.extractOptionLine('<选项:"偷摸进村",潜入,条件:警戒<5>')[0];
+  const spLt = ctx.splitOptionExtra(oLt.extra);
+  assert.equal(spLt.block, '潜入');
+  assert.equal(spLt.condition, '警戒<5', '< 不应截断条件，也不应被当作嵌套标签');
+
+  // <= 比较：条件:金币<=20 && 力气>=5
+  const oLe = ctx.extractOptionLine('<选项:"买东西",集市,条件:金币<=20 && 力气>=5>')[0];
+  const spLe = ctx.splitOptionExtra(oLe.extra);
+  assert.equal(spLe.block, '集市');
+  assert.equal(spLe.condition, '金币<=20 && 力气>=5');
+
+  // <当:金币<5> 仍可被校验识别（贪婪匹配到最后一个 >），选项条件同理
+  assert.match('<当:金币<5>', /^<当:[\s\S]*>$/, '<当:> 行级识别必须容忍条件里的 <');
+  assert.match('<当:金币<5>', /^<当:([\s\S]*)>$/, '<当:> 条件提取必须拿到 金币<5');
+  const whenCond = '<当:金币<5>'.match(/^<当:([\s\S]*)>$/)[1];
+  assert.equal(whenCond, '金币<5');
+
+  // 新增的嵌套标签检查：内层 < 后跟数字（比较符）不算嵌套；后跟指令关键字才算
+  const nestedRe = new RegExp('<[^>]*<(?:召唤|选项|当|否则|变量|停顿|标题|分割线|剧情块|对话块|跳回|跳回重选|停止音乐|随机跳转|随机句子)[^>]*>');
+  assert.equal(nestedRe.test('<选项:"A",块A,条件:警戒<5>'), false, '条件里的 <5 不是嵌套标签');
+  assert.equal(nestedRe.test('<当:金币<5>'), false, '<当:金币<5> 不是嵌套标签');
+  assert.equal(nestedRe.test('<当:<选项:"A",块A>>'), true, '<当: 内嵌 <选项:> 仍是错误嵌套');
+  assert.equal(nestedRe.test('<召唤背景:<变量:金币>>'), true, '<召唤> 内嵌 <变量:> 仍是错误嵌套');
+}
+
+// —— 变量改名必须同步选项条件里的变量名（renameVarEverywhere 的逐行核心逻辑）——
+{
+  // 复刻 renameVarEverywhere 的 reCond（整词匹配、前后须非标识符字符）
+  const escOld = '金币'.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const reCond = new RegExp('(^|[^A-Za-z0-9_\\u4e00-\\u9fa5])(' + escOld + ')(?=[^A-Za-z0-9_\\u4e00-\u9fa5]|$)', 'g');
+
+  // <当:金币<5> 且条件里同时有 < 运算符
+  const w = ctx.rewriteCondVarsInLine('<当:金币<5>', reCond, '银两');
+  assert.equal(w.changed, true);
+  assert.equal(w.line, '<当:银两<5>', '<当:> 条件中的变量应随改名同步（含 < 运算符）');
+
+  // 选项条件：>= 运算符 + 复合条件
+  const o1 = ctx.rewriteCondVarsInLine('<选项:"掏空钱袋",豪赌,条件:金币>=20 && 力气>5>', reCond, '银两');
+  assert.equal(o1.changed, true);
+  assert.equal(o1.line, '<选项:"掏空钱袋",豪赌,条件:银两>=20 && 力气>5>', '选项条件里的变量应同步改名');
+
+  // 同行多个选项、只有部分带条件
+  const o2 = ctx.rewriteCondVarsInLine('<选项:"A",块A><选项:"B",块B,条件:金币<=3>', reCond, '银两');
+  assert.equal(o2.changed, true);
+  assert.equal(o2.line, '<选项:"A",块A><选项:"B",块B,条件:银两<=3>', '第二个选项条件改名、第一个不受影响');
+
+  // 不带条件的选项行不应被改动
+  const o3 = ctx.rewriteCondVarsInLine('<选项:"C",块C>', reCond, '银两');
+  assert.equal(o3.changed, false);
+  assert.equal(o3.line, '<选项:"C",块C>');
+
+  // 条件里的其它变量（非改名对象）保持不变
+  const o4 = ctx.rewriteCondVarsInLine('<选项:"D",块D,条件:金币>=1 && 勇气>=1>', reCond, '银两');
+  assert.equal(o4.line, '<选项:"D",块D,条件:银两>=1 && 勇气>=1>');
 }
 
 console.log('option condition parsing test passed');

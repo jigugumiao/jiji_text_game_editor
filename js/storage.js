@@ -566,7 +566,7 @@ function renameBlock(oldName, newName) {
     if (!t) return t;
     return t
       .replace(new RegExp('<(?:对话块|剧情块):\\s*' + escOld + '\\s*>', 'g'), '<剧情块:' + finalName + '>')
-      .replace(new RegExp('<选项:(\\s*"[^"]*"\\s*,\\s*)' + escOld + '(\\s*)>', 'g'), '<选项:$1' + finalName + '$2>');
+      .replace(new RegExp('<选项:(\\s*"[^"]*"\\s*,\\s*)' + escOld + '(?=\\s*(?:,|>))', 'g'), '<选项:$1' + finalName);
   };
   blk.main = upd(blk.main);
   for (const k in blk.blocks) blk.blocks[k] = upd(blk.blocks[k]);

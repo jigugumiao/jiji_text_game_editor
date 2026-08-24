@@ -119,7 +119,41 @@
   }
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
-  const RE_OPTION = /<选项:\s*"([^"]*)"\s*(?:,\s*([^>]*?))?\s*>/g;
+  // 解析一行内所有 <选项:"文字",块名,条件:...> 指令，返回 [{text, extra, index, close, ok}]。
+  // 条件表达式允许出现 >、<、>=、<= 等运算符（如 条件:力量>=20、条件:金币<=5），
+  // 因此「闭合 >」不能取表达式里碰到的第一个 >，而是取下一个 <选项: 之前（或行尾前）的最后一个 >。
+  function extractOptionLine(line) {
+    const TAG = '<选项:';
+    const out = [];
+    let from = 0;
+    while (from <= line.length) {
+      const start = line.indexOf(TAG, from);
+      if (start < 0) break;
+      const next = line.indexOf(TAG, start + TAG.length);
+      const endB = next < 0 ? line.length : next;
+      let close = -1;
+      for (let k = start + TAG.length; k < endB; k++) { if (line[k] === '>') close = k; }
+      from = start + TAG.length;
+      if (close < 0) continue; // 无闭合 >，交给下方的「未闭合」校验报错
+      const body = line.slice(start + TAG.length, close);
+      const m = body.match(/^\s*"([^"]*)"\s*(?:,\s*([\s\S]*))?$/);
+      out.push({ text: m ? m[1] : '', extra: (m && m[2] ? m[2] : '').trim(), index: start, close: close, ok: !!m });
+    }
+    return out;
+  }
+  // 把选项的 extra 段（块名[,条件:…]）拆成 { block, condition }
+  function splitOptionExtra(extra) {
+    const e = (extra || '').trim();
+    if (!e) return { block: null, condition: null };
+    const ci = e.indexOf('条件:');
+    if (ci >= 0) {
+      return {
+        block: e.slice(0, ci).replace(/,\s*$/, '').trim() || null,
+        condition: e.slice(ci + 3).replace(/,\s*$/, '').trim() || null
+      };
+    }
+    return { block: e, condition: null };
+  }
   // 变量操作：<变量:名=值> / <变量:名+数> / <变量:名-数>（独占一行；一行可含多个，按 <变量:...> 逐个提取）
   const RE_VAR_OP = /<变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*([=+\-])\s*([^<>]*?)\s*>/g;
   // 玩家输入：<玩家输入变量:变量名,"引导文字">（独占一行；引导文字可空 "")
@@ -226,11 +260,10 @@
       } else if (t.indexOf('<选项:') >= 0) {
         flush();
         const options = [];
-        let om; RE_OPTION.lastIndex = 0;
-        while ((om = RE_OPTION.exec(t)) !== null) {
-          const txt = om[1];
-          const blk = (om[2] && om[2].trim()) || null;
-          options.push({ text: txt, block: blk });
+        for (const o of extractOptionLine(t)) {
+          if (!o.ok) continue;
+          // 保留原始 extra 作为 block（含 ,条件:… 尾巴），storyToText 可原样还原，避免往返丢条件
+          options.push({ text: o.text, block: o.extra || null });
         }
         if (options.length) story.push({ type: 'options', options });
       } else {
@@ -357,8 +390,10 @@
           html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 玩家输入 → 变量「' + escapeHtml(m[1]) + '」' + (m[2] ? '：' + escapeHtml(m[2]) : '') + '</span></div>';
         } else if (t.indexOf('<选项:') >= 0) {
           const opts = [];
-          let om; RE_OPTION.lastIndex = 0;
-          while ((om = RE_OPTION.exec(t)) !== null) opts.push(om[1] + (om[2] && om[2].trim() ? ' → ' + om[2].trim() : ''));
+          for (const o of extractOptionLine(t)) {
+            if (!o.ok) continue;
+            opts.push(o.text + (o.extra ? ' → ' + o.extra : ''));
+          }
           html += '<div class="pv-line"><span class="pv-cmd option"><svg class="ico" aria-hidden="true"><use href="#ic-circle-dot"/></svg> 选项：' + opts.map(o => escapeHtml(o)).join(' ｜ ') + '</span></div>';
         } else {
           // 其它方括号内容（BBCode 或未知指令）
@@ -2545,9 +2580,12 @@
       const ls = optCtx.lineStart;
       const le = optCtx.lineEnd - (range.end - range.start);
       const line = nv.slice(ls, le);
-      // 本行可能含多个 <选项:...>（同一行多个选项），需定位 drop 点所在 / 最近的那个
-      const re = /<选项:[^>]*>/g; let m, segs = [];
-      while ((m = re.exec(line)) !== null) segs.push({ s: m.index, e: m.index + m[0].length, seg: m[0] });
+      // 本行可能含多个 <选项:...>（同一行多个选项），需定位 drop 点所在 / 最近的那个。
+      // 用 extractOptionLine 拿到每个选项的真实闭合位置（条件表达式里的 > 不算闭合）。
+      const segs = [];
+      for (const o of extractOptionLine(line)) {
+        segs.push({ s: o.index, e: o.close + 1, seg: line.slice(o.index, o.close + 1), extra: o.extra });
+      }
       let target = null;
       for (const sg of segs) { if (range.start >= ls + sg.s && range.start <= ls + sg.e) { target = sg; break; } }
       if (!target) {
@@ -2558,8 +2596,13 @@
       }
       if (target) {
         let seg = target.seg;
-        if (/条件:/.test(seg)) seg = seg.replace(/(条件:[^>]*?)>/, function (mm, c) { return c + ' && ' + name + '>'; });
-        else seg = seg.slice(0, -1) + ',条件:' + name + '>';
+        if (target.extra.indexOf('条件:') >= 0) {
+          // 已有条件：把它追加到条件末尾（seg 的最后一个 > 才是真实闭合，条件表达式里的 > 不能截断）
+          const closeIdx = seg.lastIndexOf('>');
+          seg = seg.slice(0, closeIdx) + ' && ' + name + seg.slice(closeIdx);
+        } else {
+          seg = seg.slice(0, -1) + ',条件:' + name + '>';
+        }
         nv = nv.slice(0, ls + target.s) + seg + nv.slice(ls + target.e);
         ta.value = nv;
         const pos = ls + target.s + seg.lastIndexOf(name) + name.length;
@@ -3068,12 +3111,17 @@
     const edges = [];
     names.forEach((name) => {
       const raw = window.Storage.getBlockText(name) || '';
-      RE_OPTION.lastIndex = 0;
-      let om;
-      while ((om = RE_OPTION.exec(raw)) !== null) {
-        const target = (om[2] && om[2].trim()) || null;
-        edges.push({ from: name, to: target, label: om[1] || '选项', charIndex: om.index, kind: 'option' });
-      }
+      // 选项解析必须按行进行：extractOptionLine 以「行内最后一个 > 才算闭合」为边界，
+      // 跨整块多行文本会误把后续行（如 <停顿>）的 > 当作选项闭合符。
+      let lineOff = 0;
+      raw.split(/\r?\n/).forEach((line) => {
+        for (const o of extractOptionLine(line)) {
+          if (!o.ok) continue;
+          const sp = splitOptionExtra(o.extra);
+          edges.push({ from: name, to: sp.block, label: o.text || '选项', charIndex: lineOff + o.index, kind: 'option' });
+        }
+        lineOff += line.length + 1;
+      });
       const lines = raw.split(/\r?\n/);
       lines.forEach((line) => {
         const bm = line.trim().match(RE_BLOCK);
@@ -3313,7 +3361,7 @@
     const ta = storyText;
     const newVal = ta.value
       .replace(new RegExp('<(?:对话块|剧情块):\\s*' + escOld + '\\s*>', 'g'), '<剧情块:' + finalName + '>')
-      .replace(new RegExp('<选项:(\\s*"[^"]*"\\s*,\\s*)' + escOld + '(\\s*)>', 'g'), '<选项:$1' + finalName + '$2>');
+      .replace(new RegExp('<选项:(\\s*"[^"]*"\\s*,\\s*)' + escOld + '(?=\\s*(?:,|>))', 'g'), '<选项:$1' + finalName);
     const changed = newVal !== ta.value;
     if (changed) ta.value = newVal;
     if (activeBlock === oldName) activeBlock = finalName;
@@ -5673,7 +5721,6 @@ self.onmessage = function (e) {
       const known = toks.filter(tk => knownVars.has(tk));
       if (!known.length) pushIssue(prefix, n, 'warning', '条件「' + c + '」似乎没有引用任何已定义的变量');
     }
-    const reOpt = /<选项:\s*"([^"]*)"\s*(?:,\s*([^>]*?))?\s*>/g;
     for (const blk of blocksToCheck) {
       const prefix = blk.name === MAIN_BLOCK ? '' : ('【' + blk.name + '】');
       let whenDepth = 0;
@@ -5709,8 +5756,10 @@ self.onmessage = function (e) {
           pushIssue(prefix, n, 'error', '「<」没有对应的「>」（指令未闭合，指令用尖括号）');
           return;
         }
-        // 指令标签内嵌套标签检测：如 <当:<选项:...>>、<召唤背景:<变量:金币>> 等（两个「<」之间不含「>」即视为嵌套）
-        if (/<[^>]*<[^>]*>/.test(t) && /<(召唤|选项|当|否则|变量|停顿|标题|分割线|剧情块|对话块|跳回|跳回重选|停止音乐|随机跳转|随机句子)/.test(t)) {
+        // 指令标签内嵌套标签检测：如 <当:<选项:...>>、<召唤背景:<变量:金币>> 等。
+        // 条件表达式里允许 <、<= 运算符（<当:金币<5>、条件:金币<=5），因此内层 < 必须紧跟指令关键字才算嵌套。
+        if (new RegExp('<[^>]*<(?:召唤|选项|当|否则|变量|停顿|标题|分割线|剧情块|对话块|跳回|跳回重选|停止音乐|随机跳转|随机句子)[^>]*>').test(t)
+            && /<(召唤|选项|当|否则|变量|停顿|标题|分割线|剧情块|对话块|跳回|跳回重选|停止音乐|随机跳转|随机句子)/.test(t)) {
           pushIssue(prefix, n, 'error', '指令标签内部不应再嵌套另一个尖括号标签（发现「<> 内嵌套 <>」，请把内层指令拆到独立一行）');
           return;
         }
@@ -5793,25 +5842,17 @@ self.onmessage = function (e) {
               });
             }
           } else if (t.indexOf('<选项:') >= 0) {
-            const opts = []; let om;
-            reOpt.lastIndex = 0;
-            while ((om = reOpt.exec(t)) !== null) opts.push(om);
+            const opts = extractOptionLine(t).filter(o => o.ok);
             if (!opts.length) pushIssue(prefix, n, 'error', '选项指令格式不正确（如 <选项:"文字"> 或 <选项:"文字",块名>）');
             else {
               if (opts.length > 6) pushIssue(prefix, n, 'error', '一行最多放置 6 个选项，当前 ' + opts.length + ' 个');
               for (const o of opts) {
-                const bn = (o[2] && o[2].trim()) || '';
+                // 条件选项：<选项:"文字",块名,条件:金币>=20>（条件里允许 < > <= >=，解析时已按「真正的闭合 >」取整段 extra）
+                const sp = splitOptionExtra(o.extra);
+                const bn = sp.block;
                 if (bn === MAIN_BLOCK) pushIssue(prefix, n, 'warning', '不建议选项跳到主剧情块');
                 else if (bn && !blockNames.has(bn)) pushIssue(prefix, n, 'warning', '选项指向的剧情块「' + bn + '」未找到，点击可能无效');
-                // 条件选项：<选项:"文字",块名,条件:金币>=20>
-                const extra = (o[2] || '').trim();
-                if (extra) {
-                  const ci = extra.indexOf('条件:');
-                  if (ci >= 0) {
-                    const cond = extra.slice(ci + 3).trim().replace(/,$/, '');
-                    checkCond(prefix, n, cond);
-                  }
-                }
+                if (sp.condition) checkCond(prefix, n, sp.condition);
               }
             }
           } else if (t === '<跳回>') {

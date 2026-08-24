@@ -2569,7 +2569,41 @@ function parseStoryForExport(src) {
   const RE_RANDOM_TEXT = /^<随机句子:([\s\S]*?)>$/;
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
-  const RE_OPTION = /<选项:\s*"([^"]*)"\s*(?:,\s*([^>]*?))?\s*>/g;
+  // 解析一行内所有 <选项:"文字",块名,条件:...> 指令，返回 [{text, extra, index, close, ok}]。
+  // 条件表达式允许出现 >、<、>=、<= 等运算符（如 条件:力量>=20、条件:金币<=5），
+  // 因此「闭合 >」不能取表达式里碰到的第一个 >，而是取下一个 <选项: 之前（或行尾前）的最后一个 >。
+  function extractOptionLine(line) {
+    const TAG = '<选项:';
+    const out = [];
+    let from = 0;
+    while (from <= line.length) {
+      const start = line.indexOf(TAG, from);
+      if (start < 0) break;
+      const next = line.indexOf(TAG, start + TAG.length);
+      const endB = next < 0 ? line.length : next;
+      let close = -1;
+      for (let k = start + TAG.length; k < endB; k++) { if (line[k] === '>') close = k; }
+      from = start + TAG.length;
+      if (close < 0) continue; // 无闭合 >，交给编辑器的「未闭合」校验报错
+      const body = line.slice(start + TAG.length, close);
+      const m = body.match(/^\s*"([^"]*)"\s*(?:,\s*([\s\S]*))?$/);
+      out.push({ text: m ? m[1] : '', extra: (m && m[2] ? m[2] : '').trim(), index: start, close: close, ok: !!m });
+    }
+    return out;
+  }
+  // 把选项的 extra 段（块名[,条件:…]）拆成 { block, condition }
+  function splitOptionExtra(extra) {
+    const e = (extra || '').trim();
+    if (!e) return { block: null, condition: null };
+    const ci = e.indexOf('条件:');
+    if (ci >= 0) {
+      return {
+        block: e.slice(0, ci).replace(/,\s*$/, '').trim() || null,
+        condition: e.slice(ci + 3).replace(/,\s*$/, '').trim() || null
+      };
+    }
+    return { block: e, condition: null };
+  }
   const RE_PLAYER_INPUT = /^<玩家输入变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*,\s*"([\s\S]*?)"\s*>$/;
   const CN = { '背景': 'background', '物品': 'item', '叠层': 'overlay', '音乐': 'music', '音效': 'sound' };
   const lines = (src || '').split(/\r?\n/);
@@ -2617,19 +2651,10 @@ function parseStoryForExport(src) {
     else if (t.indexOf('<选项:') >= 0) {
       flush();
       const options = [];
-      let om; RE_OPTION.lastIndex = 0;
-      while ((om = RE_OPTION.exec(t)) !== null) {
-        const txt = om[1];
-        const extra = (om[2] && om[2].trim()) || '';
-        let blk = null, cond = null;
-        if (extra) {
-          const ci = extra.indexOf('条件:');
-          if (ci >= 0) {
-            blk = extra.slice(0, ci).replace(/,\s*$/, '').trim() || null;
-            cond = extra.slice(ci + 3).replace(/,\s*$/, '').trim();
-          } else blk = extra;
-        }
-        options.push({ text: txt, block: blk, condition: cond || null });
+      for (const o of extractOptionLine(t)) {
+        if (!o.ok) continue;
+        const sp = splitOptionExtra(o.extra);
+        options.push({ text: o.text, block: sp.block, condition: sp.condition });
       }
       if (options.length) story.push({ type: 'options', options });
     }

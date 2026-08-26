@@ -147,13 +147,93 @@
     return diagnostics;
   }
 
+  // Project-wide state usage is kept here instead of in the editor so callers
+  // can safely preview destructive library operations before touching storage.
+  function buildStateReferenceIndex(blockMap, states) {
+    var StoryVars = dependency('StoryVars', './story-vars.js');
+    var StoryOptions = dependency('StoryOptions', './story-options.js');
+    var references = [], byName = {}, seen = {}, duplicates = [];
+    (states || []).forEach(function (state) {
+      var name = state && String(state.name == null ? '' : state.name).trim();
+      if (!name) return;
+      if (seen[name] && duplicates.indexOf(name) < 0) duplicates.push(name);
+      seen[name] = true;
+    });
+    function add(name, kind, block, line, extra) {
+      if (!name) return;
+      var ref = { name: name, kind: kind, block: block, line: line };
+      if (extra) Object.keys(extra).forEach(function (key) { ref[key] = extra[key]; });
+      references.push(ref);
+      if (!byName[name]) byName[name] = [];
+      byName[name].push(ref);
+    }
+    function addConditionRefs(expr, block, line) {
+      if (!StoryVars || !StoryVars.parseCondition) return;
+      var ast = StoryVars.parseCondition(expr);
+      function walk(node) {
+        if (!node) return;
+        if (node.k === 'bare') add(node.name, 'condition', block, line, { requiredType: 'boolean' });
+        else if (node.k === 'cmp') {
+          var required = null;
+          if (node.op === '>' || node.op === '<' || node.op === '>=' || node.op === '<=') required = 'number';
+          if (node.op === 'contains' || node.op === 'notcontains') required = 'text';
+          add(node.name, 'condition', block, line, { requiredType: required });
+        }
+        if (node.l) walk(node.l);
+        if (node.r) walk(node.r);
+        if (node.e) walk(node.e);
+      }
+      walk(ast);
+    }
+    Object.keys(blockMap || {}).forEach(function (block) {
+      String(blockMap[block] == null ? '' : blockMap[block]).split(/\r\n|\n|\r/).forEach(function (raw, i) {
+        var line = i + 1, trimmed = raw.trim();
+        if (!trimmed || /^\s*\/\//.test(raw)) return;
+        var parsed = StoryVars && StoryVars.parseVarLine ? StoryVars.parseVarLine(trimmed) : { ops: [], bad: [] };
+        if (parsed.ops.length && parsed.bad.length === 0) {
+          parsed.ops.forEach(function (op) {
+            add(op.name, 'change', block, line, { op: op.op, requiredType: (op.op === '+' || op.op === '-') ? 'number' : null });
+          });
+          return;
+        }
+        var playerInput = StoryVars && StoryVars.parsePlayerInput ? StoryVars.parsePlayerInput(trimmed) : null;
+        if (playerInput) {
+          add(playerInput.name, 'player_input', block, line, { requiredType: 'text' });
+          return;
+        }
+        if (StoryOptions && StoryOptions.extractOptionLine) {
+          StoryOptions.extractOptionLine(raw).forEach(function (match) {
+            if (!match.ok || !match.option) return;
+            if (match.option.condition) addConditionRefs(match.option.condition, block, line);
+            (match.option.effects || []).forEach(function (effect) {
+              add(effect.name, 'effect', block, line, { op: effect.op, requiredType: (effect.op === '+' || effect.op === '-') ? 'number' : null });
+            });
+          });
+        }
+        if (StoryVars && StoryVars.extractRefs) {
+          StoryVars.extractRefs(raw).forEach(function (ref) {
+            add(ref.name, 'read', block, line, { requiredType: ref.disp ? 'boolean' : null });
+          });
+        }
+      });
+    });
+    return { references: references, byName: byName, duplicates: duplicates };
+  }
+
+  function findIncompatibleStateReferences(index, name, nextType) {
+    var refs = index && index.byName && index.byName[name] ? index.byName[name] : [];
+    return refs.filter(function (ref) { return ref.requiredType && ref.requiredType !== nextType; });
+  }
+
   var VisualDoc = {
     scan: scan,
     serializeUnchanged: serializeUnchanged,
     replaceNode: replaceNode,
     removeNode: removeNode,
     findNodeAtOffset: findNodeAtOffset,
-    summarizeDiagnostics: summarizeDiagnostics
+    summarizeDiagnostics: summarizeDiagnostics,
+    buildStateReferenceIndex: buildStateReferenceIndex,
+    findIncompatibleStateReferences: findIncompatibleStateReferences
   };
   if (typeof window !== 'undefined') window.StoryVisualDoc = VisualDoc;
   if (typeof module !== 'undefined' && module.exports) module.exports = VisualDoc;

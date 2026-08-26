@@ -2770,11 +2770,14 @@
       tools.querySelector('#t-var-fix').onclick = () => openVarFixer();
       tools.querySelector('#t-var-add').onclick = () => {
         const vars = window.Storage.getVars();
-        vars.push({ name: '', type: 'number', value: 0 });
+        let base = '新变量', name = base, suffix = 2;
+        while (vars.some(v => v.name === name)) name = base + suffix++;
+        vars.push({ name: name, type: 'number', value: 0 });
         window.Storage.saveVars(vars);
         renderVariableList(list);
-        const first = list.querySelector('.var-name');
-        if (first) first.focus();
+        const inputs = list.querySelectorAll('.var-name');
+        const created = inputs[inputs.length - 1];
+        if (created) { created.focus(); created.select(); }
       };
       const vars = window.Storage.getVars();
       setLibCount(countEl, vars.length, '变量库');
@@ -2877,8 +2880,8 @@
           b.textContent = '改名为「' + fix.to + '」';
           b.onclick = () => {
             if (!confirm('把全部剧情块里的「' + fix.from + '」改名为「' + fix.to + '」？')) return;
-            const n = renameVarEverywhere(fix.from, fix.to);
-            toast(n ? ('已更新 ' + n + ' 个剧情块中的引用') : '没有需要更新的引用');
+            const result = renameVarEverywhere(fix.from, fix.to);
+            toast(result.ok ? (result.changed ? ('已更新 ' + result.changed + ' 个剧情块中的引用') : '没有需要更新的引用') : result.error);
             renderVarFixer();
           };
         } else if (fix.type === 'remove_tag') {
@@ -2935,19 +2938,41 @@
     return true;
   }
 
-  function renameVarEverywhere(oldName, newName) {
-    if (!oldName || oldName === newName) return 0;
+  function collectStateBlockMap() {
+    const out = {};
+    window.Storage.listBlockNames().forEach((name) => {
+      out[name] = name === activeBlock ? storyText.value : (window.Storage.getBlockText(name) || '');
+    });
+    return out;
+  }
+
+  function saveStateBlockMap(blockMap) {
+    const blocks = window.Storage.loadBlocks();
+    blocks.main = blockMap[MAIN_BLOCK] || '';
+    blocks.blocks = blocks.blocks || {};
+    Object.keys(blocks.blocks).forEach((name) => { blocks.blocks[name] = blockMap[name] || ''; });
+    window.Storage.saveBlocks(blocks);
+  }
+
+  function stateValidationMessage(issues) {
+    const first = issues[0];
+    return first ? ('改动后无法保存：' + (first.message || '剧情变量校验失败')) : '';
+  }
+
+  // All replacements are prepared and checked before either story blocks or
+  // the library is persisted. This prevents half-renamed projects.
+  function renameVarEverywhere(oldName, newName, nextVars) {
+    if (!oldName || oldName === newName) return { ok: true, changed: 0 };
     const names = window.Storage.listBlockNames();
     const escOld = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const reInterp = new RegExp('\\{\\s*(' + escOld + ')(?=[\\s}:]|\\})', 'g');   // {旧名} 或 {旧名:…}
     const reVarOp = new RegExp('<变量:\\s*(' + escOld + ')(?=\\s*[=+\\-])', 'g'); // <变量:旧名=值> 等
     const reInput = new RegExp('<玩家输入变量:\\s*(' + escOld + ')(?=\\s*,)', 'g'); // <玩家输入变量:旧名,"…">
     const reCond = new RegExp('(^|[^A-Za-z0-9_\\u4e00-\\u9fa5])(' + escOld + ')(?=[^A-Za-z0-9_\\u4e00-\u9fa5]|$)', 'g'); // 条件表达式里的变量名（整词）
+    const rewritten = {};
     let changed = 0;
     names.forEach((nm) => {
-      let text, save;
-      if (nm === activeBlock) { text = storyText.value; save = function (v) { storyText.value = v; commitEdit(); }; }
-      else { text = window.Storage.getBlockText(nm) || ''; save = function (v) { window.Storage.setBlockText(nm, v); }; }
+      const text = nm === activeBlock ? storyText.value : (window.Storage.getBlockText(nm) || '');
       let nt = text
         .replace(reInterp, function () { return '{' + newName; })
         .replace(reVarOp, function () { return '<变量:' + newName; })
@@ -2960,9 +2985,21 @@
         if (rw.changed) { lines[i] = rw.line; lineChanged = true; }
       }
       if (lineChanged) nt = lines.join('\n');
-      if (nt !== text) { save(nt); changed++; }
+      rewritten[nm] = nt;
+      if (nt !== text) changed++;
     });
-    return changed;
+    const validation = window.StoryVars.analyze(rewritten, nextVars || window.Storage.getVars());
+    const errors = validation.issues.filter((issue) => issue.severity === 'error');
+    if (errors.length) return { ok: false, changed: 0, error: stateValidationMessage(errors) };
+    saveStateBlockMap(rewritten);
+    if (rewritten[activeBlock] !== storyText.value) {
+      storyText.value = rewritten[activeBlock];
+      text = storyText.value;
+      pushHistory();
+      updateWordCount();
+      scheduleOutline();
+    }
+    return { ok: true, changed: changed };
   }
 
   // 选项条件指令里的变量名改写（<选项:"文字",块名,条件:…>），返回 { line, changed }
@@ -2988,6 +3025,23 @@
       for (const r of repls) { newLine = newLine.slice(0, r.start) + r.text + newLine.slice(r.end); }
     }
     return { line: newLine, changed: newLine !== line };
+  }
+
+  function showStateRowError(row, message) {
+    let error = row.querySelector('.var-error');
+    if (!error) { error = document.createElement('div'); error.className = 'var-error'; row.appendChild(error); }
+    row.classList.add('var-invalid');
+    error.textContent = message;
+  }
+
+  function clearStateRowError(row) {
+    row.classList.remove('var-invalid');
+    const error = row.querySelector('.var-error');
+    if (error) error.remove();
+  }
+
+  function formatStateReferences(refs) {
+    return refs.map(ref => '【' + (ref.block === MAIN_BLOCK ? '主剧情' : ref.block) + '】第 ' + ref.line + ' 行').join('、');
   }
 
   // 变量库：集中定义变量（名字/类型/初值）。正文用 {名} 读取、<变量:名=值> 赋值。
@@ -3033,39 +3087,59 @@
       name.onchange = () => {
         const oldName = vars[idx].name;
         const nm = name.value.trim();
+        clearStateRowError(row);
+        if (!nm) {
+          showStateRowError(row, '变量名不能为空。');
+          name.focus();
+          return;
+        }
         // 变量名合法性：与解析端一致（字母/下划线/中文开头，可含数字，不能以数字开头）
-        if (nm && !/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(nm)) {
-          if (/^[0-9]/.test(nm)) alert('不可以用纯数字开头作为变量名。');
-          else alert('变量名只能包含 字母 / 数字 / 下划线 / 中文，且不能以数字开头。');
-          name.value = oldName; // 还原为上次合法名
+        if (!/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(nm)) {
+          showStateRowError(row, /^[0-9]/.test(nm) ? '变量名不能以数字开头。' : '变量名只能包含字母、数字、下划线或中文。');
           name.focus();
           return;
         }
         if (nm === oldName) return; // 没改
         // 同名冲突：变量名全局唯一，重名会把引用指错
-        if (nm && window.Storage.getVars().some((v2, i2) => i2 !== idx && v2.name === nm)) {
-          alert('已存在同名变量「' + nm + '」，请换一个名字。');
-          name.value = oldName;
+        if (window.Storage.getVars().some((v2, i2) => i2 !== idx && v2.name === nm)) {
+          showStateRowError(row, '已存在同名变量「' + nm + '」。');
           name.focus();
           return;
         }
-        vars[idx].name = nm; window.Storage.saveVars(vars);
-        // 同步更新正文所有剧情块里对该变量的引用（{旧名} / <变量:旧名=…> / <玩家输入变量:旧名,…> / <选项:…,条件:旧名…> 条件）
-        if (oldName) {
-          const changed = renameVarEverywhere(oldName, nm);
-          if (changed) toast('已同步更新文本中 ' + changed + ' 处对该变量的「' + oldName + '」的引用');
+        const nextVars = vars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { name: nm } : {}));
+        const result = renameVarEverywhere(oldName, nm, nextVars);
+        if (!result.ok) {
+          showStateRowError(row, result.error);
+          name.focus();
+          return;
         }
+        window.Storage.saveVars(nextVars);
+        if (result.changed) toast('已同步更新 ' + result.changed + ' 个剧情块中对「' + oldName + '」的引用');
         renderVariableList(list); refreshTodo();
       };
       const type = document.createElement('select'); type.className = 'var-type';
-      [['number', '数字'], ['text', '文本'], ['boolean', '布尔']].forEach(([val, lab]) => {
+      [['number', '数字'], ['boolean', '是 / 否'], ['text', '文字']].forEach(([val, lab]) => {
         const o = document.createElement('option'); o.value = val; o.textContent = lab; if (v.type === val) o.selected = true; type.appendChild(o);
       });
       type.onchange = () => {
-        v.type = type.value;
-        if (v.type === 'boolean') v.value = (v.value === true || v.value === 'true');
-        else if (v.type === 'number') v.value = Number(v.value) || 0;
-        window.Storage.saveVars(vars); renderVariableList(list);
+        clearStateRowError(row);
+        const nextType = type.value;
+        const index = window.StoryVisualDoc.buildStateReferenceIndex(collectStateBlockMap(), vars);
+        const conflicts = window.StoryVisualDoc.findIncompatibleStateReferences(index, v.name, nextType);
+        if (conflicts.length) {
+          type.value = v.type;
+          showStateRowError(row, '不能改为「' + ({ number: '数字', boolean: '是 / 否', text: '文字' }[nextType]) + '」：' + formatStateReferences(conflicts));
+          return;
+        }
+        const nextVars = vars.map((item, itemIdx) => {
+          if (itemIdx !== idx) return Object.assign({}, item);
+          const next = Object.assign({}, item, { type: type.value });
+          if (next.type === 'boolean') next.value = (next.value === true || next.value === 'true');
+          else if (next.type === 'number') next.value = Number.isFinite(Number(next.value)) ? Number(next.value) : 0;
+          else next.value = next.value == null ? '' : String(next.value);
+          return next;
+        });
+        window.Storage.saveVars(nextVars); renderVariableList(list); refreshTodo();
       };
       const valWrap = document.createElement('div'); valWrap.className = 'var-val';
       function renderVal() {
@@ -3075,20 +3149,43 @@
           [['true', '真'], ['false', '假']].forEach(([val, lab]) => {
             const o = document.createElement('option'); o.value = val; o.textContent = lab; if (String(v.value) === val) o.selected = true; s.appendChild(o);
           });
-          s.onchange = () => { v.value = (s.value === 'true'); window.Storage.saveVars(vars); refreshTodo(); };
+          s.onchange = () => {
+            const nextVars = vars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { value: s.value === 'true' } : {}));
+            window.Storage.saveVars(nextVars); refreshTodo();
+          };
           valWrap.appendChild(s);
         } else {
           const inp = document.createElement('input'); inp.className = 'var-value';
           inp.type = (v.type === 'number') ? 'number' : 'text';
           inp.value = (v.value == null ? '' : v.value);
-          inp.onchange = () => { v.value = (v.type === 'number') ? Number(inp.value) : inp.value; window.Storage.saveVars(vars); refreshTodo(); };
+          inp.onchange = () => {
+            clearStateRowError(row);
+            if (v.type === 'number' && (inp.value.trim() === '' || !Number.isFinite(Number(inp.value)))) {
+              showStateRowError(row, '数字初值必须是有限数字。');
+              inp.focus();
+              return;
+            }
+            const value = v.type === 'number' ? Number(inp.value) : inp.value;
+            const nextVars = vars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { value: value } : {}));
+            window.Storage.saveVars(nextVars); refreshTodo();
+          };
           valWrap.appendChild(inp);
         }
       }
       renderVal();
       const del = document.createElement('button'); del.className = 'var-del'; del.title = '删除变量'; del.type = 'button';
       del.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-trash"/></svg>';
-      del.onclick = () => { vars.splice(idx, 1); window.Storage.saveVars(vars); renderVariableList(list); refreshTodo(); };
+      del.onclick = () => {
+        clearStateRowError(row);
+        const index = window.StoryVisualDoc.buildStateReferenceIndex(collectStateBlockMap(), vars);
+        const refs = index.byName[v.name] || [];
+        if (refs.length) {
+          showStateRowError(row, '变量正在被引用，不能删除：' + formatStateReferences(refs));
+          return;
+        }
+        const nextVars = vars.filter((_, itemIdx) => itemIdx !== idx);
+        window.Storage.saveVars(nextVars); renderVariableList(list); refreshTodo();
+      };
       row.appendChild(handle); row.appendChild(name); row.appendChild(type); row.appendChild(valWrap); row.appendChild(del);
       list.appendChild(row);
     });

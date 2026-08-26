@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260826-01">
+<link rel="stylesheet" href="css/style.css?v=20260827-01">
 </head>
 <body>
 
@@ -83,7 +83,7 @@
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.62</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.63</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -115,6 +115,10 @@
         <span class="col-head-left">
           <button id="outline-reopen" class="mini-btn hidden" title="展开导航"><svg class="ico" aria-hidden="true"><use href="#ic-compass"/></svg>导航</button>
           <span id="current-block-chip" class="block-chip" title="当前正在编辑的剧情块，点击在右侧仓库切换">主剧情</span>
+          <span class="editor-mode-switch" role="group" aria-label="编辑器模式">
+            <button id="editor-mode-visual" type="button">可视化编辑</button>
+            <button id="editor-mode-source" type="button">源码模式</button>
+          </span>
           <button id="btn-undo" class="icon-btn" title="撤销 (Ctrl+Z)" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-undo"/></svg></button>
           <button id="btn-redo" class="icon-btn" title="重做 (Ctrl+Y)" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-redo"/></svg></button>
         </span>
@@ -139,6 +143,7 @@
         <div id="word-count" class="word-count">总字数：0</div>
         <div id="block-review-line" class="block-review-line"></div>
       </div>
+      <div id="story-visual-editor" class="story-visual-editor" hidden></div>
       <div id="story-preview" class="story-preview hidden"></div>
       <button id="todo-fab" class="todo-fab" type="button" title="素材待办：查看文字里召唤、但素材库还没有的素材"><svg class="ico" aria-hidden="true"><use href="#ic-clipboard"/></svg><span class="todo-fab-txt">待办</span><span id="todo-badge" class="todo-badge" hidden>0</span></button>
       <div id="todo-panel" class="todo-panel hidden">
@@ -412,13 +417,14 @@
 <script src="js/story-vars.js?v=20260826-01"></script>
 <script src="js/story-options.js?v=20260827-02"></script>
 <script src="js/story-visual-doc.js?v=20260827-01"></script>
+<script src="js/story-visual-ui.js?v=20260827-01"></script>
 <script src="js/generators.js?v=20260722-60"></script>
 <script src="js/bbcode.js?v=20260722-60"></script>
 <script src="js/exporter.js?v=20260826-01"></script>
 <script src="js/ai.js?v=20260806-01"></script>
 <script src="js/lame.min.js?v=1"></script>
 <!-- sample-project.js 改为按需懒加载（内含压缩后内联示例素材 data URL，约 1.5MB，避免拖慢编辑器日常启动），见 editor.js ensureSampleProject() -->
-<script src="js/editor.js?v=20260826-01"></script>
+<script src="js/editor.js?v=20260827-01"></script>
 <!-- 文字浮动工具栏 -->
 <div id="bbcode-float" class="bbcode-float hidden">
   <div id="bbcode-drag" class="bbcode-drag-head">⋮⋮ 文字工具栏</div>
@@ -566,7 +572,7 @@
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.54</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.63</span></div>
         </div>
       </div>
     </div>

@@ -22,6 +22,8 @@
   function isLandscapeNow() { return !isPortraitNow(); }
   let previewMode = false;
   let splitMode = false;
+  let visualController = null;
+  const EDITOR_MODE_KEY = 'storyeditor:editor-mode';
   let pendingEffectTag = null; // 特效按钮用的临时标签名
 
   // 全局属性
@@ -486,6 +488,7 @@
   // ============ 初始化 ============
   function init() {
     bindGlobal();
+    bindVisualEditorMode();
     bindTodoEvents(); // 素材待办浮动按钮事件
     bindImageProcessor(); // 背景图处理面板（滑块/下拉/按钮事件，只绑一次）
     bindAudioProcessor(); // 音频处理面板（裁切/压缩，只绑一次）
@@ -499,6 +502,37 @@
       renderProjectsScreen();
       showProjectsScreen(true);
     });
+  }
+
+  function bindVisualEditorMode() {
+    const visualButton = $('#editor-mode-visual');
+    const sourceButton = $('#editor-mode-source');
+    const visualHost = $('#story-visual-editor');
+    if (!visualButton || !sourceButton || !visualHost || !window.StoryVisualUI) return;
+    visualButton.setAttribute('aria-controls', 'story-visual-editor');
+    sourceButton.setAttribute('aria-controls', 'editor-text-wrap');
+    visualController = window.StoryVisualUI.createController({
+      sourceTextarea: storyText,
+      sourceWrap: editorTextWrap,
+      visualHost: visualHost,
+      getSource: () => storyText.value,
+      setSource: (next) => { storyText.value = next; commitEdit(); },
+      getStates: () => window.Storage.getVars(),
+      getBlocks: () => window.Storage.listBlockNames(),
+      onDiagnostic: () => {}
+    });
+    function setMode(next) {
+      if (next === 'visual') visualController.showVisual();
+      else visualController.showSource();
+      visualButton.setAttribute('aria-pressed', String(next === 'visual'));
+      sourceButton.setAttribute('aria-pressed', String(next === 'source'));
+      try { localStorage.setItem(EDITOR_MODE_KEY, next); } catch (_) {}
+    }
+    visualButton.addEventListener('click', () => setMode('visual'));
+    sourceButton.addEventListener('click', () => setMode('source'));
+    let preferred = 'visual';
+    try { preferred = localStorage.getItem(EDITOR_MODE_KEY) === 'source' ? 'source' : 'visual'; } catch (_) {}
+    setMode(preferred);
   }
 
   // ============ 暗色模式（#btn-theme） ============
@@ -1583,7 +1617,11 @@
       Object.defineProperty(storyText, 'value', {
         configurable: true,
         get() { return desc.get.call(this); },
-        set(v) { desc.set.call(this, v); scheduleLineNumbers(); }
+        set(v) {
+          desc.set.call(this, v);
+          scheduleLineNumbers();
+          if (visualController && visualController.getMode() === 'visual') visualController.refresh();
+        }
       });
     })();
     buildLineNumbers();
@@ -3362,6 +3400,7 @@
   // 切换到某个剧情块编辑（先提交当前块文本）
   function switchBlock(name) {
     if (name === activeBlock) { renderLibrary(); updateBlockChip(); return; }
+    if (visualController) visualController.commitFocusedEditor();
     window.Storage.setBlockText(activeBlock, storyText.value);
     activeBlock = name;
     text = window.Storage.getBlockText(name) || '';
@@ -3377,6 +3416,7 @@
     refreshBlockReviewLine();
     renderReviewPanel();
     refreshReviewToggleBadge();
+    if (visualController && visualController.getMode() === 'visual') visualController.refresh();
   }
   // 在光标处插入「进入剧情块」指令
   function insertBlockJump(name) { insertAtCursor('<剧情块:' + name + '>'); }
@@ -6261,6 +6301,7 @@ self.onmessage = function (e) {
     el.textContent = '总字数：' + countNarrativeChars(storyText.value);
   }
   function commitEdit() {
+    if (visualController) visualController.commitFocusedEditor();
     clearTimeout(histTimer);
     text = storyText.value;
     pushHistory();

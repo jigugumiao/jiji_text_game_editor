@@ -285,6 +285,13 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 .col-head-actions { display: inline-flex; align-items: center; gap: 6px; }
 .col-head-left { display: inline-flex; align-items: center; gap: 6px; }
 .col-head-right { display: inline-flex; align-items: center; gap: 5px; }
+.editor-mode-switch { display: inline-flex; align-items: center; border-left: 1px solid var(--border); padding-left: 6px; }
+.editor-mode-switch button {
+  border: 0; padding: 2px 5px; background: transparent; color: var(--text-3); cursor: pointer;
+  font: inherit; font-size: 12px; line-height: 1.4;
+}
+.editor-mode-switch button:hover, .editor-mode-switch button:focus-visible { color: var(--text); outline: none; text-decoration: underline; text-underline-offset: 3px; }
+.editor-mode-switch button[aria-pressed="true"] { color: var(--text); font-weight: 700; }
 .icon-btn {
   background: #fff; border: 1px solid var(--border-strong); color: var(--text-2);
   border-radius: var(--radius-sm); width: 30px; height: 28px; font-size: 15px; cursor: pointer; line-height: 1;
@@ -337,6 +344,20 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 /* 行号槽：编辑器文字区（文字 + 行号）统一为一个横向 flex 容器 */
 .editor-text-wrap { flex: 1 1 0; display: flex; flex-direction: row; min-height: 0; min-width: 0; position: relative; }
 .editor-text-wrap.hidden { display: none; }
+.story-visual-editor { flex: 1 1 0; min-height: 0; overflow: auto; background: var(--bg); color: var(--text); }
+.story-visual-document {
+  min-height: 100%; padding: 20px 26px; white-space: pre-wrap; word-break: break-word;
+  font-family: 'Noto Serif SC','Songti SC',serif; font-size: 16px; line-height: 1.95;
+}
+.story-visual-node { color: inherit; }
+.story-visual-node-option_group { display: block; border-left: 2px solid var(--border); padding-left: 12px; }
+.story-visual-node-source_error { color: var(--danger); text-decoration: underline wavy currentColor; text-underline-offset: 3px; }
+.story-visual-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.story-visual-edit-button { opacity: .4; }
+.story-visual-edit-button:hover, .story-visual-edit-button:focus-visible { opacity: 1; }
+.story-visual-editor input, .story-visual-editor textarea, .story-visual-editor select {
+  color: var(--text); background: var(--bg); border-color: var(--border-strong);
+}
 /* 极淡、低存在感的行号，仅在编译报错时帮助定位行 */
 .ln-gutter {
   flex: 0 0 auto; width: 3.4em; overflow: hidden;

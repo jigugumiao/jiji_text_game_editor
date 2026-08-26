@@ -129,7 +129,7 @@
   // ---------- 条件表达式：解析（AST）与求值分离，语法校验复用同一解析器 ----------
   // 文法：expr := or；or := and ('||' and)*；and := unary ('&&' unary)*；
   //       unary := '!' unary | primary；primary := '(' expr ')' | comparison | bare-name
-  // comparison := name op value，op ∈ >= <= == != > < =
+  // comparison := name op value，op ∈ >= <= == != > < = contains notcontains
   // AST 节点：{k:'or'|'and', l, r} · {k:'not', e} · {k:'cmp', name, op, val:{s:'num'|'str'|'bool'|'word', v}} · {k:'bare', name}
 
   // 解析失败返回 null。空表达式视为恒真，返回 { k:'true' }。
@@ -178,7 +178,7 @@
       if (tk.t !== 'name') return null;
       next();
       var nk = peek();
-      if (nk && nk.t === 'op' && (nk.v === '>=' || nk.v === '<=' || nk.v === '==' || nk.v === '!=' || nk.v === '>' || nk.v === '<' || nk.v === '=')) {
+      if (nk && nk.t === 'op' && (nk.v === '>=' || nk.v === '<=' || nk.v === '==' || nk.v === '!=' || nk.v === '>' || nk.v === '<' || nk.v === '=' || nk.v === 'contains' || nk.v === 'notcontains')) {
         next();
         var vk = next();
         if (!vk || vk.t === 'op') return null;
@@ -199,7 +199,13 @@
       if (ch === '"' || ch === '\u201c' || ch === '\u201d') {
         var closeCh = (ch === '"') ? '"' : '\u201d';
         var j = i + 1, str = '';
-        while (j < src.length && src[j] !== closeCh) { str += src[j]; j++; }
+        while (j < src.length && src[j] !== closeCh) {
+          if (src[j] === '\\' && closeCh === '"' && j + 1 < src.length) {
+            var escaped = src[j + 1];
+            if (escaped === '"' || escaped === '\\') { str += escaped; j += 2; continue; }
+          }
+          str += src[j]; j++;
+        }
         if (j >= src.length) return null;
         out.push({ t: 'str', v: str });
         i = j + 1;
@@ -213,6 +219,8 @@
         // 兼容旧写法：单独的「=」按等于处理
         out.push({ t: 'op', v: ch }); i++; continue;
       }
+      var wordOp = src.slice(i).match(/^(notcontains|contains)(?![A-Za-z0-9_\u4e00-\u9fa5])/);
+      if (wordOp) { out.push({ t: 'op', v: wordOp[1] }); i += wordOp[1].length; continue; }
       var nm = src.slice(i).match(/^-?\d+(\.\d+)?/);
       if (nm && (i === 0 || !/[\w\u4e00-\u9fa5_]/.test(src[i - 1]))) {
         out.push({ t: 'num', v: nm[0] }); i += nm[0].length; continue;
@@ -240,6 +248,8 @@
       case '<=': return Number(lv) <= Number(rv);
       case '==': case '=': return lv == rv; // eslint-disable-line eqeqeq
       case '!=': return lv != rv;           // eslint-disable-line eqeqeq
+      case 'contains': return String(lv).indexOf(String(rv)) >= 0;
+      case 'notcontains': return String(lv).indexOf(String(rv)) < 0;
     }
     return false;
   }
@@ -262,6 +272,82 @@
     var ast = parseCondition(expr);
     if (!ast) return false;
     try { return !!evalAst(ast, getVar); } catch (e) { return false; }
+  }
+
+  // AST → 稳定的条件文本。不同优先级的逻辑组合显式加括号，避免编辑器往返时含义含混。
+  function serializeCondition(ast) {
+    function value(val) {
+      if (!val) return '';
+      if (val.s === 'num') return String(val.v);
+      if (val.s === 'bool') return val.v ? 'true' : 'false';
+      if (val.s === 'word') return String(val.v);
+      return '"' + String(val.v).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+    }
+    function walk(node, parentKind) {
+      if (!node) return '';
+      if (node.k === 'true') return 'true';
+      if (node.k === 'bare') return node.name;
+      if (node.k === 'cmp') return node.name + node.op + value(node.val);
+      if (node.k === 'not') {
+        var negated = walk(node.e, 'not');
+        return '!' + ((node.e && (node.e.k === 'and' || node.e.k === 'or')) ? '(' + negated + ')' : negated);
+      }
+      var op = node.k === 'and' ? ' && ' : ' || ';
+      var body = walk(node.l, node.k) + op + walk(node.r, node.k);
+      return parentKind && parentKind !== node.k && parentKind !== 'not' ? '(' + body + ')' : body;
+    }
+    return walk(ast, '');
+  }
+
+  function summarizeComparison(node) {
+    var words = {
+      '>=': '不少于', '<=': '不多于', '>': '大于', '<': '小于',
+      '==': '等于', '=': '等于', '!=': '不等于',
+      'contains': '包含', 'notcontains': '不包含'
+    };
+    var val = node.val || {};
+    var rendered = val.s === 'str' ? '“' + String(val.v) + '”' : String(val.v);
+    return node.name + (words[node.op] || node.op) + ' ' + rendered;
+  }
+
+  // AST → 面向作者的中文摘要。且的优先级高于“或者”，故其组合无需额外括号。
+  function summarizeCondition(ast, typeMap) { // eslint-disable-line no-unused-vars
+    function walk(node, parentPrec) {
+      if (!node) return '';
+      if (node.k === 'true') return '始终成立';
+      if (node.k === 'bare') return node.name + '是“是”';
+      if (node.k === 'cmp') return summarizeComparison(node);
+      if (node.k === 'not') return '不是（' + walk(node.e, 0) + '）';
+      var prec = node.k === 'and' ? 2 : 1;
+      var glue = node.k === 'and' ? ' 且' : '，或者';
+      var body = walk(node.l, prec) + glue + walk(node.r, prec);
+      return prec < parentPrec ? '（' + body + '）' : body;
+    }
+    return walk(ast, 0);
+  }
+
+  // 验证 AST 运算符是否与声明变量类型匹配。类型表为 {变量名: 'number'|'boolean'|'text'}。
+  function validateConditionTypes(ast, typeMap) {
+    var errors = [];
+    var map = typeMap || {};
+    function variableType(name) { return map[name]; }
+    function requireType(node, expected) {
+      var actual = variableType(node.name);
+      if (actual !== expected) errors.push({ name: node.name, op: node.op, expected: expected, actual: actual });
+    }
+    function walk(node) {
+      if (!node) return;
+      if (node.k === 'bare') {
+        var actual = variableType(node.name);
+        if (actual !== 'boolean') errors.push({ name: node.name, op: 'bare', expected: 'boolean', actual: actual });
+      } else if (node.k === 'cmp') {
+        if (node.op === 'contains' || node.op === 'notcontains') requireType(node, 'text');
+        else if (node.op === '>' || node.op === '<' || node.op === '>=' || node.op === '<=') requireType(node, 'number');
+      } else if (node.k === 'not') walk(node.e);
+      else { walk(node.l); walk(node.r); }
+    }
+    walk(ast);
+    return { ok: errors.length === 0, errors: errors };
   }
 
   // 正文插值：{名} / {名:真文案|假文案}；未定义保留原样；{{名}} 转义保留；布尔显示 真/假
@@ -536,6 +622,9 @@
     applyOps: applyOps,
     condTokenize: condTokenize,
     parseCondition: parseCondition,
+    serializeCondition: serializeCondition,
+    summarizeCondition: summarizeCondition,
+    validateConditionTypes: validateConditionTypes,
     evalCondition: evalCondition,
     interpolate: interpolate,
     inferTypeFromValue: inferTypeFromValue,

@@ -107,6 +107,36 @@ const StoryVars = require('../js/story-vars.js');
   assert.equal(StoryVars.evalCondition('不存在==', g), false);
 }
 
+// ---------- 条件 AST 公共接口 / 类型化运算符 ----------
+{
+  const ast = StoryVars.parseCondition('(金币>=10 && 见过商人) || 声望>=20');
+  assert.equal(ast.k, 'or');
+  assert.equal(StoryVars.serializeCondition(ast), '(金币>=10 && 见过商人) || 声望>=20');
+  assert.equal(StoryVars.summarizeCondition(ast, {
+    金币: 'number', 见过商人: 'boolean', 声望: 'number'
+  }), '金币不少于 10 且见过商人是“是”，或者声望不少于 20');
+
+  const textVars = { 身份: '皇家贵宾' };
+  assert.equal(StoryVars.evalCondition('身份 contains "贵宾"', n => textVars[n]), true);
+  assert.equal(StoryVars.evalCondition('身份 notcontains "平民"', n => textVars[n]), true);
+  const containsAst = StoryVars.parseCondition('身份 contains "贵宾"');
+  assert.deepEqual(StoryVars.validateConditionTypes(containsAst, { 身份: 'text' }), { ok: true, errors: [] });
+  assert.deepEqual(StoryVars.validateConditionTypes(containsAst, { 身份: 'number' }), {
+    ok: false,
+    errors: [{ name: '身份', op: 'contains', expected: 'text', actual: 'number' }]
+  });
+
+  // 否定逻辑组必须保留括号，否则 !a || b 会改变 !(a || b) 的语义。
+  ['!(钥匙 || 通行证)', '!(金币>=10 && 见过商人)'].forEach(expr => {
+    const negated = StoryVars.parseCondition(expr);
+    assert.equal(StoryVars.serializeCondition(negated), expr);
+    assert.equal(
+      StoryVars.evalCondition(StoryVars.serializeCondition(negated), n => ({ 钥匙: true, 通行证: false, 金币: 10, 见过商人: true })[n]),
+      false
+    );
+  });
+}
+
 // ---------- interpolate ----------
 {
   const vars = { 金币: 120, 中毒: false, 已见面: true };

@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>剧情编辑器 · 使用文档</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#11161f; --panel2:#131a25; --line:#222b39;
+    --txt:#e6e9ef; --muted:#8b97a8; --blue:#3a86ff; --blue2:#7aa2ff;
+    --green:#58d68d; --orange:#ffb84c; --pink:#ff7088; --purple:#ba8aff;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.7;font-size:15px}
+  .layout{display:flex;align-items:flex-start;max-width:1180px;margin:0 auto}
+  /* 左侧大纲目录 */
+  .toc{position:sticky;top:0;align-self:flex-start;width:248px;flex:0 0 248px;
+    height:100vh;overflow:auto;padding:22px 14px 40px;border-right:1px solid var(--line);
+    font-size:13.5px}
+  .toc h4{margin:18px 8px 8px;font-size:12px;letter-spacing:1px;color:var(--blue2);
+    text-transform:uppercase;font-weight:700}
+  .toc h4:first-child{margin-top:4px}
+  .toc a{display:block;padding:5px 10px;border-radius:7px;color:var(--muted);
+    text-decoration:none;border-left:2px solid transparent;transition:.12s;line-height:1.4}
+  .toc a:hover{background:var(--panel2);color:var(--txt)}
+  .toc a.sub{padding-left:22px;font-size:13px}
+  .toc a.active{background:rgba(58,134,255,.14);color:#fff;border-left-color:var(--blue)}
+  /* 右侧内容 */
+  .content{flex:1;min-width:0;padding:30px 26px 90px;max-width:880px}
+  h1{font-size:25px;margin:0 0 4px;color:#fff;letter-spacing:.5px}
+  h1 .tag{color:var(--blue2);font-weight:700}
+  .sub{color:var(--muted);margin:0 0 8px;font-size:14px}
+  h2{font-size:21px;margin:46px 0 12px;padding-bottom:9px;border-bottom:1px solid var(--line);color:#fff;scroll-margin-top:16px}
+  h2 .n{color:var(--blue);font-weight:700;margin-right:8px}
+  h3{font-size:16px;margin:24px 0 8px;color:var(--blue2);scroll-margin-top:16px}
+  p{margin:9px 0}
+  ul{margin:9px 0;padding-left:20px}
+  li{margin:5px 0}
+  code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;
+    padding:1px 6px;font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+    font-size:13px;color:#ffd9a0;white-space:nowrap}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px;overflow:auto;margin:11px 0;font-size:13.5px;line-height:1.65}
+  pre code{background:none;border:0;padding:0;color:#d7e0ee;white-space:pre}
+  .good{color:var(--green)} .bad{color:var(--pink)}
+  .pill{display:inline-block;font-size:12px;padding:1px 8px;border-radius:20px;
+    border:1px solid var(--line);margin-right:6px;font-family:monospace}
+  .square{color:var(--blue2);border-color:rgba(122,162,255,.4);background:rgba(122,162,255,.1)}
+  .angle{color:var(--orange);border-color:rgba(255,184,76,.4);background:rgba(255,184,76,.1)}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--blue2);font-weight:600;background:var(--panel)}
+  .sw{display:inline-block;width:14px;height:14px;border-radius:3px;
+    border:1px solid rgba(255,255,255,.25);vertical-align:-2px;margin-right:6px}
+  .note{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--blue);
+    border-radius:8px;padding:10px 14px;margin:14px 0;font-size:14px;color:#cdd5e0}
+  .warn{border-left-color:var(--pink)}
+  .tip{display:flex;align-items:flex-start;gap:9px;margin:14px 0;padding:9px 13px;
+    background:rgba(255,212,0,.07);border:1px solid rgba(255,212,0,.30);
+    border-radius:8px;font-size:14px;color:#e6e9ef;line-height:1.65}
+  .tip .ic{flex:0 0 auto;color:#ffd400;font-weight:800;font-family:monospace}
+  .step{background:linear-gradient(135deg,rgba(58,134,255,.10),rgba(58,134,255,.02));
+    border:1px solid rgba(58,134,255,.25);border-radius:12px;padding:14px 18px;margin:16px 0}
+  .step .label{display:inline-block;font-size:12px;font-weight:700;color:#fff;
+    background:var(--blue);border-radius:20px;padding:2px 11px;margin-bottom:8px;letter-spacing:.5px}
+  .foot{margin-top:54px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
+  /* 响应式：窄屏隐藏侧栏 */
+  @media (max-width:780px){
+    .layout{display:block}
+    .toc{position:static;width:100%;height:auto;border-right:0;border-bottom:1px solid var(--line);
+      display:flex;flex-wrap:wrap;gap:2px;padding:10px}
+    .toc h4{width:100%;margin:6px 8px 2px}
+    .toc a{display:inline-block;border-left:0}
+    .content{padding:22px 16px 70px}
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <!-- 左侧大纲目录 -->
+  <nav class="toc">
+    <h4>新手教程</h4>
+    <a href="#bp">新手教程</a>
+    <a href="#bp1" class="sub">1 · 写出第一句剧情</a>
+    <a href="#bp2" class="sub">2 · 加一个背景</a>
+    <a href="#bp3" class="sub">3 · 用停顿控制节奏</a>
+    <a href="#bp4" class="sub">4 · 让玩家检视物品</a>
+    <a href="#bp5" class="sub">5 · 做选项分支</a>
+    <a href="#bp6" class="sub">6 · 配乐与音效</a>
+    <a href="#bp7" class="sub">7 · 补齐素材</a>
+    <a href="#bp8" class="sub">8 · 预览与导出</a>
+    <h4>AI 功能</h4>
+    <a href="#ai">AI 编剧</a>
+    <a href="#ai-clue" class="sub">关键线索提取</a>
+    <h4>界面说明</h4>
+    <a href="#ui">界面与按钮</a>
+    <h4>详细介绍</h4>
+    <a href="#ref">语法总览</a>
+    <a href="#ref-bracket-grp">方括号标记（[ ]）</a>
+    <a href="#ref-bracket" class="sub">方括号表现标签</a>
+    <a href="#ref-color" class="sub">颜色对照表</a>
+    <a href="#ref-angle-grp">尖括号指令（&lt; &gt;）</a>
+    <a href="#ref-angle" class="sub">尖括号指令</a>
+    <h4>进阶功能</h4>
+    <a href="#adv">进阶功能</a>
+    <a href="#adv-play" class="sub">游玩体验与存档</a>
+    <a href="#adv-branch" class="sub">分支、随机与输入</a>
+    <a href="#adv-assets" class="sub">素材与发布</a>
+    <a href="#adv-var" class="sub">变量系统</a>
+    <a href="#adv-clue" class="sub">关键线索</a>
+    <a href="#adv-review" class="sub">试玩审阅</a>
+    <a href="#adv-img" class="sub">图片处理面板</a>
+    <a href="#adv-audio" class="sub">音频处理面板</a>
+    <a href="#adv-todo" class="sub">素材待办</a>
+  </nav>
+
+  <main class="content">
+    <h1><span class="tag">剧情编辑器</span> 使用文档</h1>
+    <p class="sub">互动剧情采用一套原生标记写作，无需任何代码基础。左侧为大纲目录，可快速跳转。</p>
+
+    <!-- ============ 新手教程 ============ -->
+    <h2 id="bp"><span class="n">▌</span>新手教程：30 分钟做出你的第一个文字游戏</h2>
+    <p>目标：做一个最简单的互动文字游戏——「你在陌生房间里醒来，要找钥匙逃出去」。</p>
+
+    <div class="step">
+      <span class="label">第 1 步</span>
+      <h3 id="bp1" style="margin-top:4px">写出第一句剧情</h3>
+      <p>中间的文本框就是我们的剧情编辑器。我们在里面打字即可编写剧情，回车可以换行。换行会在游戏中忠实地还原。</p>
+      <pre><code>我睁开眼，头顶是一盏忽明忽暗的灯。
+身下是冰凉的水泥地。</code></pre>
+      <p>这就是最基础的"文字游戏"——一行一行出现文字，玩家一行一行看。</p>
+      <p class="tip"><span class="ic">!</span>小提示：编辑器会实时自动保存，所以无需进行保存。</p>
+    </div>
+
+    <div class="step">
+      <span class="label">第 2 步</span>
+      <h3 id="bp2" style="margin-top:4px">加一个背景</h3>
+      <p>首先，我们在右侧的背景库中上传一张背景（也可以点击渐变 / 噪波生成器进行生成），然后拖动到文字编辑器中，软件会自动在光标位置增加一行 <code>&lt;召唤背景:图片名称&gt;</code>。<code>&lt;召唤背景&gt;</code> 指令需要独占一行。</p>
+      <pre><code>&lt;召唤背景:昏暗房间&gt;
+我睁开眼，头顶是一盏忽明忽暗的灯。</code></pre>
+      <p>这个格式写好之后，游戏进行到这一行时，就会在背景显示这张图片了。</p>
+      <p class="tip"><span class="ic">!</span>小提示：也可以直接输入 <code>&lt;召唤背景:名称&gt;</code>，即便素材库里没有对应的素材，之后再使用素材待办清单功能补充。</p>
+    </div>
+
+    <div class="step">
+      <span class="label">第 3 步</span>
+      <h3 id="bp3" style="margin-top:4px">用停顿控制节奏</h3>
+      <p>文字全部一起出来的话，故事就没有节奏感了。这时候就需要用停顿控制节奏。<code>&lt;停顿&gt;</code> = 玩家点一下才会继续。</p>
+      <p>停顿的按钮放在文字工具箱中，快捷键是 Tab。</p>
+      <pre><code>&lt;召唤背景:昏暗房间&gt;
+我睁开眼，头顶是一盏忽明忽暗的灯。
+&lt;停顿&gt;
+墙角有扇门，门把手上挂着一把生锈的锁。</code></pre>
+    </div>
+
+    <div class="step">
+      <span class="label">第 4 步</span>
+      <h3 id="bp4" style="margin-top:4px">让玩家检视物品</h3>
+      <p><code>&lt;召唤物品:名称&gt;</code> 弹出可检视的 3D 物品界面。和召唤背景类似，需要先上传到物品库中，再拖动到文字编辑器里。（格式特殊，需要用 3D 交互制作器制作）</p>
+      <pre><code>&lt;召唤物品:生锈钥匙&gt;
+我蹲下，从床底摸出一把 [color=#c0c0c0]生锈钥匙[/color]。</code></pre>
+    </div>
+
+    <div class="step">
+      <span class="label">第 5 步</span>
+      <h3 id="bp5" style="margin-top:4px">做选项分支</h3>
+      <p>选项分支是"互动感"的关键：我们要先引入一个新的概念，叫<b>剧情块</b>。</p>
+      <p>剧情块位于右侧素材库的「剧情块库」中，点击后可以看到里面已经有一个名为「主剧情」的剧情块。</p>
+      <p>点击「新建剧情块」，会多出一个名为「新剧情」的剧情块。我们点击「主剧情」和「新剧情」，就能在两个剧情块之间切换。</p>
+      <p><code>&lt;选项:"按钮文字",剧情块名&gt;</code>，这个指令将在游戏底部生成按钮。如果需要多个选项，可以在同一行写多个 <code>&lt;选项:"按钮文字",剧情块名&gt;</code> 指令，不要换行。我们将这个指令写入主剧情。</p>
+      <p>接下来编写分支剧情块的剧情，分支块需要用 <code>&lt;跳回&gt;</code> 收尾，这个指令可以自动返回主剧情我们来的那一行；如果没有写 <code>&lt;跳回&gt;</code>，剧情将在这里结尾。</p>
+
+      <p><b>主剧情块：</b></p>
+      <pre><code>我握紧钥匙，走向那扇门。
+&lt;选项:"先检查门","检查门剧情块"&gt;&lt;选项:"用钥匙开门","开门剧情块"&gt;
+门后透出一丝光。</code></pre>
+
+      <p><b>检查门剧情块：</b></p>
+      <pre><code>门纹丝不动，外面射进来一道光。
+&lt;跳回重选&gt;</code></pre>
+
+      <p><b>撞门剧情块：</b></p>
+      <pre><code>门被钥匙打开了。逃离成功。</code></pre>
+
+      <p>玩家点「先检查门」→ 进入「检查门」块 → 看完跳回主对话继续。</p>
+      <p class="tip"><span class="ic">!</span>小提示：剧情块中间可以嵌套剧情块。</p>
+    </div>
+
+    <div class="step">
+      <span class="label">第 6 步</span>
+      <h3 id="bp6" style="margin-top:4px">配乐与音效</h3>
+      <p>和其他素材一样，音乐和音效可以拖动文件到窗口上传，并拖入文字编辑器添加。<code>&lt;召唤音乐:名称&gt;</code> 可以播放背景音乐，背景音乐会循环播放；<code>&lt;召唤音效:名称&gt;</code> 可以播放音效，与背景音乐不同，音效只会播放一次。</p>
+      <pre><code>&lt;召唤音乐:低沉弦乐&gt;
+我拧动钥匙，锁"咔"地开了。&lt;召唤音效:开锁&gt;</code></pre>
+    </div>
+
+    <div class="step">
+      <span class="label">第 7 步</span>
+      <h3 id="bp7" style="margin-top:4px">补齐素材</h3>
+      <p>如果你使用了AI编剧功能，或是手写了一些素材召唤指令，但还没有上传相应素材，则会出现「素材待办」按钮，位置在文字编辑器的右上角。点击后可以方便地进行素材补全。</p>
+      <p class="tip"><span class="ic">!</span>小提示：先一口气把文本写完（召唤指令里的名字可以随便编），再统一去素材库补素材，效率最高。待办还支持「悬停某行 + 按 Ctrl+V 贴图」快速补齐，详见<a href="#adv-todo">素材待办</a>。</p>
+    </div>
+
+    <div class="step">
+      <span class="label">第 8 步</span>
+      <h3 id="bp8" style="margin-top:4px">预览与导出</h3>
+      <p>如果你写了比较多的指令，在文本编辑器中不太直观，则可以打开「👁 预览」或「▥ 分屏」功能，即可实时查看实际游戏中的效果，边看边调。点击画面右上角的「试玩」，可以进行真实游玩来体验游玩效果。</p>
+      <p class="tip"><span class="ic">!</span>小提示：文字预览的快捷键是右 Ctrl，游戏试玩的快捷键是 F12。</p>
+      <p>导出成品：点「导出成品 ▾」→</p>
+      <ul>
+        <li><code>单 HTML</code>：生成一个文件，直接发给别人就能玩。</li>
+        <li><code>标准结构压缩包</code>：图片 / 音频外置为文件，方便你后期替换修改。</li>
+        <li><code>工程备份</code>：把整个工程打包（含素材 / 变量 / 关键线索 / 创作设定），用于换设备或跨链接迁移，<b>不</b>含 AI Key。</li>
+      </ul>
+      <p>到这步，你的第一个文字游戏就完成了，恭喜！🎉</p>
+    </div>
+
+    <!-- ============ AI 功能 ============ -->
+    <h2 id="ai"><span class="n">▌</span>AI 功能：让 AI 帮你写剧情</h2>
+    <p>编辑器内置 AI 编剧，可以帮你生成、续写或扩写剧本。</p>
+    <p><b>前置设置流程：</b></p>
+    <ol>
+      <li>首次使用点「AI 编剧」会提示先完成信息补全，本工具暂时仅支持 deepseek，在「设置 → AI编剧 →模型与密钥」里填入你的 API Key 并保存。填写简介（一句话概括整个故事）、大纲（故事具体发展脉络）、世界观（是现代都市？还是古代？或是异世界？）、文风（零度叙事、温馨、冷酷、热血等等）。</li>
+      <li>设置完成后关闭设置页面即可，同一项目以后不用重复设置。</li>
+    </ol>
+    <p><b>使用流程：</b></p>
+    <ol>
+      <li>点文字编辑器上方的工具栏「AI」按钮。选择生成模式，补充备注，之后点击「生成」。用户审阅后即可插入正文。</li>
+      <li>不满意可点「重新生成」，或直接手动改文字。</li>
+    </ol>
+    <p>AI 写出的初稿建议人工过一遍：检查分支是否闭环（每个分支块都有 <code>&lt;跳回&gt;</code>）、素材名是否齐全。</p>
+
+    <h3 id="ai-clue">关键线索提取（AI）</h3>
+    <p>写长篇互动剧情时，伏笔容易前后对不上。编辑器内置了一个 AI「关键线索」提取助手，会通读你的大纲、简介与全部正文，自动梳理出<b>可能影响整体剧情走向的线索</b>（人物特征、未解角色、未使用的物件、隐患……共 9 类），帮你在续写时保持一致。</p>
+    <ul>
+      <li><b>在设置页</b>：进入「设置 → AI编剧」，找到「关键线索」文本框，点「提取关键线索」按钮。AI 会填入完整线索清单，并附一段<b>变更说明</b>（本次新增 / 移除 / 修改了哪些）。</li>
+      <li><b>在编辑区上方</b>：工具栏有「提取关键线索」按钮（带放大镜图标），<b>增量优先</b>——只把「自上次提取以来变化的剧情段」发给 AI，省额度；首次则发全文。</li>
+      <li><b>再次提取</b>：会对现有线索做<b>增 / 删 / 改</b>的增量更新，而不是从头重写。</li>
+      <li><b>智能提醒</b>：当你改的剧情相对上次提取多了/少了超过约 2000 字，编辑区上方会自动提示「建议更新一次线索」。</li>
+      <li><b>类别前缀</b>：每条线索建议用 <code>[类别]</code> 前缀，例如 <code>[人物特征] 左脸有一道旧疤</code>、<code>[隐患] 墙角的机关似乎通向地下</code>。也可在文本框里手动维护。</li>
+      <li><b>存储</b>：线索只存在本机（创作设定层），<b>不会进入导出的成品</b>，纯粹是你写作的辅助手记。</li>
+    </ul>
+
+    <!-- ============ 界面说明 ============ -->
+    <h2 id="ui"><span class="n">▌</span>界面说明：各个区域与按钮的作用</h2>
+    <p>编辑器界面由三块组成：<b>顶部工具栏</b>（右上角）、中间的 <b>文字编辑器 + 文字工具箱</b>，以及右侧的 <b>素材库</b>。下面按区域介绍每个按钮的作用。</p>
+
+    <h3>顶部工具栏（右上角）</h3>
+    <ul>
+      <li><b>导出</b>：把做好的游戏导出为可分享的文件（单 HTML / 标准结构压缩包 / 工程备份）。</li>
+      <li><b>素材待办清单</b>：列出素材库里还缺的素材（比如写了 <code>&lt;召唤背景:名称&gt;</code> 但还没上传的图）。点开可逐个补充。</li>
+      <li><b>设置</b>：进入设置页。AI 编剧的 API Key 与故事信息（简介 / 大纲 / 世界观 / 文风）在这里填写；<b>关键线索</b>文本框与提取按钮也在这里。</li>
+    </ul>
+
+    <h3>文字编辑器上方工具栏</h3>
+    <ul>
+      <li><b>AI</b>：打开 AI 编剧，选择生成模式后生成、续写或扩写剧情。</li>
+      <li><b>提取关键线索</b>：手动触发 AI 增量提取线索（带放大镜图标，会消耗一些 Deepseek 额度）。</li>
+      <li><b>审阅(N)</b>：显示 / 隐藏右侧的「试玩审阅」面板；<code>N</code> 是当前已记录的修改意见条数。</li>
+      <li><b>文字预览（快捷键 右 Ctrl）</b>：快速查看文字排版与标记效果。</li>
+      <li><b>游戏试玩（快捷键 F12）</b>：以游戏形式试玩当前剧情；试玩顶栏有「审阅」按钮可在游玩中记修改意见。</li>
+    </ul>
+
+    <h3>文字工具箱</h3>
+    <p>文字工具箱里是写作时最常用的插入按钮，点一下就在光标处插入对应标记：</p>
+    <ul>
+      <li><b>停顿（快捷键 Tab）</b>：插入 <code>&lt;停顿&gt;</code>，玩家点一下才继续。</li>
+      <li><b>加粗 / 斜体 / 下划线 / 删除线</b>：分别插入 <code>[b][/b]</code>、<code>[i][/i]</code>、<code>[u][/u]</code>、<code>[s][/s]</code>。</li>
+      <li><b>颜色</b>：插入 <code>[color=颜色值][/color]</code>，给文字上色。</li>
+      <li><b>发光</b>：插入 <code>[glow=颜色值][/glow]</code>，让文字带发光效果。</li>
+      <li><b>字号</b>：插入 <code>[size=数值][/size]</code>，调整文字大小。</li>
+      <li><b>居中</b>：插入 <code>[center][/center]</code>，让文字居中。</li>
+      <li><b>瞬显</b>：插入 <code>[瞬显][/瞬显]</code>，让这段文字一次性出现而不是逐字显示。</li>
+    </ul>
+
+    <h3>右侧素材库</h3>
+    <p>右侧素材库按素材类型分页，把里面的素材拖到文字编辑器，就会自动插入对应的召唤指令：</p>
+    <ul>
+      <li><b>背景库</b>：上传背景图，或用「渐变 / 噪波生成器」生成。拖入编辑器插入 <code>&lt;召唤背景:名称&gt;</code>。上传背景图会自动弹出「图片处理面板」（见<a href="#adv-img">图片处理面板</a>）。</li>
+      <li><b>叠层库</b>：上传透明 PNG 角色或物件。拖入编辑器插入 <code>&lt;召唤叠层:名称&gt;</code>，叠层显示在背景之上、文字之下；再次召唤会替换当前叠层，点击库顶部的「清除叠层」可插入 <code>&lt;清除叠层&gt;</code>，隐藏当前叠层并继续剧情。</li>
+      <li><b>物品库</b>：上传 / 导入 3D 物品（GLB 或场景包），拖入编辑器插入 <code>&lt;召唤物品:名称&gt;</code>。</li>
+      <li><b>音乐库 / 音效库</b>：上传音乐或音效，拖入编辑器插入对应的召唤指令。上传音频会<b>自动弹出「音频处理面板」</b>，可裁切多余段落、降采样率 / 转单声道压缩体积（见<a href="#adv-audio">音频处理面板</a>）。</li>
+      <li><b>剧情块库</b>：管理剧情块（默认有「主剧情」）。可切换「主剧情 / 新剧情」，用来做分支。</li>
+      <li><b>变量库</b>：集中定义变量（名字 / 类型 / 初值）。从变量库把变量拖入正文，会插入 <code>{变量名}</code> 读取占位并弹出浮窗选择赋值 / 增减 / 作为条件。详见<a href="#adv-var">变量系统</a>。</li>
+    </ul>
+
+    <!-- ============ 详细介绍 ============ -->
+    <h2 id="ref"><span class="n">▌</span>详细介绍：原生标记语法参考</h2>
+
+    <h3 id="ref-bracket-grp" style="color:var(--blue)"><span class="n">▌</span>方括号标记（[ ]）</h3>
+    <h3 id="ref-bracket">方括号标签（BBCode 表现类）</h3>
+    <table>
+      <tr><th>标签</th><th>作用</th></tr>
+      <tr><td><code>[b]…[/b]</code></td><td>加粗</td></tr>
+      <tr><td><code>[i]…[/i]</code></td><td>斜体</td></tr>
+      <tr><td><code>[u]…[/u]</code></td><td>下划线</td></tr>
+      <tr><td><code>[s]…[/s]</code></td><td>删除线</td></tr>
+      <tr><td><code>[color=色值]…[/color]</code></td><td>文字颜色</td></tr>
+      <tr><td><code>[glow=色值]…[/glow]</code></td><td>发光</td></tr>
+      <tr><td><code>[size=数字]…[/size]</code></td><td>字号</td></tr>
+      <tr><td><code>[center]…[/center]</code></td><td>居中</td></tr>
+      <tr><td><code>[瞬显]…[/瞬显]</code></td><td>直接出现</td></tr>
+    </table>
+    <p class="tip"><span class="ic">!</span>小提示：正文里还可以写 <code>{变量名}</code> 读取变量当前值（见<a href="#adv-var">变量系统</a>），这是方括号写法之外另一种「动态占位」。</p>
+
+    <h3 id="ref-color">颜色对照表</h3>
+    <p><code>[color=]</code> 等号后必须填浏览器能识别的 CSS 颜色：十六进制（<code>#ff4500</code>）或英文色名（<code>red</code>），填中文无效。以下是一些常见的示例颜色，其他可以在网上查询：</p>
+    <table>
+      <tr><th>色</th><th>十六进制</th><th>色</th><th>十六进制</th></tr>
+      <tr><td><span class="sw" style="background:#e6322e"></span>红</td><td><code>#e6322e</code></td><td><span class="sw" style="background:#8b1a1a"></span>暗红/血</td><td><code>#8b1a1a</code></td></tr>
+      <tr><td><span class="sw" style="background:#ff6a00"></span>橙/火</td><td><code>#ff6a00</code></td><td><span class="sw" style="background:#d4af37"></span>金</td><td><code>#d4af37</code></td></tr>
+      <tr><td><span class="sw" style="background:#ffd400"></span>黄</td><td><code>#ffd400</code></td><td><span class="sw" style="background:#2ecc71"></span>绿</td><td><code>#2ecc71</code></td></tr>
+      <tr><td><span class="sw" style="background:#39ff14"></span>毒绿/荧光绿</td><td><code>#39ff14</code></td><td><span class="sw" style="background:#3aa6c9"></span>青/水蓝</td><td><code>#3aa6c9</code></td></tr>
+      <tr><td><span class="sw" style="background:#2d6cdf"></span>蓝</td><td><code>#2d6cdf</code></td><td><span class="sw" style="background:#8e44ad"></span>紫</td><td><code>#8e44ad</code></td></tr>
+      <tr><td><span class="sw" style="background:#ff7eb6"></span>粉</td><td><code>#ff7eb6</code></td><td><span class="sw" style="background:#f5f5f5"></span>白</td><td><code>#f5f5f5</code></td></tr>
+      <tr><td><span class="sw" style="background:#9aa0a6"></span>灰</td><td><code>#9aa0a6</code></td><td><span class="sw" style="background:#1a1a1a"></span>黑</td><td><code>#1a1a1a</code></td></tr>
+      <tr><td><span class="sw" style="background:#8b5a2b"></span>棕</td><td><code>#8b5a2b</code></td><td><span class="sw" style="background:#c0c0c0"></span>银</td><td><code>#c0c0c0</code></td></tr>
+    </table>
+
+    <h3 id="ref-angle-grp" style="color:var(--blue)"><span class="n">▌</span>尖括号指令（&lt; &gt;）</h3>
+    <h3 id="ref-angle">尖括号指令（整行指令）</h3>
+    <table>
+      <tr><th>指令</th><th>作用</th></tr>
+      <tr><td><code>&lt;停顿&gt;</code></td><td>创建停顿，玩家点一下才会继续剧情</td></tr>
+      <tr><td><code>&lt;标题:文字&gt;</code></td><td>创建一个浮动的大号文字（可以在文字部分写 BBCODE）</td></tr>
+      <tr><td><code>&lt;分割线:文字&gt;</code></td><td>插入带文字的分割线；文字留空则普通横线。</td></tr>
+      <tr><td><code>&lt;召唤背景:名称&gt;</code></td><td>更换背景图。</td></tr>
+      <tr><td><code>&lt;召唤叠层:名称&gt;</code></td><td>显示叠层库中的透明 PNG 角色或物件；显示在背景之上、文字之下，新叠层会替换当前叠层。</td></tr>
+      <tr><td><code>&lt;清除叠层&gt;</code></td><td>隐藏当前叠层，然后立即继续执行下一句剧情。该指令需要独占一行。</td></tr>
+      <tr><td><code>&lt;召唤物品:名称&gt;</code></td><td>在屏幕展示可交互的 3D 物品。</td></tr>
+      <tr><td><code>&lt;召唤音乐:名称&gt;</code></td><td>播放音乐</td></tr>
+      <tr><td><code>&lt;停止音乐&gt;</code></td><td>让当前背景音乐渐出并停止。</td></tr>
+      <tr><td><code>&lt;召唤音效:名称&gt;</code></td><td>播放音效</td></tr>
+      <tr><td><code>&lt;选项:"按钮文字",剧情块名&gt;</code></td><td>在游戏底部生成选项按钮（最多 6 个），点它进入对应分支块</td></tr>
+      <tr><td><code>&lt;选项:"按钮文字",块名,条件:表达式&gt;</code></td><td>带条件的选项：条件不满足时该按钮不会显示。详见<a href="#adv-var">变量系统</a>。</td></tr>
+      <tr><td><code>&lt;变量:名=值&gt;</code></td><td>给变量赋值（数字 / 布尔 / 文本）。独占整行。可链式 <code>&lt;变量:金币=10;生命-1&gt;</code>。</td></tr>
+      <tr><td><code>&lt;玩家输入变量:名,"提示"&gt;</code></td><td>弹出文本输入框，把玩家输入保存到文本变量；最多 8 个字符，空提交会保留原值。</td></tr>
+      <tr><td><code>&lt;随机跳转:块A,块B&gt;</code></td><td>随机进入一个剧情块；可在块名后加 <code>=正整数</code> 设置权重，如 <code>块A=3,块B=1</code>。</td></tr>
+      <tr><td><code>&lt;随机句子:"文本A","文本B"&gt;</code></td><td>随机显示一句文本；同样支持在引号外写权重，如 <code>"常见"=3,"稀有"=1</code>。</td></tr>
+      <tr><td><code>&lt;跳回&gt;</code></td><td>通常放在分支块的结尾；剧情会跳回上一个剧情块并继续剧情。</td></tr>
+      <tr><td><code>&lt;跳回重选&gt;</code></td><td>分支块的结尾；剧情会跳回上一个剧情块并重选选项。</td></tr>
+    </table>
+    <p class="tip"><span class="ic">!</span>小提示：<code>&lt;选项:"按钮文字",剧情块名&gt;</code> 可以在同一行写多个，不要换行。带条件选项（<code>条件:表达式</code>）只在当前行内生效，不要单独换行。</p>
+    <p>分支块末尾通常以 <code>&lt;跳回&gt;</code> 或 <code>&lt;跳回重选&gt;</code> 收尾，如果没有添加 <code>&lt;跳回&gt;</code> 或者 <code>&lt;跳回重选&gt;</code>，剧情会在此结束。</p>
+
+    <!-- ============ 进阶功能 ============ -->
+    <h2 id="adv"><span class="n">▌</span>进阶功能</h2>
+    <p>下面这些功能能显著提升长篇互动剧情的写作效率与完成度：状态管理（变量）、伏笔一致性（关键线索）、游玩中改稿（试玩审阅）、图片批量调色（图片处理面板）、音频裁切压缩（音频处理面板）、素材快速补齐（素材待办）。</p>
+
+    <h3 id="adv-play">游玩体验与存档</h3>
+    <ul>
+      <li><b>长文 / galgame 模式</b>：在「设置 → 外观」切换。长文模式会累积并滚动显示文字；galgame 模式每段文字显示在底部文本框中，停顿、分割线、标题和选项都会开启新段。</li>
+      <li><b>自动播放与历史</b>：成品顶部可开启自动播放（每次停顿约 2.5 秒后继续），也可打开「历史」回看本次游玩中已读的文字。</li>
+      <li><b>存档 / 读档</b>：成品支持多个本地存档槽；在支持的平台中会尝试同步云存档。存档会保存当前剧情位置、已选分支、背景音乐与变量状态。</li>
+      <li><b>外观</b>：可设置开场背景和音乐、水印、文字对比度、字体与字号、标题颜色，以及 galgame 文本框透明度。</li>
+    </ul>
+
+    <h3 id="adv-branch">分支、随机与玩家输入</h3>
+    <ul>
+      <li><b>剧情块管理</b>：剧情块支持新建、复制、改名和删除；改名会同步更新选项和跳转引用。拖动剧情块时，可选择插入选项或直接跳转。</li>
+      <li><b>分支图</b>：可打开剧情分支图查看剧情块、选项和随机跳转之间的关系，方便检查分支闭环。</li>
+      <li><b>随机指令</b>：<code>&lt;随机跳转&gt;</code> 用于随机分支，<code>&lt;随机句子&gt;</code> 用于随机文案；两者的权重均为正整数，缺省权重为 1。</li>
+      <li><b>玩家输入</b>：先在变量库创建文本变量，再使用 <code>&lt;玩家输入变量:变量名,"提示文字"&gt;</code> 收集昵称、答案等内容；后续正文用 <code>{变量名}</code> 显示。</li>
+    </ul>
+
+    <h3 id="adv-assets">素材、3D 与发布</h3>
+    <ul>
+      <li><b>图片与叠层</b>：背景和叠层支持 PNG、JPG、WebP、GIF 等图片；GIF 默认归入叠层库。背景与叠层之间可以互移或复制，引用会同步改写。</li>
+      <li><b>3D 物品</b>：导入 GLB 或场景包后，玩家可在成品中检视物体；可把结束物体绑定到指定剧情块，触发后进入该分支。场景包携带的视角与 HDRI 环境设置会随成品保留。</li>
+      <li><b>素材处理</b>：图片处理面板可生成或调整背景；音频处理面板可裁切、压缩和转码音频。素材待办会汇总脚本中已引用但尚未导入的素材。</li>
+      <li><b>导出与 Toy 发布</b>：可导出单 HTML、可修改的标准结构压缩包或工程备份；「设置 → Toy 发布」可导出单文件成品并打开 B 站 Toy 上传页。</li>
+    </ul>
+
+    <h3 id="adv-var">变量系统：用状态驱动剧情</h3>
+    <p>变量让你记录玩家的游戏状态——金币、生命值、是否拿到了钥匙——并据此改变剧情走向或选项是否可用。变量在运行时自动初始化为你在变量库里填的初值。</p>
+    <p class="tip"><span class="ic">!</span>变量的「唯一权威」是<b>素材库 · 变量库</b>：所有变量都应先在这里定义，正文里再引用它。如果不确定旧稿的变量是否规范，点变量库上方的<b>「修复检查」</b>按钮，一键扫描全部剧情块并修复。</p>
+
+    <h3>① 定义变量</h3>
+    <p>右侧素材库切到 <b>变量库</b> tab → 点「＋ 新建变量」，填三项：</p>
+    <ul>
+      <li><b>名字</b>：唯一标识符，正文用 <code>{名字}</code> 读取（只能含中文 / 英文 / 数字 / 下划线）。</li>
+      <li><b>类型</b>：<code>数字</code> / <code>布尔</code>（真或假）/ <code>文本</code>。类型决定它能做什么：数字能加减和比较大小，布尔用于开关判断，文本只能显示和被玩家输入覆盖。</li>
+      <li><b>初值</b>：游戏开始时的默认值。</li>
+    </ul>
+
+    <h3>② 读取变量（写在正文中）</h3>
+    <pre><code>你的金币是 {金币}。
+门的状态：{解锁:已开门|还没开}</code></pre>
+    <ul>
+      <li><code>{金币}</code>：直接替换为当前数值 / 文本；布尔变量显示「真」/「假」。</li>
+      <li><code>{解锁:已开门|还没开}</code>：仅布尔变量可用，<b>真</b>显示「已开门」、<b>假</b>显示「还没开」（中文冒号分隔）。</li>
+      <li>未定义的变量会<b>原样保留</b>不替换；写 <code>{{金币}}</code>（双花括号）可转义，显示字面 <code>{金币}</code>。</li>
+    </ul>
+
+    <h3>③ 修改变量（整行指令）</h3>
+    <pre><code>&lt;变量:金币=10&gt;
+&lt;变量:生命-3&gt;
+&lt;变量:解锁=true&gt;
+&lt;变量:金币=10;生命-1&gt;
+&lt;变量:a=1&gt;&lt;变量:b=2&gt;
+&lt;变量:台词=你好 世界&gt;</code></pre>
+    <ul>
+      <li><code>=</code> 赋值；<code>+N</code> / <code>-N</code> 做增减，仅对数字类型有效（编辑器会检查并对非数字加减给出提醒）。</li>
+      <li>赋值时<b>值可以包含空格、也可以留空</b>：<code>&lt;变量:台词=你好 世界&gt;</code> 存入「你好 世界」，<code>&lt;变量:名字=&gt;</code> 存入空字符串。写 <code>true</code> / <code>false</code> 会存成布尔，纯数字存成数字，其余按文本处理。</li>
+      <li>一行可写多个操作：<b>每个 &lt;变量:…&gt; 标签一个操作</b>（如 <code>&lt;变量:a=1&gt;&lt;变量:b=2&gt;</code>），也兼容老版本在单个标签内用<b>分号</b>分隔的写法 <code>&lt;变量:金币=10;生命-1&gt;</code>。</li>
+      <li>这些指令<b>独占一行</b>，执行时不显示任何文字，只改变变量值。无法识别的 <code>&lt;变量:…&gt;</code> 行会按普通文本保留（导出与编辑器行为一致），修复检查会帮你把它们找出来。</li>
+      <li><b>便捷插入</b>：从变量库把变量<b>拖入</b>正文，会自动插入 <code>{名字}</code> 读取占位，并弹出一个小浮窗供你选「赋值 / +1 / -1 / 作为条件」——选好即生成对应指令。</li>
+    </ul>
+
+    <h3>④ 选项条件（让按钮按需出现）</h3>
+    <p>给选项加 <code>条件:表达式</code>，只有条件成立时按钮才渲染；不成立则玩家完全看不到这个选项（一行内所有选项都不满足时自动跳过该行继续推进）。</p>
+    <pre><code>&lt;选项:"用钥匙开门","开门块",条件:钥匙==true&gt;
+&lt;选项:"贿赂守卫","密道块",条件:金币&gt;=50&gt;
+&lt;选项:"强攻","战斗块",条件:力量&gt;=20 &amp;&amp; !警觉&gt;
+&lt;选项:"谈判","谈判块",条件:(声望&gt;=10 || 金币&gt;=100) &amp;&amp; !被通缉&gt;</code></pre>
+    <p>条件表达式支持：</p>
+    <ul>
+      <li>比较运算符：<code>&gt;=</code> <code>&lt;=</code> <code>==</code> <code>!=</code> <code>&gt;</code> <code>&lt;</code> <code>=</code>（旧写法 <code>=</code> 等价 <code>==</code>）。字符串值请加引号：<code>条件:状态=="变身"</code>。</li>
+      <li>逻辑运算：<code>&amp;&amp;</code>（且）、<code>||</code>（或）、<code>!</code>(非)，支持<b>括号分组</b>。优先级为 <code>!</code> 高于 <code>&amp;&amp;</code> 高于 <code>||</code>——<code>a&amp;&amp;b||c</code> 按「(a 且 b) 或 c」计算。</li>
+      <li>布尔直接写变量名即「为真」：<code>条件:钥匙</code> 等价于 <code>条件:钥匙==true</code>；<code>条件:!陷阱</code> 表示「陷阱未触发」。</li>
+      <li>语法错误（如括号不配对、缺操作数）会在校验和修复检查中提示，不会静默算错。</li>
+    </ul>
+    <p class="tip"><span class="ic">!</span>小提示：用浮窗选「作为条件」时，工具会自动把当前变量拼成 <code>,条件:变量名</code> 追加到光标所在那行的选项里——所以要先确保光标在 <code>&lt;选项:…&gt;</code> 这一行。</p>
+
+    <h3>⑤ 修复检查：排查全部剧情块的变量问题</h3>
+    <p>入口：<b>素材库 → 变量库 → 「修复检查」按钮</b>。它会一次性扫描主剧情和全部剧情块，跨模块汇总问题：</p>
+    <ul>
+      <li><b>未声明赋值</b>（错误）：正文里 <code>&lt;变量:金帀=5&gt;</code> 但变量库里没有「金帀」——多半是错别字。提供两个一键修复：「创建该变量」或「改名为相似的正确变量」（如金帀 → 金币，改名会同步更新所有剧情块里的引用）。</li>
+      <li><b>未定义读取 / 条件引用</b>（提醒）：用了 <code>{某变量}</code> 或在条件里引用了未定义的变量。</li>
+      <li><b>坏指令</b>（错误）：<code>&lt;变量:…&gt;</code> 格式不对，可一键删除该指令。</li>
+      <li><b>条件异常</b>：空条件或无法解析的表达式。</li>
+      <li><b>类型混用</b>（提醒）：如对文本变量做 <code>+1</code>、对非布尔变量用 <code>{名:真|假}</code> 显示映射。</li>
+      <li><b>建议类</b>：从未被赋值的变量（永远等于初值）、赋了值但从不读取的「死变量」。</li>
+    </ul>
+    <p>每个问题都标注所在<b>剧情块和行号</b>，点「定位」直接跳到那一行；「忽略」仅本次会话生效。预览 / 导出前的编译检查也会展示其中的错误与提醒。</p>
+
+    <h3 id="adv-clue">关键线索：保持伏笔一致</h3>
+    <p>详见上方 <a href="#ai-clue">AI 功能 · 关键线索提取</a>。小结：</p>
+    <ul>
+      <li>入口有两处：<b>设置 → AI编剧</b>（带变更说明）与 <b>编辑区上方「提取关键线索」</b>（增量优先、省额度）。</li>
+      <li>AI 把线索归为 9 类，建议用 <code>[类别]</code> 前缀书写，例如：
+        <code>[人物特征]</code> <code>[人物性格]</code> <code>[人物创伤]</code> <code>[未解角色]</code>
+        <code>[未使用物件]</code> <code>[强力物件]</code> <code>[未解事件]</code> <code>[重大影响事件]</code> <code>[隐患]</code>。</li>
+      <li>每次提取都是<b>增量增删改</b>，结果是完整清单；正文改动超过约 2000 字会自动提示更新。</li>
+      <li>线索只存本机（创作设定），<b>不进导出成品</b>。</li>
+    </ul>
+
+    <h3 id="adv-review">试玩审阅：边玩边记修改意见</h3>
+    <p>写稿时你常常需要在「游玩体验」和「改稿」之间反复横跳。审阅功能让你在试玩过程中，随时把「这一句想改什么」记下来，回到编辑器就能看到。</p>
+    <ol>
+      <li>点编辑器上方「游戏试玩」（或 F12）打开游戏，试玩顶栏（iframe 外）最显眼处有一个 <b>审阅</b> 按钮。</li>
+      <li>玩到任意一句剧情，随时点 <b>审阅</b> → 工具自动取出「当前正在显示的剧情片段」作为上下文 → 弹出输入框。</li>
+      <li>在框里写修改意见（必填），可顺带带上那句剧情的片段做引用 → 点 <b>保存</b>。</li>
+      <li>保存后：
+        <ul>
+          <li><b>编辑器右侧</b>「审阅」面板自动展开，按剧情块分组列出每条意见；引用片段带<b>红色波浪下划线</b>，意见本身橙色底，含时间、<b>跳转</b>（点卡片跳到对应块）、<b>删除</b>。</li>
+          <li><b>主编辑器当前块下方</b>出现一条<b>红色虚线</b>标记「此块有审阅意见」。</li>
+          <li>编辑器头部「<b>审阅(N)</b>」开关显示待处理条数角标，点它可收起 / 展开右侧面板。</li>
+        </ul>
+      </li>
+      <li>之后回到编辑器改稿、再试玩、再补意见都行。</li>
+    </ol>
+    <p class="tip"><span class="ic">!</span>小提示：审阅记录只存本机，<b>不会进入发布的成品</b>（单 HTML / zip 不含这些意见），纯属你的写作辅助。红线是「块级标记」（当前块下方一条红线），右栏里的引用片段才是逐字红波浪下划线。</p>
+
+    <h3 id="adv-img">图片处理面板：上传即调色</h3>
+    <p>你喜欢的后处理效果（像素感、压缩体积）现在做成了可调界面：<b>每次上传背景图都会自动弹出处理面板</b>，参数全可调，满意了再入库。</p>
+    <p><b>触发方式</b>：以下任一路径都会弹出面板——</p>
+    <ul>
+      <li>素材待办里点上传 / 拖文件 / 悬停行 Ctrl+V 贴图；</li>
+      <li>背景库「导入」按钮、或把图片拖进背景库；</li>
+      <li>若一次上传多张，会<b>一张张依次弹出</b>。</li>
+    </ul>
+    <p><b>面板里有什么</b>：</p>
+    <ul>
+      <li><b>并排预览</b>：左「原图」、右「处理后」（像素硬边显示，方便看像素感），下方显示<b>输出体积 + 尺寸</b>。</li>
+      <li><b>分辨率下拉</b>：原始 / 360 / 540 / 720（默认）/ 1080 / 1440（按高度等比缩放）。</li>
+      <li><b>颜色级数滑块</b>：2–64 级（即像素量化的色数）；旁边有「像素量化」开关——<b>关掉就保留原色</b>。</li>
+      <li><b>亮度 / 对比度 / 饱和度</b>三个滑块（−100~100）。</li>
+      <li><b>平滑缩放</b>开关：关掉就是像素硬边放大。</li>
+      <li><b>格式</b>下拉 JPEG / PNG；选 JPEG 时还能调<b>质量</b>滑块（0.4–0.95）。</li>
+      <li>底部按钮：<b>重置</b>（回到默认、也就是你喜欢的那个效果）、<b>用原图</b>（完全不处理）、<b>取消</b>、<b>应用并保存</b>。</li>
+    </ul>
+    <p class="tip"><span class="ic">!</span>小提示：拖动任意滑块，右侧预览会<b>实时刷新</b>（已做防抖），边拖边看；应用后背景库自动切到「背景库」tab 并显示新缩略图。默认参数刻意设成和旧版自动处理一致，所以「应用」即原效果，只有想改时才动手。</p>
+
+    <h3 id="adv-audio">音频处理面板：导入即裁切 + 压缩</h3>
+    <p>音乐 / 音效文件往往很大，<b>现在导入时会自动弹出处理面板</b>，可以裁掉多余段落、降采样率 / 转单声道来压缩体积，全程在<b>浏览器本地完成，不会上传到任何服务器</b>。</p>
+    <p><b>触发方式</b>：从音乐库 / 音效库的「导入」按钮、或把音频文件拖进素材库，都会弹出面板（多张依次弹出）。</p>
+    <p><b>面板里有什么</b>：</p>
+    <ul>
+      <li><b>波形预览</b>：显示整段波形，并用蓝色高亮标出当前<b>裁切区间</b>；下方实时显示「时长 · 采样率 · 声道 · 预估体积」。</li>
+      <li><b>裁切起点 / 终点</b>两个滑块：拖动即可选取要保留的片段（比如剪掉歌曲前奏或尾噪）。</li>
+      <li><b>采样率下拉</b>：原始 / 44100 / 32000 / 22050 / 16000 / 11025 Hz——调低能显著减小体积。</li>
+      <li><b>声道</b>：立体声 / 单声道（单声道再省一半）。</li>
+      <li><b>格式</b>：MP3（体积小，本地 lamejs 编码）/ WAV（无损）；选 MP3 时可调<b>码率</b> 96 / 128 / 192 kbps。</li>
+      <li><b>试听片段</b>：在处理前先听一下当前裁切 + 压缩后的效果。</li>
+      <li>底部按钮：<b>重置</b>（回到默认：全段 + 原始采样率 + 立体声 + MP3 128）、<b>用原文件</b>（完全不处理直接入库）、<b>取消</b>、<b>应用并保存</b>。</li>
+    </ul>
+    <p class="tip"><span class="ic">!</span>小提示：最省体积的组合是「裁掉多余长度 + 采样率 22050 + 单声道 + MP3 128」，一段 5 分钟的立体声音乐能压到原来的几十分之一。如果浏览器不支持某格式（极少见），面板会自动回退成 WAV 并提示。</p>
+
+    <h3 id="adv-todo">素材待办：缺素材也能先写完稿</h3>
+    <p>当你写了 <code>&lt;召唤背景:名称&gt;</code> 等召唤指令、却还没上传对应素材时，文字编辑器右上角会出现「素材待办」按钮。点开后是按素材类型列出的待补全清单，每条带名字和即时预览位。</p>
+    <p><b>几种补齐方式</b>：</p>
+    <ul>
+      <li><b>逐行上传 / 拖文件</b>：在待办面板里点某行上传，或直接把图片 / 文件拖到那一行。</li>
+      <li><b>悬停 + 粘贴图片</b>：鼠标悬在某条<b>背景待办</b>行上，按 <code>Ctrl+V</code>（或右键粘贴）即可把剪贴板里的图片上传进去——<b>支持截图、右键复制的网络图</b>等。焦点在哪都无所谓，只要鼠标悬在那一行。</li>
+      <li><b>上传后自动刷新</b>：背景图上传成功，背景素材库会<b>自动切到「背景库」tab 并刷新</b>，新图立刻显示。</li>
+      <li>该行约 <b>1.6 秒</b>后因「已补齐」自动从待办消失。</li>
+    </ul>
+    <p class="tip"><span class="ic">!</span>小提示：推荐工作流——先一口气把文本和所有召唤指令写完（名字随便编），再统一开「素材待办」一条条补，效率最高。</p>
+
+    <div class="foot">剧情编辑器 · 原生标记写作文档（覆盖 v25.4.53 功能）。所有标记均由编辑器实时渲染，无需任何编译步骤。</div>
+  </main>
+</div>
+
+<script>
+  // 左侧大纲目录：滚动高亮当前章节
+  (function(){
+    const links = Array.from(document.querySelectorAll('.toc a'));
+    const map = {};
+    links.forEach(a => {
+      const id = a.getAttribute('href').slice(1);
+      const el = document.getElementById(id);
+      if (el) map[id] = a;
+    });
+    const targets = Object.keys(map).map(id => document.getElementById(id));
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          links.forEach(l => l.classList.remove('active'));
+          const a = map[e.target.id];
+          if (a) a.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-10% 0px -75% 0px', threshold: 0 });
+    targets.forEach(t => obs.observe(t));
+  })();
+</script>
+</body>
+</html>

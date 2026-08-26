@@ -5,28 +5,33 @@
 
 const LIBS = ['background', 'item', 'overlay', 'music', 'sound'];
 
+// 测试版数据隔离：页面在任何 js 之前定义 window.STORY_EDITOR_NS（如 'test'），
+// 本文件所有 localStorage key 与 IndexedDB 库名都会加该前缀，测试版与正式版数据互不可见。
+// 正式版不定义该变量 → 前缀为空，行为与历史版本完全一致。
+var _NS = (typeof window !== 'undefined' && window.STORY_EDITOR_NS) ? (String(window.STORY_EDITOR_NS) + ':') : '';
+
 // 项目注册表 / 当前项目
-const LS_PROJECTS = 'story-editor:projects';
-const LS_CURRENT = 'story-editor:current';
+const LS_PROJECTS = _NS + 'story-editor:projects';
+const LS_CURRENT = _NS + 'story-editor:current';
 const PROJECT_NS_SEP = '::';
 
 // 单项目版剧情 key（带项目 id 后缀）
-const LS_STORY = 'story-editor:story';        // 节点数组
-const LS_STORY_TEXT = 'story-editor:story-text'; // 原始文本
-const LS_META = 'story-editor:meta';          // 标题等
-const LS_VARS = 'story-editor:vars';          // 变量库（名字/类型/初值）
+const LS_STORY = _NS + 'story-editor:story';        // 节点数组
+const LS_STORY_TEXT = _NS + 'story-editor:story-text'; // 原始文本
+const LS_META = _NS + 'story-editor:meta';          // 标题等
+const LS_VARS = _NS + 'story-editor:vars';          // 变量库（名字/类型/初值）
 
 // 剧情块系统：主剧情 + 其它剧情块。结构 { main: 文本, blocks: { 名称: 文本 } }
-// 主剧情(__MAIN__) 始终存在、置顶、不可删除、游戏默认从它开始。
-const LS_BLOCKS = 'story-editor:blocks';       // 剧情块集合（带项目 id 后缀）
+// 主剧情(__MAIN__) 始终存在、置顶、不可删除，游戏默认从它开始。
+const LS_BLOCKS = _NS + 'story-editor:blocks';       // 剧情块集合（带项目 id 后缀）
 const MAIN_BLOCK = '__MAIN__';                 // 主剧情内部名（界面显示「主剧情」）
 
-// 旧（无项目）全局 key，用于迁移
-const LS_LEGACY_STORY = 'story-editor:story';
-const LS_LEGACY_STORY_TEXT = 'story-editor:story-text';
-const LS_LEGACY_META = 'story-editor:meta';
+// 旧（无项目）全局 key，用于迁移（同样带 NS：测试版下读不到正式版旧数据，天然隔离）
+const LS_LEGACY_STORY = _NS + 'story-editor:story';
+const LS_LEGACY_STORY_TEXT = _NS + 'story-editor:story-text';
+const LS_LEGACY_META = _NS + 'story-editor:meta';
 
-const DB_NAME = 'story-editor';
+const DB_NAME = _NS + 'story-editor';
 const STORE_ASSETS = 'assets';
 const STORE_META = 'meta';
 

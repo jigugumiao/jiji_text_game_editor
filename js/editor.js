@@ -155,7 +155,7 @@
     return { block: e, condition: null };
   }
   // 变量操作：<变量:名=值> / <变量:名+数> / <变量:名-数>（独占一行；一行可含多个，按 <变量:...> 逐个提取）
-  const RE_VAR_OP = /<变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*([=+\-])\s*([^<>]*?)\s*>/g;
+  // 解析统一走 js/story-vars.js（window.StoryVars），编辑器与导出端共用同一实现
   // 玩家输入：<玩家输入变量:变量名,"引导文字">（独占一行；引导文字可空 "")
   const RE_PLAYER_INPUT = /^<玩家输入变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*,\s*"([\s\S]*?)"\s*>$/;
 
@@ -245,14 +245,10 @@
       } else if (RE_RETURN_RECHOOSE.test(t)) {
         flush();
         story.push({ type: 'returnrechoose' });
-      } else if (t.indexOf('<变量:') === 0) {
-        // 提取整行内所有 <变量:...> 操作，合并为一个 varop 节点（与导出端 parseStoryForExport 一致）
-        const ops = [];
-        let vm; RE_VAR_OP.lastIndex = 0;
-        while ((vm = RE_VAR_OP.exec(t)) !== null) {
-          ops.push({ name: vm[1], op: vm[2], val: vm[3].trim() });
-        }
-        if (ops.length) { flush(); story.push({ type: 'varop', ops: ops }); }
+      } else if (t.indexOf('<变量:') === 0 && t.charAt(t.length - 1) === '>') {
+        // 统一走 StoryVars.parseVarLine（与导出端 parseStoryForExport 同源）
+        const pr = window.StoryVars.parseVarLine(t);
+        if (pr.ops.length) { flush(); story.push({ type: 'varop', ops: pr.ops }); }
         else buf.push(line); // 形如 <变量:...> 但格式无法识别 → 当普通文本
       } else if ((m = t.match(RE_PLAYER_INPUT))) {
         flush();
@@ -295,7 +291,7 @@
       else if (n.type === 'randtext') out.push('<随机句子:' + (n.options || []).map(o => '"' + o.text + '"' + (o.weight != null ? '=' + o.weight : '')).join(',') + '>');
       else if (n.type === 'return') out.push('<跳回>');
       else if (n.type === 'returnrechoose') out.push('<跳回重选>');
-      else if (n.type === 'varop') out.push(n.ops.map(o => '<变量:' + o.name + (o.op === '=' ? '=' : o.op) + o.val + '>').join(''));
+      else if (n.type === 'varop') out.push(window.StoryVars.serializeVarOps(n.ops));
       else if (n.type === 'playerinput') out.push('<玩家输入变量:' + n.name + ',"' + (n.prompt || '') + '">');
       else if (n.type === 'options') out.push(n.options.map(o => '<选项:"' + (o.text || '') + '"' + (o.block ? ',' + o.block : '') + '>').join(' '));
     }
@@ -379,13 +375,11 @@
           const opts = parseRandText(m[1]).options.map(function (o) { return '「' + escapeHtml(o.text) + '」' + (o.weight != null ? '(' + o.weight + ')' : ''); }).join('，');
           html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-shuffle"/></svg> 随机句子：' + opts + '</span></div>';
         } else if (t.indexOf('<变量:') === 0) {
-          const ops = [];
-          let vm; RE_VAR_OP.lastIndex = 0;
-          while ((vm = RE_VAR_OP.exec(t)) !== null) {
-            const sym = vm[2] === '=' ? '=' : vm[2];
-            ops.push(escapeHtml(vm[1] + ' ' + sym + ' ' + vm[3].trim()));
-          }
-          html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 变量：' + (ops.join('，') || '（格式有误）') + '</span></div>';
+          const pr = window.StoryVars.parseVarLine(t);
+          const ops = pr.ops.map(function (o) {
+            return escapeHtml(o.name + ' ' + o.op + ' ' + o.val);
+          });
+          html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 变量：' + (ops.join('，') || (pr.bad.length ? '（格式有误）' : '')) + '</span></div>';
         } else if ((m = t.match(RE_PLAYER_INPUT))) {
           html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 玩家输入 → 变量「' + escapeHtml(m[1]) + '」' + (m[2] ? '：' + escapeHtml(m[2]) : '') + '</span></div>';
         } else if (t.indexOf('<选项:') >= 0) {
@@ -2766,7 +2760,9 @@
       renderDialogueBlocks(list);
     } else if (activeLib === 'variable') {
       tools.innerHTML = '<button class="btn" id="t-var-add"><svg class="ico" aria-hidden="true"><use href="#ic-plus"/></svg> 新建变量</button>'
+        + '<button class="btn" id="t-var-fix" style="margin-left:8px"><svg class="ico" aria-hidden="true"><use href="#ic-alert"/></svg> 修复检查</button>'
         + '<div class="lib-tools-row lib-hint">正文用 {变量名} 读取、&lt;变量:名=值&gt; 赋值、&lt;选项:"文字",块名,条件:表达式&gt; 做条件选项</div>';
+      tools.querySelector('#t-var-fix').onclick = () => openVarFixer();
       tools.querySelector('#t-var-add').onclick = () => {
         const vars = window.Storage.getVars();
         vars.push({ name: '', type: 'number', value: 0 });
@@ -2783,6 +2779,157 @@
 
   // 变量改名：把所有剧情块正文里对该变量的引用一并改掉（全局变量，需遍历所有块）
   // 覆盖：{旧名} / {旧名:格式}、<变量:旧名=…> / +N / -N、<玩家输入变量:旧名,…>、<选项:…,条件:旧名…> 条件中的变量名
+  // ============ 变量修复检查器（旧内容迁移 / 跨模块一致性修复） ============
+  // StoryVars.analyze 扫描全部剧情块（主剧情 + 各分支块）后，在这里集中展示与一键修复。
+  // 多模块注意：每个问题都携带所属块名与行号；修复时按块写回，
+  // 当前编辑中的块走 textarea + commitEdit（保持撤销栈），其它块直接写 Storage。
+  let _varFixPanel = null;
+  const _varFixDismissed = new Set(); // 会话级忽略：kind|block|line|name|raw
+
+  function _varFixKey(is) {
+    return is.kind + '|' + (is.block || '') + '|' + (is.line || 0) + '|' + (is.name || '') + '|' + (is.raw || '');
+  }
+
+  function collectVarFixIssues() {
+    const blocksMap = {};
+    window.Storage.listBlockNames().forEach(nm => {
+      blocksMap[nm] = (nm === activeBlock) ? storyText.value : (window.Storage.getBlockText(nm) || '');
+    });
+    return window.StoryVars.analyze(blocksMap, window.Storage.getVars()).issues
+      .filter(is => !_varFixDismissed.has(_varFixKey(is)));
+  }
+
+  function ensureVarFixPanel() {
+    if (_varFixPanel) return _varFixPanel;
+    const panel = document.createElement('div');
+    panel.id = 'var-fix-panel';
+    panel.className = 'hidden';
+    panel.innerHTML =
+      '<div class="vfx-head">' +
+        '<div class="vfx-title"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 变量修复检查</div>' +
+        '<button id="vfx-close" class="vfx-close" title="关闭">✕</button>' +
+      '</div>' +
+      '<div class="vfx-summary" id="vfx-summary"></div>' +
+      '<div class="vfx-body" id="vfx-list"></div>' +
+      '<div class="vfx-foot"><span class="vfx-hint">扫描范围：主剧情 + 全部剧情块。「忽略」仅本次会话生效 · ESC 关闭</span></div>';
+    document.body.appendChild(panel);
+    panel.querySelector('#vfx-close').addEventListener('click', closeVarFixer);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && _varFixPanel && !_varFixPanel.classList.contains('hidden')) closeVarFixer();
+    });
+    _varFixPanel = panel;
+    return panel;
+  }
+
+  function closeVarFixer() { if (_varFixPanel) _varFixPanel.classList.add('hidden'); }
+
+  function openVarFixer() {
+    ensureVarFixPanel();
+    renderVarFixer();
+    _varFixPanel.classList.remove('hidden');
+  }
+
+  const VFX_KIND_LABEL = {
+    undeclared_write: '未声明赋值', undeclared_read: '未定义读取', malformed_tag: '坏指令',
+    cond_parse_error: '条件异常', type_mismatch: '类型混用',
+    never_written: '从未赋值', dead_var: '死变量',
+  };
+
+  function renderVarFixer() {
+    const all = collectVarFixIssues();
+    const order = { error: 0, warning: 1, info: 2 };
+    all.sort((a, b) => (order[a.severity] - order[b.severity]));
+    const errN = all.filter(i => i.severity === 'error').length;
+    const warnN = all.filter(i => i.severity === 'warning').length;
+    const infoN = all.length - errN - warnN;
+    $('#vfx-summary').innerHTML =
+      (errN ? '<b style="color:#ff6677">' + errN + ' 个错误</b>' : '<b style="color:#4ade80">无错误</b>')
+      + (warnN ? ' &nbsp;<b style="color:#f0b429">' + warnN + ' 个提醒</b>' : '')
+      + (infoN ? ' &nbsp;<span style="color:#9aa3b2">' + infoN + ' 条建议</span>' : '');
+    const list = $('#vfx-list');
+    list.innerHTML = '';
+    if (!all.length) {
+      list.innerHTML = '<div class="empty-tip" style="padding:30px;text-align:center">没有发现变量问题，所有剧情块的变量引用都是干净的。</div>';
+      return;
+    }
+    all.forEach(is => {
+      const row = document.createElement('div');
+      row.className = 'vfx-item vfx-' + is.severity;
+      const loc = is.block ? ('【' + escapeHtml(is.block) + '】' + (is.line ? ('第 ' + is.line + ' 行') : '')) : '';
+      const meta = [];
+      if (loc) meta.push(loc);
+      meta.push(VFX_KIND_LABEL[is.kind] || is.kind);
+      row.innerHTML = '<div class="vfx-msg">' + escapeHtml('[' + meta.join(' · ') + '] ' + is.message) + '</div>';
+      const btns = document.createElement('div');
+      btns.className = 'vfx-actions';
+      (is.fixes || []).forEach(fix => {
+        const b = document.createElement('button');
+        b.className = 'btn btn-sm';
+        if (fix.type === 'create_var') {
+          b.textContent = '创建变量「' + fix.name + '」（' + ({ number: '数字', boolean: '布尔', text: '文本' }[fix.varType] || fix.varType) + '）';
+          b.onclick = () => { if (applyVarFixCreate(fix)) renderVarFixer(); };
+        } else if (fix.type === 'rename_var') {
+          b.textContent = '改名为「' + fix.to + '」';
+          b.onclick = () => {
+            if (!confirm('把全部剧情块里的「' + fix.from + '」改名为「' + fix.to + '」？')) return;
+            const n = renameVarEverywhere(fix.from, fix.to);
+            toast(n ? ('已更新 ' + n + ' 个剧情块中的引用') : '没有需要更新的引用');
+            renderVarFixer();
+          };
+        } else if (fix.type === 'remove_tag') {
+          b.textContent = '删除该指令';
+          b.onclick = () => { if (applyVarFixRemoveTag(fix)) renderVarFixer(); };
+        }
+        btns.appendChild(b);
+      });
+      if (is.block && is.line) {
+        const jump = document.createElement('button');
+        jump.className = 'btn btn-sm';
+        jump.textContent = '定位';
+        jump.onclick = () => {
+          closeVarFixer();
+          if (is.block !== activeBlock) switchBlock(is.block);
+          setTimeout(() => gotoLine(is.line), 50);
+        };
+        btns.appendChild(jump);
+      }
+      const ignore = document.createElement('button');
+      ignore.className = 'btn btn-sm';
+      ignore.textContent = '忽略';
+      ignore.onclick = () => { _varFixDismissed.add(_varFixKey(is)); renderVarFixer(); };
+      btns.appendChild(ignore);
+      row.appendChild(btns);
+      list.appendChild(row);
+    });
+  }
+
+  function applyVarFixCreate(fix) {
+    const vars = window.Storage.getVars();
+    if (vars.some(v => v.name === fix.name)) { toast('变量「' + fix.name + '」已存在'); return false; }
+    vars.push({ name: fix.name, type: fix.varType, value: fix.value });
+    window.Storage.saveVars(vars);
+    toast('已创建变量「' + fix.name + '」');
+    renderLibrary();
+    refreshTodo();
+    return true;
+  }
+
+  function applyVarFixRemoveTag(fix) {
+    const isActive = fix.block === activeBlock;
+    const src = isActive ? storyText.value : (window.Storage.getBlockText(fix.block) || '');
+    const lines = src.split('\n');
+    if (!(fix.line >= 1 && fix.line <= lines.length)) { toast('行号已失效，请重新打开修复检查'); return false; }
+    const idx = lines[fix.line - 1].indexOf(fix.raw);
+    if (idx < 0) { toast('未找到目标指令，请重新打开修复检查'); return false; }
+    lines[fix.line - 1] = lines[fix.line - 1].slice(0, idx) + lines[fix.line - 1].slice(idx + fix.raw.length);
+    const nt = lines.join('\n');
+    if (isActive) { storyText.value = nt; commitEdit(); }
+    else window.Storage.setBlockText(fix.block, nt);
+    toast('已删除无法识别的变量指令');
+    refreshTodo();
+    return true;
+  }
+
   function renameVarEverywhere(oldName, newName) {
     if (!oldName || oldName === newName) return 0;
     const names = window.Storage.listBlockNames();
@@ -5710,34 +5857,13 @@ self.onmessage = function (e) {
       arr.forEach(a => assetNames[lib].add((a.name || '').trim()));
     }
     const blockNames = new Set(window.Storage.listBlockNames());
-    // 变量：变量库定义 + 正文 <变量:名=...> 赋值，二者并集为“已知变量”
-    const definedVarNames = window.Storage.getVarNames();
+    // 变量类型表（供玩家输入等局部检查用）；变量专项校验统一由 StoryVars.analyze 完成（见函数末尾）
     const varTypeMap = {};
     window.Storage.getVars().forEach(v => { const nm = (v.name || '').trim(); if (nm) varTypeMap[nm] = v.type; });
-    const assignedVarNames = new Set();
-    window.Storage.listBlockNames().forEach(nm => {
-      const txt = window.Storage.getBlockText(nm) || '';
-      (txt.match(/<变量:([\s\S]*?)>/g) || []).forEach(m => {
-        const body = m.replace(/^<变量:/, '').replace(/>$/, '');
-        body.split(';').forEach(seg => {
-          const nm2 = seg.trim().match(/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*/);
-          if (nm2) assignedVarNames.add(nm2[0]);
-        });
-      });
-    });
-    const knownVars = new Set([...definedVarNames, ...assignedVarNames]);
     // 逐块校验（主剧情 + 其它剧情块）；块名作为前缀标注，便于定位
     const blocksToCheck = window.Storage.listBlockNames().map(nm => ({ name: nm, text: window.Storage.getBlockText(nm) || '' }));
     function pushIssue(prefix, n, type, msg) {
       issues.push({ line: n, type: type, msg: (prefix ? prefix + ' ' : '') + msg });
-    }
-    // 校验条件表达式：非空，且至少引用一个已定义变量
-    function checkCond(prefix, n, condStr) {
-      const c = (condStr || '').trim();
-      if (!c) { pushIssue(prefix, n, 'error', '条件选项缺少条件表达式（如 <选项:"文字",块名,条件:金币>=10>）'); return; }
-      const toks = c.match(/[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*/g) || [];
-      const known = toks.filter(tk => knownVars.has(tk));
-      if (!known.length) pushIssue(prefix, n, 'warning', '条件「' + c + '」似乎没有引用任何已定义的变量');
     }
     for (const blk of blocksToCheck) {
       const prefix = blk.name === MAIN_BLOCK ? '' : ('【' + blk.name + '】');
@@ -5747,19 +5873,7 @@ self.onmessage = function (e) {
         if (/^\s*\/\//.test(raw)) return;
         const t = raw.trim();
         if (!t) return;
-        // 变量引用 {名} / {名:真|假}
-        const refMatches = raw.match(/\{[^{}]+\}/g);
-        if (refMatches) {
-          refMatches.forEach(r => {
-            let inner = r.slice(1, -1).trim();
-            let vname = inner, disp = false;
-            const ci = inner.indexOf(':');
-            if (ci >= 0) { vname = inner.slice(0, ci).trim(); disp = true; }
-            if (!vname) return;
-            if (!knownVars.has(vname)) pushIssue(prefix, n, 'warning', '未定义的变量「' + vname + '」（请在素材库·变量库定义，或用 <变量:' + vname + '=值> 赋值）');
-            else if (disp && varTypeMap[vname] && varTypeMap[vname] !== 'boolean') pushIssue(prefix, n, 'warning', '显示映射 {' + vname + ':真|假} 仅用于布尔变量');
-          });
-        }
+        // 变量引用 {名} / {名:真|假} 的检查由 StoryVars.analyze 统一处理
         if (t.includes('<') && !t.includes('>')) {
           pushIssue(prefix, n, 'error', '「<」没有对应的「>」（指令未闭合，指令用尖括号）');
           return;
@@ -5860,7 +5974,7 @@ self.onmessage = function (e) {
                 const bn = sp.block;
                 if (bn === MAIN_BLOCK) pushIssue(prefix, n, 'warning', '不建议选项跳到主剧情块');
                 else if (bn && !blockNames.has(bn)) pushIssue(prefix, n, 'warning', '选项指向的剧情块「' + bn + '」未找到，点击可能无效');
-                if (sp.condition) checkCond(prefix, n, sp.condition);
+                // 条件表达式的检查（空条件/语法/未定义变量）由 StoryVars.analyze 统一处理
               }
             }
           } else if (t === '<跳回>') {
@@ -5879,20 +5993,10 @@ self.onmessage = function (e) {
             pushIssue(prefix, n, 'error', '「' + t + '」是已移除的条件块指令；条件功能请用 <选项:"文字",块名,条件:表达式> 实现');
           } else if ((m = t.match(RE_PLAYER_INPUT))) {
             const vn = m[1];
-            if (!knownVars.has(vn)) pushIssue(prefix, n, 'warning', '玩家输入指向的变量「' + vn + '」未定义（请在素材库·变量库定义，或用 <变量:' + vn + '=值> 赋值）');
-            else if (varTypeMap[vn] && varTypeMap[vn] !== 'text') pushIssue(prefix, n, 'warning', '玩家输入只能用于「文本」类型变量，「' + vn + '」是 ' + varTypeMap[vn] + ' 类型');
-          } else if (t.startsWith('<变量')) {
-            const vm = t.match(/^<变量:([\s\S]*)>$/);
-            if (!vm) pushIssue(prefix, n, 'error', '变量指令格式不正确（如 <变量:金币=10> 或 <变量:金币-3>）');
-            else {
-              vm[1].split(';').forEach(seg => {
-                const s = seg.trim();
-                if (!s) return;
-                if (!/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*\s*([=+\-]\s*[^\s]+)?$/.test(s)) {
-                  pushIssue(prefix, n, 'error', '变量指令片段「' + s + '」格式不正确（应为 名=值 / 名+n / 名-n）');
-                }
-              });
-            }
+            // 未定义检查由 StoryVars.analyze 处理；这里只保留类型约束
+            if (varTypeMap[vn] && varTypeMap[vn] !== 'text') pushIssue(prefix, n, 'warning', '玩家输入只能用于「文本」类型变量，「' + vn + '」是 ' + varTypeMap[vn] + ' 类型');
+          } else if (t.indexOf('<变量:') === 0) {
+            // 变量指令格式由 StoryVars.parseVarLine 判定，问题（malformed_tag）由 analyze 统一报告
           } else {
             pushIssue(prefix, n, 'error', '无法识别的指令「' + t + '」（识别的指令：停顿/召唤/剧情块/随机跳转/随机句子/选项/跳回/跳回重选）');
           }
@@ -5915,6 +6019,16 @@ self.onmessage = function (e) {
         if (open !== close) pushIssue(prefix, 0, 'warning', 'BBCode [' + tag + '=…] 与 [/]' + tag + ' 数量不一致（' + open + ' 开 / ' + close + ' 闭）');
       }
     }
+    // 变量专项校验：StoryVars.analyze 扫描全部剧情块
+    // （未声明就赋值 / 幻影读取 / 坏标签 / 条件解析 / 类型混用；info 级只在「修复检查」面板展示）
+    const blocksMap = {};
+    blocksToCheck.forEach(b => { blocksMap[b.name] = b.text; });
+    const analysis = window.StoryVars.analyze(blocksMap, window.Storage.getVars());
+    analysis.issues.forEach(is => {
+      if (is.severity === 'info') return;
+      const prefix = is.block && is.block !== MAIN_BLOCK ? ('【' + is.block + '】') : '';
+      pushIssue(prefix, is.line || 0, is.severity, is.message);
+    });
     return issues;
   }
   // 把光标定位到指定行行首，并尽量滚入视野

@@ -64,14 +64,16 @@ def inline_js(html):
 
 
 def main():
+    test_mode = "--test" in sys.argv
     if not os.path.isfile(SRC_HTML):
         print(f"错误：未找到 {SRC_HTML}", file=sys.stderr)
         sys.exit(1)
 
-    # 清理并重建 dist
-    if os.path.isdir(DIST):
-        shutil.rmtree(DIST)
-    os.makedirs(DIST, exist_ok=True)
+    # 清理并重建 dist（测试版输出到 dist-test，与正式版目录互不覆盖）
+    out_dir = os.path.join(ROOT, "dist-test") if test_mode else DIST
+    if os.path.isdir(out_dir):
+        shutil.rmtree(out_dir)
+    os.makedirs(out_dir, exist_ok=True)
 
     html = read_text(SRC_HTML)
     print(f"[build] 源 HTML: {len(html)} 字节", file=sys.stderr)
@@ -79,19 +81,44 @@ def main():
     html = inline_css(html)
     html = inline_js(html)
 
-    out = os.path.join(DIST, "index.html")
+    if test_mode:
+        html = make_test_edition(html)
+
+    out = os.path.join(out_dir, "index.html")
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"[build] 输出: {out} ({len(html)} 字节)", file=sys.stderr)
 
     # 复制 .htmltolink.json 到 dist，让 deploy.py 能读到 shareUrl/updateToken
     cfg_src = os.path.join(ROOT, CONFIG_NAME)
-    cfg_dst = os.path.join(DIST, CONFIG_NAME)
+    cfg_dst = os.path.join(out_dir, CONFIG_NAME)
     if os.path.isfile(cfg_src):
         shutil.copy2(cfg_src, cfg_dst)
-        print(f"[build] 复制 {CONFIG_NAME} -> dist/", file=sys.stderr)
+        print(f"[build] 复制 {CONFIG_NAME} -> {os.path.basename(out_dir)}/", file=sys.stderr)
+
+    # 编辑器内「文档」按钮相对引用 docs.html，单文件包目录也要带一份才能离线查看
+    docs_src = os.path.join(ROOT, "docs.html")
+    if os.path.isfile(docs_src):
+        shutil.copy2(docs_src, os.path.join(out_dir, "docs.html"))
 
     print(out)
+
+
+def make_test_edition(html):
+    """把构建产物变成「测试版」：
+    1) 在所有脚本之前注入 window.STORY_EDITOR_NS='test' → storage.js 的 localStorage/IndexedDB 全部隔离；
+    2) 标题与界面版本号加「测试版」标记，避免和正式版混淆。
+    """
+    ns_script = ('<script>window.STORY_EDITOR_NS = "test";</script>\n')
+    first_script = re.search(r'<script[^>]*>', html)
+    if not first_script:
+        print("[warn] 未找到 script 标签，无法注入测试版命名空间", file=sys.stderr)
+    else:
+        html = html[:first_script.start()] + ns_script + html[first_script.start():]
+    html = html.replace("<title>剧情编辑器</title>", "<title>剧情编辑器 · 测试版</title>")
+    ver_re = re.compile(r'(<span class="ver" id="app-version">)([^<]+)(</span>)')
+    html = ver_re.sub(lambda m: m.group(1) + m.group(2) + "-TEST · 测试版" + m.group(3), html, count=1)
+    return html
 
 
 if __name__ == "__main__":

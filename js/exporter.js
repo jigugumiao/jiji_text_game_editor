@@ -1954,8 +1954,9 @@ __STORY_DATA__
       });
       bar.appendChild(btn);
     });
-    // 同行所有选项条件都不满足：本行自动跳过，继续推进（避免卡死）
-    if (!anyEnabled) {
+    // 同行所有选项都被隐藏时自动跳过；若作者要求展示禁用项，
+    // 必须留在此处让玩家能读到提示，而不能把它们立即跳过。
+    if (!anyEnabled && shown === 0) {
       hideOptions();
       curIdx++;
       if (curIdx >= nodesOf(curBlock).length) doReturn();

@@ -106,6 +106,27 @@
     return text.slice(0, node.start) + String(replacement == null ? '' : replacement) + text.slice(node.end);
   }
 
+  // Standalone visual directives own their line.  This keeps an emptied state
+  // change from turning into an unexplained blank line when its final effect is
+  // removed by the visual editor.
+  function removeNode(source, node) {
+    var text = String(source == null ? '' : source);
+    if (!node || typeof node.start !== 'number' || typeof node.end !== 'number'
+      || text.slice(node.start, node.end) !== node.raw) {
+      throw new Error('Node span does not match its raw source');
+    }
+    var lineStart = Math.max(text.lastIndexOf('\n', node.start - 1), text.lastIndexOf('\r', node.start - 1)) + 1;
+    var nextBreak = /\r\n|\n|\r/.exec(text.slice(node.end));
+    var lineEnd = nextBreak ? node.end + nextBreak.index : text.length;
+    if (node.start !== lineStart || node.end !== lineEnd) return replaceNode(text, node, '');
+    if (nextBreak && nextBreak.index === 0) return text.slice(0, node.start) + text.slice(node.end + nextBreak[0].length);
+    if (node.start > 0) {
+      var previousStart = node.start - (text.charAt(node.start - 1) === '\n' && text.charAt(node.start - 2) === '\r' ? 2 : 1);
+      return text.slice(0, previousStart) + text.slice(node.end);
+    }
+    return text.slice(node.end);
+  }
+
   function findNodeAtOffset(doc, offset) {
     if (!doc || !Array.isArray(doc.nodes) || typeof offset !== 'number') return null;
     for (var i = 0; i < doc.nodes.length; i++) {
@@ -130,6 +151,7 @@
     scan: scan,
     serializeUnchanged: serializeUnchanged,
     replaceNode: replaceNode,
+    removeNode: removeNode,
     findNodeAtOffset: findNodeAtOffset,
     summarizeDiagnostics: summarizeDiagnostics
   };

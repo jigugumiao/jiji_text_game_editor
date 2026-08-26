@@ -350,7 +350,16 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
   font-family: 'Noto Serif SC','Songti SC',serif; font-size: 16px; line-height: 1.95;
 }
 .story-visual-node { color: inherit; }
+.story-visual-node-text { outline: none; }
+.story-visual-state-token {
+  display: inline; color: inherit; border-bottom: 1px dotted var(--border-strong);
+  cursor: text; white-space: pre-wrap;
+}
 .story-visual-node-option_group { display: block; border-left: 2px solid var(--border); padding-left: 12px; }
+.story-visual-node-state_change {
+  display: block; padding: 0; border: 0; background: transparent; color: inherit;
+  font: inherit; line-height: inherit; text-align: left; cursor: pointer;
+}
 .story-visual-node-source_error { color: var(--danger); text-decoration: underline wavy currentColor; text-underline-offset: 3px; }
 .story-visual-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .story-visual-edit-button { opacity: .4; }

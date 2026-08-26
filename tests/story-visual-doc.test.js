@@ -56,4 +56,13 @@ const VisualDoc = require('../js/story-visual-doc.js');
   assert.throws(() => VisualDoc.replaceNode(source, { start: 0, end: 1, raw: '错' }, 'x'), /does not match/);
 }
 
+// Deleting the final state effect must delete its entire standalone directive
+// line, rather than leaving an empty line or a bare variable tag behind.
+{
+  const source = '开始\r\n<变量:金币-10>\r\n结尾';
+  const doc = VisualDoc.scan(source);
+  const state = doc.nodes.find(n => n.kind === 'state_change');
+  assert.equal(VisualDoc.removeNode(source, state), '开始\r\n结尾');
+}
+
 console.log('story-visual-doc.test.js passed');

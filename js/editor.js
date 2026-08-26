@@ -119,41 +119,6 @@
   }
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
-  // 解析一行内所有 <选项:"文字",块名,条件:...> 指令，返回 [{text, extra, index, close, ok}]。
-  // 条件表达式允许出现 >、<、>=、<= 等运算符（如 条件:力量>=20、条件:金币<=5），
-  // 因此「闭合 >」不能取表达式里碰到的第一个 >，而是取下一个 <选项: 之前（或行尾前）的最后一个 >。
-  function extractOptionLine(line) {
-    const TAG = '<选项:';
-    const out = [];
-    let from = 0;
-    while (from <= line.length) {
-      const start = line.indexOf(TAG, from);
-      if (start < 0) break;
-      const next = line.indexOf(TAG, start + TAG.length);
-      const endB = next < 0 ? line.length : next;
-      let close = -1;
-      for (let k = start + TAG.length; k < endB; k++) { if (line[k] === '>') close = k; }
-      from = start + TAG.length;
-      if (close < 0) continue; // 无闭合 >，交给下方的「未闭合」校验报错
-      const body = line.slice(start + TAG.length, close);
-      const m = body.match(/^\s*"([^"]*)"\s*(?:,\s*([\s\S]*))?$/);
-      out.push({ text: m ? m[1] : '', extra: (m && m[2] ? m[2] : '').trim(), index: start, close: close, ok: !!m });
-    }
-    return out;
-  }
-  // 把选项的 extra 段（块名[,条件:…]）拆成 { block, condition }
-  function splitOptionExtra(extra) {
-    const e = (extra || '').trim();
-    if (!e) return { block: null, condition: null };
-    const ci = e.indexOf('条件:');
-    if (ci >= 0) {
-      return {
-        block: e.slice(0, ci).replace(/,\s*$/, '').trim() || null,
-        condition: e.slice(ci + 3).replace(/,\s*$/, '').trim() || null
-      };
-    }
-    return { block: e, condition: null };
-  }
   // 变量操作：<变量:名=值> / <变量:名+数> / <变量:名-数>（独占一行；一行可含多个，按 <变量:...> 逐个提取）
   // 解析统一走 js/story-vars.js（window.StoryVars），编辑器与导出端共用同一实现
   // 玩家输入：<玩家输入变量:变量名,"引导文字">（独占一行；引导文字可空 "")
@@ -256,10 +221,9 @@
       } else if (t.indexOf('<选项:') >= 0) {
         flush();
         const options = [];
-        for (const o of extractOptionLine(t)) {
-          if (!o.ok) continue;
-          // 保留原始 extra 作为 block（含 ,条件:… 尾巴），storyToText 可原样还原，避免往返丢条件
-          options.push({ text: o.text, block: o.extra || null });
+          for (const o of window.StoryOptions.extractOptionLine(t)) {
+            if (!o.ok) continue;
+            options.push(o.option);
         }
         if (options.length) story.push({ type: 'options', options });
       } else {
@@ -293,7 +257,10 @@
       else if (n.type === 'returnrechoose') out.push('<跳回重选>');
       else if (n.type === 'varop') out.push(window.StoryVars.serializeVarOps(n.ops));
       else if (n.type === 'playerinput') out.push('<玩家输入变量:' + n.name + ',"' + (n.prompt || '') + '">');
-      else if (n.type === 'options') out.push(n.options.map(o => '<选项:"' + (o.text || '') + '"' + (o.block ? ',' + o.block : '') + '>').join(' '));
+      else if (n.type === 'options') out.push(n.options.map(function (o) {
+        const result = window.StoryOptions.serializeOption(o);
+        return result.ok ? result.value : '';
+      }).filter(Boolean).join(' '));
     }
     return out.join('\n');
   }
@@ -384,9 +351,9 @@
           html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 玩家输入 → 变量「' + escapeHtml(m[1]) + '」' + (m[2] ? '：' + escapeHtml(m[2]) : '') + '</span></div>';
         } else if (t.indexOf('<选项:') >= 0) {
           const opts = [];
-          for (const o of extractOptionLine(t)) {
+          for (const o of window.StoryOptions.extractOptionLine(t)) {
             if (!o.ok) continue;
-            opts.push(o.text + (o.extra ? ' → ' + o.extra : ''));
+            opts.push(window.StoryOptions.summarizeOption(o.option));
           }
           html += '<div class="pv-line"><span class="pv-cmd option"><svg class="ico" aria-hidden="true"><use href="#ic-circle-dot"/></svg> 选项：' + opts.map(o => escapeHtml(o)).join(' ｜ ') + '</span></div>';
         } else {
@@ -2575,10 +2542,10 @@
       const le = optCtx.lineEnd - (range.end - range.start);
       const line = nv.slice(ls, le);
       // 本行可能含多个 <选项:...>（同一行多个选项），需定位 drop 点所在 / 最近的那个。
-      // 用 extractOptionLine 拿到每个选项的真实闭合位置（条件表达式里的 > 不算闭合）。
+      // 共享语法模块提供真实标签边界（条件里的 > 不会提前截断）。
       const segs = [];
-      for (const o of extractOptionLine(line)) {
-        segs.push({ s: o.index, e: o.close + 1, seg: line.slice(o.index, o.close + 1), extra: o.extra });
+      for (const o of window.StoryOptions.extractOptionLine(line)) {
+        segs.push({ s: o.start, e: o.end, seg: o.raw, extra: o.raw.slice('<选项:'.length, -1) });
       }
       let target = null;
       for (const sg of segs) { if (range.start >= ls + sg.s && range.start <= ls + sg.e) { target = sg; break; } }
@@ -2965,19 +2932,17 @@
     let newLine = line;
     // 选项行的条件变量：<选项:"文字",块名,条件:金币>=5>（整词规则；条件允许 < > <= >= 运算符）
     if (newLine.indexOf('<选项:') >= 0) {
-      const TAG = '<选项:';
       const repls = [];
-      for (const o of extractOptionLine(newLine)) {
+      for (const o of window.StoryOptions.extractOptionLine(newLine)) {
         if (!o.ok) continue;
-        const sp = splitOptionExtra(o.extra);
-        if (!sp.condition) continue;
-        const newCond = sp.condition.replace(reCond, function (m, pre) { return pre + newName; });
-        if (newCond !== sp.condition) {
-          const body = newLine.slice(o.index + TAG.length, o.close);
-          const bStart = body.indexOf(sp.condition);
+        const condition = o.option.condition;
+        if (!condition) continue;
+        const newCond = condition.replace(reCond, function (m, pre) { return pre + newName; });
+        if (newCond !== condition) {
+          const bStart = o.raw.indexOf(condition);
           if (bStart >= 0) {
-            const abs = o.index + TAG.length + bStart;
-            repls.push({ start: abs, end: abs + sp.condition.length, text: newCond });
+            const abs = o.start + bStart;
+            repls.push({ start: abs, end: abs + condition.length, text: newCond });
           }
         }
       }
@@ -3276,14 +3241,12 @@
     const edges = [];
     names.forEach((name) => {
       const raw = window.Storage.getBlockText(name) || '';
-      // 选项解析必须按行进行：extractOptionLine 以「行内最后一个 > 才算闭合」为边界，
-      // 跨整块多行文本会误把后续行（如 <停顿>）的 > 当作选项闭合符。
+      // 选项解析必须按行进行，避免跨行把后续指令当成标签内容。
       let lineOff = 0;
       raw.split(/\r?\n/).forEach((line) => {
-        for (const o of extractOptionLine(line)) {
+        for (const o of window.StoryOptions.extractOptionLine(line)) {
           if (!o.ok) continue;
-          const sp = splitOptionExtra(o.extra);
-          edges.push({ from: name, to: sp.block, label: o.text || '选项', charIndex: lineOff + o.index, kind: 'option' });
+          edges.push({ from: name, to: o.option.block, label: o.option.text || '选项', charIndex: lineOff + o.start, kind: 'option' });
         }
         lineOff += line.length + 1;
       });
@@ -5964,14 +5927,12 @@ self.onmessage = function (e) {
               });
             }
           } else if (t.indexOf('<选项:') >= 0) {
-            const opts = extractOptionLine(t).filter(o => o.ok);
+            const opts = window.StoryOptions.extractOptionLine(t).filter(o => o.ok);
             if (!opts.length) pushIssue(prefix, n, 'error', '选项指令格式不正确（如 <选项:"文字"> 或 <选项:"文字",块名>）');
             else {
               if (opts.length > 6) pushIssue(prefix, n, 'error', '一行最多放置 6 个选项，当前 ' + opts.length + ' 个');
               for (const o of opts) {
-                // 条件选项：<选项:"文字",块名,条件:金币>=20>（条件里允许 < > <= >=，解析时已按「真正的闭合 >」取整段 extra）
-                const sp = splitOptionExtra(o.extra);
-                const bn = sp.block;
+                const bn = o.option.block;
                 if (bn === MAIN_BLOCK) pushIssue(prefix, n, 'warning', '不建议选项跳到主剧情块');
                 else if (bn && !blockNames.has(bn)) pushIssue(prefix, n, 'warning', '选项指向的剧情块「' + bn + '」未找到，点击可能无效');
                 // 条件表达式的检查（空条件/语法/未定义变量）由 StoryVars.analyze 统一处理

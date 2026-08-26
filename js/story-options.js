@@ -109,7 +109,7 @@
   function isConditionComparator(source, start, at) {
     if (source.charAt(at + 1) === '=') return true;
     var following = source.charAt(at + 1);
-    if (!following || /\s/.test(following)) return false;
+    if (!following || following === '<' || /\s/.test(following)) return false;
     var field = splitTopLevelFields(source.slice(start + 4, at)).pop() || '';
     return field.indexOf('条件:') === 0;
   }
@@ -148,7 +148,7 @@
     option.block = source.block == null || String(source.block).trim() === '' ? null : String(source.block).trim();
     option.condition = source.condition == null || String(source.condition).trim() === '' ? null : String(source.condition).trim();
     option.unmetBehavior = source.unmetBehavior === 'disable' ? 'disable' : 'hide';
-    option.unmetMessage = option.unmetBehavior === 'disable' && source.unmetMessage != null && String(source.unmetMessage) !== '' ? String(source.unmetMessage) : null;
+    option.unmetMessage = source.unmetMessage != null && String(source.unmetMessage).trim() !== '' ? String(source.unmetMessage) : null;
     option.effects = Array.isArray(source.effects) ? source.effects.map(function (effect) {
       return { name: String(effect.name == null ? '' : effect.name).trim(), op: effect.op, val: String(effect.val == null ? '' : effect.val).trim() };
     }) : [];
@@ -158,20 +158,18 @@
 
   function serializeOption(input) {
     var option = normalizeOption(input);
-    if (option.unknownFields.length) return { ok: false, value: null, error: '包含无法识别的高级字段' };
     if (!option.text) return { ok: false, value: null, error: '选项文字不能为空' };
     var fields = ['"' + escapeString(option.text) + '"'];
     if (option.block) fields.push(option.block.indexOf(',') >= 0 || /["\\\r\n]/.test(option.block) ? '"' + escapeString(option.block) + '"' : option.block);
     if (option.condition) fields.push('条件:' + option.condition);
-    if (option.unmetBehavior === 'disable') {
-      fields.push('不满足:禁用');
-      if (option.unmetMessage) fields.push('提示:"' + escapeString(option.unmetMessage) + '"');
-    }
+    if (option.unmetBehavior === 'disable') fields.push('不满足:禁用');
+    if (option.unmetMessage) fields.push('提示:"' + escapeString(option.unmetMessage) + '"');
     for (var i = 0; i < option.effects.length; i++) {
       var effect = parseEffect(option.effects[i].name + option.effects[i].op + option.effects[i].val);
       if (!effect) return { ok: false, value: null, error: '变量变化格式不正确' };
       fields.push('变化:' + effect.name + effect.op + effect.val);
     }
+    for (var j = 0; j < option.unknownFields.length; j++) fields.push(String(option.unknownFields[j]));
     return { ok: true, value: '<选项:' + fields.join(',') + '>', error: null };
   }
 
@@ -184,6 +182,13 @@
     return parts.join(' · ');
   }
 
+  function buildRuntimeSource() {
+    var fns = [splitTopLevelFields, unescapeString, readString, escapeString, isOptional, parseEffect, makeOption, parseOptionTag, isConditionComparator, extractOptionLine, normalizeOption, serializeOption, summarizeOption];
+    var src = '(function(){\n"use strict";\nvar OPTIONAL_PREFIXES=["条件:","不满足:","提示:","变化:"];\nvar SO={};\n';
+    fns.forEach(function (fn) { src += fn.toString() + '\nSO.' + fn.name + '=' + fn.name + ';\n'; });
+    return src + 'window.StoryOptions=SO;\n})();';
+  }
+
   var StoryOptions = {
     splitTopLevelFields: splitTopLevelFields,
     parseOptionTag: parseOptionTag,
@@ -191,6 +196,7 @@
     serializeOption: serializeOption,
     summarizeOption: summarizeOption,
     normalizeOption: normalizeOption
+    ,buildRuntimeSource: buildRuntimeSource
   };
   if (typeof window !== 'undefined') window.StoryOptions = StoryOptions;
   if (typeof module !== 'undefined' && module.exports) module.exports = StoryOptions;

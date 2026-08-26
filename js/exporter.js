@@ -597,7 +597,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   }
   #options-bar .opt-btn:hover { background: rgba(58,134,255,0.34); border-color: #5a9bff; transform: translateY(-2px); }
   #options-bar .opt-btn:active { transform: translateY(0); }
-  /* 条件不满足的选项已在 presentOptions 直接隐藏（不渲染），不再需要置灰样式 */
+  #options-bar .opt-btn.is-disabled, #options-bar .opt-btn.is-disabled:hover { opacity: .52; cursor: not-allowed; filter: grayscale(.4); transform: none; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.22); }
   @keyframes optIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
   #item-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); backdrop-filter: blur(2px); z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.3s ease-out; }
   #item-overlay.open { opacity: 1; pointer-events: auto; }
@@ -1915,7 +1915,7 @@ __STORY_DATA__
     else if (stack.length){ doReturn(); }   // 没有历史选项则退化为普通跳回
     else { finish(); }
   }
-  // 选项 UI：底部排列按钮（最多 6 个）；条件不满足的选项直接隐藏（不渲染），仅保留满足条件的
+  // 选项 UI：条件不满足默认隐藏；作者可要求保留为不可点击的禁用项。
   function presentOptions(n){
     awaitingClick = false; hint.style.display = 'none';
     hideOptions();
@@ -1926,12 +1926,17 @@ __STORY_DATA__
     let anyEnabled = false;
     let shown = 0;
     opts.forEach(function(opt, ci){
-      // 条件不满足：直接隐藏该选项（不渲染按钮），对玩家完全不可见
-      if (opt.condition && !evalCond(opt.condition)) return;
-      anyEnabled = true;
+      const unmet = !!(opt.condition && !evalCond(opt.condition));
+      if (unmet && opt.unmetBehavior !== 'disable') return;
+      if (!unmet) anyEnabled = true;
       const btn = document.createElement('button');
       btn.className = 'opt-btn';
       btn.textContent = opt.text || ('选项' + (shown + 1));
+      if (unmet) {
+        btn.classList.add('is-disabled');
+        btn.disabled = true;
+        if (opt.unmetMessage) { btn.title = opt.unmetMessage; btn.setAttribute('aria-label', btn.textContent + '：' + opt.unmetMessage); btn.textContent += '（' + opt.unmetMessage + '）'; }
+      }
       btn.style.animationDelay = (shown * 0.05) + 's';
       shown++;
       // 注意：ci 是原始选项下标，用于 recordedChoices 存档 / 读档重放还原选择路径
@@ -1943,6 +1948,7 @@ __STORY_DATA__
         // galgame 模式：点击选项即视为进入新场景/新段，标记段已结束；
         // 下一次 typeText / showDivider 登场前 beginSegmentIfNeeded() 会清空旧文字，进入新对话框
         markSegmentEnd();
+        if (opt.effects && opt.effects.length && (!opt.block || nodesOf(opt.block).length)) applyVarOps(opt.effects);
         if (opt.block){ callBlock(opt.block); execCur(); }
         else { curIdx++; execCur(); }
       });
@@ -1987,6 +1993,7 @@ __STORY_DATA__
   // 实现由 js/story-vars.js 统一提供，构建时注入下方占位处（见 buildRuntimeHTML），
   // 保证导出游戏与编辑器预览的解析/求值行为完全同源。
   __STORY_VARS_RUNTIME__
+  __STORY_OPTIONS_RUNTIME__
   // 把 {名} / {名:是|否} 替换为当前变量值；未定义变量保留原样；{{名}} 转义保留
   function interpolateVars(s){
     return StoryVars.interpolate(s, function(n){ return vars[n]; });
@@ -2521,41 +2528,6 @@ function parseStoryForExport(src) {
   const RE_RANDOM_TEXT = /^<随机句子:([\s\S]*?)>$/;
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
-  // 解析一行内所有 <选项:"文字",块名,条件:...> 指令，返回 [{text, extra, index, close, ok}]。
-  // 条件表达式允许出现 >、<、>=、<= 等运算符（如 条件:力量>=20、条件:金币<=5），
-  // 因此「闭合 >」不能取表达式里碰到的第一个 >，而是取下一个 <选项: 之前（或行尾前）的最后一个 >。
-  function extractOptionLine(line) {
-    const TAG = '<选项:';
-    const out = [];
-    let from = 0;
-    while (from <= line.length) {
-      const start = line.indexOf(TAG, from);
-      if (start < 0) break;
-      const next = line.indexOf(TAG, start + TAG.length);
-      const endB = next < 0 ? line.length : next;
-      let close = -1;
-      for (let k = start + TAG.length; k < endB; k++) { if (line[k] === '>') close = k; }
-      from = start + TAG.length;
-      if (close < 0) continue; // 无闭合 >，交给编辑器的「未闭合」校验报错
-      const body = line.slice(start + TAG.length, close);
-      const m = body.match(/^\s*"([^"]*)"\s*(?:,\s*([\s\S]*))?$/);
-      out.push({ text: m ? m[1] : '', extra: (m && m[2] ? m[2] : '').trim(), index: start, close: close, ok: !!m });
-    }
-    return out;
-  }
-  // 把选项的 extra 段（块名[,条件:…]）拆成 { block, condition }
-  function splitOptionExtra(extra) {
-    const e = (extra || '').trim();
-    if (!e) return { block: null, condition: null };
-    const ci = e.indexOf('条件:');
-    if (ci >= 0) {
-      return {
-        block: e.slice(0, ci).replace(/,\s*$/, '').trim() || null,
-        condition: e.slice(ci + 3).replace(/,\s*$/, '').trim() || null
-      };
-    }
-    return { block: e, condition: null };
-  }
   const RE_PLAYER_INPUT = /^<玩家输入变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*,\s*"([\s\S]*?)"\s*>$/;
   const CN = { '背景': 'background', '物品': 'item', '叠层': 'overlay', '音乐': 'music', '音效': 'sound' };
   const lines = (src || '').split(/\r?\n/);
@@ -2602,10 +2574,9 @@ function parseStoryForExport(src) {
     else if (t.indexOf('<选项:') >= 0) {
       flush();
       const options = [];
-      for (const o of extractOptionLine(t)) {
+      for (const o of window.StoryOptions.extractOptionLine(t)) {
         if (!o.ok) continue;
-        const sp = splitOptionExtra(o.extra);
-        options.push({ text: o.text, block: sp.block, condition: sp.condition });
+        options.push(o.option);
       }
       if (options.length) story.push({ type: 'options', options });
     }
@@ -2781,6 +2752,10 @@ function buildRuntimeHTML(data, mode) {
     // （用函数形式的 replacement，避免序列化源码中的 $ 字符被当作替换模式）
     .replace('__STORY_VARS_RUNTIME__', (function () {
       try { return (window.StoryVars && window.StoryVars.buildRuntimeSource) ? window.StoryVars.buildRuntimeSource() : ''; }
+      catch (e) { return ''; }
+    })())
+    .replace('__STORY_OPTIONS_RUNTIME__', (function () {
+      try { return (window.StoryOptions && window.StoryOptions.buildRuntimeSource) ? window.StoryOptions.buildRuntimeSource() : ''; }
       catch (e) { return ''; }
     })())
     .replace('__SRC__', safe(ITEM_VIEWER_SOURCE))

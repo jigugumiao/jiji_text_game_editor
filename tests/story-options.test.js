@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const vm = require('node:vm');
 const StoryOptions = require('../js/story-options.js');
 
 // ---------- fields ----------
@@ -36,7 +37,7 @@ assert.deepEqual(StoryOptions.splitTopLevelFields('“买,钥匙”,商店'), ['
   const unknown = StoryOptions.parseOptionTag('<选项:"A",块A,样式:红色>');
   assert.equal(unknown.ok, true);
   assert.deepEqual(unknown.option.unknownFields, ['样式:红色']);
-  assert.deepEqual(StoryOptions.serializeOption(unknown.option), { ok: false, value: null, error: '包含无法识别的高级字段' });
+  assert.deepEqual(StoryOptions.serializeOption(unknown.option), { ok: true, value: '<选项:"A",块A,样式:红色>', error: null });
   assert.equal(StoryOptions.parseOptionTag('<选项:abc>').ok, false);
 }
 
@@ -61,6 +62,17 @@ assert.deepEqual(StoryOptions.splitTopLevelFields('“买,钥匙”,商店'), ['
     text: 'A', block: '块A', condition: null, unmetBehavior: 'hide', unmetMessage: null, effects: [], unknownFields: []
   });
   assert.match(StoryOptions.summarizeOption(option), /A/);
+}
+
+// ---------- exported runtime receives the same grammar ----------
+{
+  const context = { window: { StoryVars: require('../js/story-vars.js') } };
+  vm.createContext(context);
+  vm.runInContext(StoryOptions.buildRuntimeSource(), context);
+  const option = context.window.StoryOptions.parseOptionTag('<选项:"A, B",块,条件:(金币>=2),样式:红>').option;
+  assert.equal(option.text, 'A, B');
+  assert.equal(option.condition, '(金币>=2)');
+  assert.deepEqual(Array.from(option.unknownFields), ['样式:红']);
 }
 
 console.log('story-options.test.js passed');

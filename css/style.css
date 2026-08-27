@@ -417,6 +417,9 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 .story-visual-chip-music { color: var(--visual-chip-music-fg); background: var(--visual-chip-music-bg); border-color: var(--visual-chip-music-border); }
 .story-visual-chip-sound { color: var(--visual-chip-sound-fg); background: var(--visual-chip-sound-bg); border-color: var(--visual-chip-sound-border); }
 .story-visual-chip-flow { color: var(--visual-chip-flow-fg); background: var(--visual-chip-flow-bg); border-color: var(--visual-chip-flow-border); }
+.story-visual-command-editing { cursor: text; gap: 5px; }
+.story-visual-command-name { white-space: nowrap; }
+.story-visual-command-input { min-width: 10em; padding: 0 !important; color: inherit !important; background: transparent !important; border: 0 !important; border-radius: 0 !important; font: inherit !important; line-height: inherit; outline: none; }
 .story-visual-node-source_error { color: var(--danger); text-decoration: underline wavy currentColor; text-underline-offset: 3px; }
 .story-visual-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .story-visual-edit-button { opacity: .4; }
@@ -424,20 +427,23 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 .story-visual-editor input, .story-visual-editor textarea, .story-visual-editor select {
   color: var(--text); background: var(--bg); border-color: var(--border-strong);
 }
-.story-visual-option-form { max-width: 680px; padding: 20px 26px; font: inherit; line-height: 1.6; }
-.story-visual-form-title, .story-visual-form-label { font-weight: 600; }
+.story-visual-option-form { max-width: 720px; margin: 0 auto; padding: 28px 32px 36px; font: inherit; line-height: 1.6; }
+.story-visual-form-title { margin-bottom: 20px; padding-bottom: 13px; border-bottom: 1px solid var(--border); font-size: 18px; font-weight: 650; letter-spacing: .01em; }
+.story-visual-form-label { margin-top: 20px; font-weight: 600; color: var(--text); }
 .story-visual-context-tip { display: flex; align-items: baseline; gap: 10px; margin: 7px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); color: var(--text-2); font-size: 13px; }
 .story-visual-context-tip span { flex: 1; }
 .story-visual-context-tip-close { flex: 0 0 auto; padding: 0 !important; border: 0 !important; color: var(--text-2) !important; text-decoration: underline; }
-.story-visual-form-field { display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 10px; align-items: center; margin: 8px 0; }
-.story-visual-form-field input, .story-visual-form-field select { min-width: 0; padding: 4px 6px; font: inherit; }
-.story-visual-condition-area, .story-visual-effects-area { margin: 16px 0; }
-.story-visual-condition-group { margin: 8px 0 0 10px; padding-left: 10px; border-left: 1px solid var(--border); }
-.story-visual-condition-row, .story-visual-effect-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.story-visual-form-field { display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 12px; align-items: center; margin: 12px 0; color: var(--text-2); }
+.story-visual-form-field input, .story-visual-form-field select { min-width: 0; min-height: 32px; padding: 5px 8px; border-radius: 5px; font: inherit; }
+.story-visual-condition-area, .story-visual-effects-area { margin: 26px 0; padding-top: 2px; }
+.story-visual-condition-group { margin: 10px 0 0 10px; padding: 10px 0 2px 12px; border-left: 2px solid var(--border); }
+.story-visual-condition-row, .story-visual-effect-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 9px 0; }
 .story-visual-condition-row input, .story-visual-effect-row input { min-width: 7em; }
 .story-visual-condition-summary { margin-top: 7px; color: var(--text-3); font-size: 13px; }
-.story-visual-form-actions { display: flex; gap: 8px; margin-top: 20px; }
-.story-visual-option-form button { padding: 3px 8px; color: inherit; background: transparent; border: 1px solid var(--border-strong); border-radius: 3px; font: inherit; cursor: pointer; }
+.story-visual-form-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--border); }
+.story-visual-option-form button { min-height: 30px; padding: 4px 10px; color: inherit; background: transparent; border: 1px solid var(--border-strong); border-radius: 5px; font: inherit; cursor: pointer; }
+.story-visual-option-form .story-visual-form-primary { color: #fff; background: var(--accent); border-color: var(--accent); }
+.story-visual-option-form .story-visual-form-secondary { color: var(--text-2); }
 .story-visual-option-form button:disabled { opacity: .45; cursor: not-allowed; }
 .story-visual-form-error { margin: 8px 0; color: var(--danger); }
 /* 极淡、低存在感的行号，仅在编译报错时帮助定位行 */

@@ -202,6 +202,14 @@
     return value.slice(0, at) + String(text == null ? '' : text) + value.slice(at);
   }
 
+  function serializeCommandEdit(node, value) {
+    var command = node && node.data || {};
+    var name = String(command.name || '').trim();
+    if (!name) return node && node.raw || '';
+    var nextValue = String(value == null ? '' : value).trim();
+    return '<' + name + (nextValue ? ':' + nextValue : '') + '>';
+  }
+
   function appendTextParts(element, descriptor) {
     descriptor.parts.forEach(function (part) {
       if (part.kind === 'text') {
@@ -238,6 +246,35 @@
       return out;
     }
     return readChildren(element, true);
+  }
+
+  function isCaretAtEditableBoundary(element, atEnd) {
+    var selection = typeof window !== 'undefined' && window.getSelection ? window.getSelection() : null;
+    if (!selection || selection.rangeCount !== 1 || !selection.isCollapsed) return false;
+    var range = selection.getRangeAt(0);
+    if (!element.contains(range.startContainer)) return false;
+    var edge = document.createRange();
+    edge.selectNodeContents(element);
+    edge.collapse(!!atEnd);
+    return atEnd
+      ? range.compareBoundaryPoints(Range.END_TO_END, edge) === 0
+      : range.compareBoundaryPoints(Range.START_TO_START, edge) === 0;
+  }
+
+  function moveBetweenEditableParagraphs(element, direction) {
+    if (!isCaretAtEditableBoundary(element, direction > 0)) return false;
+    var paragraphs = Array.prototype.slice.call(element.parentNode.querySelectorAll('.story-visual-node-text[contenteditable="true"]'));
+    var index = paragraphs.indexOf(element);
+    var target = paragraphs[index + direction];
+    if (!target) return false;
+    var range = document.createRange();
+    range.selectNodeContents(target);
+    range.collapse(direction < 0);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    target.focus();
+    return true;
   }
 
   function optionDraftFromOption(option, states) {
@@ -364,8 +401,8 @@
     });
     if (!readOnly) { var addEffect = document.createElement('button'); addEffect.type = 'button'; addEffect.textContent = '添加剧情状态变化'; addEffect.addEventListener('click', function () { draft.effects.push({ name: Object.keys(types)[0] || '', op: '=', value: '' }); context.tipKey = 'first-effect'; rerender(); }); effectsArea.appendChild(addEffect); }
     var actions = document.createElement('div'); actions.className = 'story-visual-form-actions';
-    var cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '取消'; cancel.addEventListener('click', context.close); actions.appendChild(cancel);
-    var submit = document.createElement('button'); submit.type = 'submit'; submit.textContent = '完成'; submit.disabled = readOnly; actions.appendChild(submit); form.appendChild(actions);
+    var cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'story-visual-form-secondary'; cancel.textContent = '取消'; cancel.addEventListener('click', context.close); actions.appendChild(cancel);
+    var submit = document.createElement('button'); submit.type = 'submit'; submit.className = 'story-visual-form-primary'; submit.textContent = '完成'; submit.disabled = readOnly; actions.appendChild(submit); form.appendChild(actions);
     form.addEventListener('submit', function (event) {
       event.preventDefault(); var nextDraft = readDraft(); var checked = validateOptionDraft(nextDraft, types, blocks);
       if (!checked.ok) { error.textContent = checked.errors[0]; error.hidden = false; return; }
@@ -414,6 +451,14 @@
           if (options && options.commitTextNode) options.commitTextNode(node, textParts.leading + sourceFromTextEditor(element) + textParts.trailing);
         });
         element.addEventListener('keydown', function (event) {
+          if (event.key === 'ArrowUp' && moveBetweenEditableParagraphs(element, -1)) {
+            event.preventDefault();
+            return;
+          }
+          if (event.key === 'ArrowDown' && moveBetweenEditableParagraphs(element, 1)) {
+            event.preventDefault();
+            return;
+          }
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
             event.preventDefault();
             if (options && options.commitTextNode) options.commitTextNode(node, textParts.leading + sourceFromTextEditor(element) + textParts.trailing);
@@ -437,7 +482,7 @@
         element.dataset.end = String(node.end);
         element.textContent = descriptor.summary;
         element.addEventListener('click', function () {
-          if (options && options.onEditCommand) options.onEditCommand(node);
+          if (options && options.onEditCommand) options.onEditCommand(node, element);
         });
       } else if (node.kind === 'option_group') {
         element = document.createElement('button');
@@ -535,8 +580,40 @@
         }
       });
     }
-    function editCommand(node) {
-      if (typeof options.onEditCommand === 'function') options.onEditCommand(node);
+    function editCommand(node, element) {
+      if (!node || !node.data || !element || !element.parentNode) {
+        if (typeof options.onEditCommand === 'function') options.onEditCommand(node);
+        return;
+      }
+      var command = node.data;
+      var editor = document.createElement('input');
+      editor.type = 'text';
+      editor.className = 'story-visual-command-input';
+      editor.value = command.value == null ? '' : command.value;
+      editor.setAttribute('aria-label', '编辑「' + command.name + '」的内容');
+      editor.placeholder = command.name === '停顿' ? '毫秒（可留空）' : '填写内容';
+      var wrapper = document.createElement('span');
+      wrapper.className = element.className + ' story-visual-command-editing';
+      var name = document.createElement('span');
+      name.className = 'story-visual-command-name';
+      name.textContent = command.name + '：';
+      wrapper.append(name, editor);
+      element.replaceWith(wrapper);
+      var settled = false;
+      function finish(save) {
+        if (settled) return;
+        settled = true;
+        var replacement = serializeCommandEdit(node, editor.value);
+        if (save && replacement !== node.raw) commitTextNode(node, replacement);
+        else refresh();
+      }
+      editor.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+        else if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+      });
+      editor.addEventListener('blur', function () { finish(true); });
+      editor.focus();
+      editor.select();
     }
     var renderOptions = {
       getStates: options.getStates,
@@ -618,6 +695,7 @@
     insertAtVisualSelection: insertAtVisualSelection,
     splitEditableText: splitEditableText,
     sourceFromTextEditor: sourceFromTextEditor,
+    serializeCommandEdit: serializeCommandEdit,
     createEmptyOption: createEmptyOption,
     validateOptionDraft: validateOptionDraft,
     conditionAstToDraft: conditionAstToDraft,

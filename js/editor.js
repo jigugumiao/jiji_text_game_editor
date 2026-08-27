@@ -273,6 +273,9 @@
     editorTextWrap.hidden = previewMode;
     storyVisualEditor.hidden = previewMode;
     storyPreview.hidden = !previewMode;
+    // The preview starts with a CSS `.hidden` class as well as the HTML
+    // attribute. Keep them aligned, otherwise it remains display:none.
+    storyPreview.classList.toggle('hidden', !previewMode);
     if (!previewMode && visualController) {
       if (visualController.getMode() === 'visual') visualController.showVisual();
       else visualController.showSource();

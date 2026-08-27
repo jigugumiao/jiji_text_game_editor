@@ -60,9 +60,13 @@ assert.match(visualUiSource, /story-visual-chip story-visual-chip-' \+ descripto
   '指令 chip 必须保留分类 class 以应用语义色彩');
 
 const StoryVisualUI = require(path.join(root, 'js', 'story-visual-ui.js'));
-['createController', 'renderDocument', 'describeNode', 'splitEditableText', 'sourceFromTextEditor', 'commitFocusedEditor', 'destroy'].forEach((name) => {
+['createController', 'renderDocument', 'describeNode', 'splitEditableText', 'sourceFromTextEditor', 'serializeCommandEdit', 'commitFocusedEditor', 'destroy'].forEach((name) => {
   assert.equal(typeof StoryVisualUI[name], 'function', `StoryVisualUI 必须导出 ${name}`);
 });
+assert.equal(StoryVisualUI.serializeCommandEdit({ raw: '<标题:旧标题>', data: { name: '标题', value: '旧标题' } }, '新标题'), '<标题:新标题>',
+  '点击指令 chip 后编辑内容必须只替换指令值');
+assert.equal(StoryVisualUI.serializeCommandEdit({ raw: '<停顿>', data: { name: '停顿', value: '' } }, ''), '<停顿>',
+  '留空的无参指令必须保持无冒号的简洁语法');
 
 assert.deepEqual(StoryVisualUI.splitEditableText('\r\n\r\n这就是你踏上旅程的地方。\r\n深吸一口气，迈出了第一步。\r\n\r\n'), {
   leading: '\r\n\r\n', body: '这就是你踏上旅程的地方。\r\n深吸一口气，迈出了第一步。', trailing: '\r\n\r\n'
@@ -139,6 +143,10 @@ assert.match(editorSource, /insertVisualOrSource\('<清除叠层>'\)/, '叠层�
 assert.match(editorSource, /insertVisualOrSource\('<停止音乐>'\)/, '音乐库功能卡必须走统一插入入口');
 assert.match(editorSource, /insertVisualOrSource\(ph\)/, '状态库插入正文必须走统一插入入口');
 assert.match(editorSource, /function updatePreviewLayout\(\)[\s\S]*?editorTextWrap\.hidden = previewMode[\s\S]*?storyVisualEditor\.hidden = previewMode[\s\S]*?storyPreview\.hidden = !previewMode/, '预览必须独占编辑器主体并隐藏两种编辑器');
+assert.match(editorSource, /storyPreview\.classList\.toggle\('hidden', !previewMode\)/, '预览切换必须同步移除初始 hidden class，避免预览内容空白');
+assert.match(visualUiSource, /moveBetweenEditableParagraphs\(element, -1\)/, '正文输入框顶端按上键必须能移至上一段');
+assert.match(visualUiSource, /moveBetweenEditableParagraphs\(element, 1\)/, '正文输入框底端按下键必须能移至下一段');
+assert.match(visualUiSource, /story-visual-command-input/, '点击指令 chip 必须进入直接编辑状态');
 ['剧情状态', '选项', '背景', '物品', '音乐', '音效', '标题', '停顿', '分割线', '剧情块', '跳回', '随机跳转'].forEach((label) => {
   assert.match(editorSource, new RegExp("label: '" + label), '视觉插入菜单必须提供「' + label + '」');
 });

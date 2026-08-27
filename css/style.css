@@ -1560,6 +1560,12 @@ body.article-mode [data-ai-param] { display: none !important; }
 .mode-card-desc { font-size: 12px; color: var(--text-2); line-height: 1.5; }
 .modal-box-actions { display: flex; gap: 10px; margin-top: 18px; }
 .modal-box-actions .btn { width: auto; flex: 1; margin-top: 0; }
+.project-convert-copy { margin: 0 0 14px; color: var(--text-2); font-size: 13px; line-height: 1.6; }
+.project-convert-status { min-height: 20px; color: var(--text-2); font-size: 12px; line-height: 1.55; }
+.project-conversion-hint { display: flex; align-items: center; gap: 8px; margin: 8px 10px 0; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft); color: var(--text-2); font-size: 12px; }
+.project-conversion-hint span { flex: 1; }
+.project-conversion-hint .mini-btn { white-space: nowrap; }
+.project-conversion-hint .modal-x { flex: 0 0 auto; }
 body.dark .new-project-input { background: var(--bg-sunken); }
 body.dark .mode-card { background: var(--bg-sunken); }
 body.dark .mode-card:hover { background: var(--bg-soft); }

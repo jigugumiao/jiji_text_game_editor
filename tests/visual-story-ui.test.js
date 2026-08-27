@@ -11,6 +11,8 @@ assert.match(html, /<button id="editor-mode-source" type="button">源码模式<\
   '编辑器必须提供源码模式切换');
 assert.match(html, /<div id="story-visual-editor" class="story-visual-editor" hidden><\/div>/,
   '编辑器必须提供独立的可视化编辑器宿主');
+assert.match(html, /id="project-convert-modal"/, '旧项目转换必须使用共用转换弹窗');
+assert.match(html, /js\/project-converter\.js/, '转换器必须在编辑器前加载');
 
 const StoryVisualUI = require(path.join(root, 'js', 'story-visual-ui.js'));
 ['createController', 'renderDocument', 'describeNode', 'commitFocusedEditor', 'destroy'].forEach((name) => {

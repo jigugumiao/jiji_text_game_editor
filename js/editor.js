@@ -1405,6 +1405,60 @@
     refreshReviewToggleBadge();
     refreshBlockReviewLine();
     ftResetSession(); // 全文助理对话按工程隔离：切工程时重置内存态，下次开面板从本工程 key 重新加载
+    const project = window.Storage.listProjects().find(p => p.id === id);
+    if (project && project.mode !== 'article' && !project.visualEditorVersion) showOldProjectConversionHint(project);
+  }
+
+  let conversionProjectId = null;
+  function closeProjectConversionModal() {
+    $('#project-convert-modal').classList.add('hidden');
+    conversionProjectId = null;
+  }
+  function openProjectConversionModal(project) {
+    if (!project || project.mode === 'article' || project.visualEditorVersion) return;
+    conversionProjectId = project.id;
+    $('#project-convert-name').value = window.ProjectConverter.nextConvertedName(project.name, window.Storage.listProjects());
+    $('#project-convert-status').textContent = '';
+    const run = $('#project-convert-run'); run.textContent = '开始转换'; run.disabled = false;
+    $('#project-convert-modal').classList.remove('hidden');
+  }
+  function showOldProjectConversionHint(project) {
+    const existing = document.querySelector('.project-conversion-hint');
+    if (existing) existing.remove();
+    const prefKey = 'conversion-hint-dismissed:' + project.id;
+    if (window.Storage.getUiPreference(prefKey)) return;
+    const hint = document.createElement('div');
+    hint.className = 'project-conversion-hint';
+    hint.innerHTML = '<span>试试可视化编辑：先复制这份旧项目，原项目保持不变。</span><button type="button" class="mini-btn">转换为可视化项目</button><button type="button" class="modal-x" title="不再提示">✕</button>';
+    hint.querySelector('.mini-btn').onclick = () => openProjectConversionModal(project);
+    hint.querySelector('.modal-x').onclick = () => { window.Storage.setUiPreference(prefKey, '1'); hint.remove(); };
+    $('#editor-body').prepend(hint);
+  }
+  function bindProjectConversionModal() {
+    const modal = $('#project-convert-modal');
+    const close = closeProjectConversionModal;
+    $('#project-convert-x').addEventListener('click', close);
+    $('#project-convert-cancel').addEventListener('click', close);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    $('#project-convert-run').addEventListener('click', async () => {
+      if (!conversionProjectId) return close();
+      const source = window.Storage.listProjects().find(p => p.id === conversionProjectId);
+      if (!source) return close();
+      const name = ($('#project-convert-name').value || '').trim() || window.ProjectConverter.nextConvertedName(source.name, window.Storage.listProjects());
+      const run = $('#project-convert-run'); const status = $('#project-convert-status');
+      run.disabled = true; status.textContent = '正在复制并校验项目…';
+      try {
+        const result = await window.Storage.copyProjectForVisual(source.id, name);
+        await openProject(result.projectId);
+        const counts = result.report.counts;
+        status.textContent = '转换完成：已复制 ' + counts.options + ' 个选项、' + counts.stateChanges + ' 个剧情状态变化、' + counts.effects + ' 个选项效果；未丢失内容。新项目已打开。';
+        run.textContent = '完成'; run.disabled = false;
+        conversionProjectId = null;
+      } catch (error) {
+        status.textContent = '转换失败，临时数据已清理：' + (error && error.message ? error.message : error) + '。可立即重试。';
+        run.disabled = false;
+      }
+    });
   }
   // 记录已渲染的项目签名（各项目 id 拼串），用于判断「返回项目页」时是否需要整页重建
   let _projectsSignature = null;
@@ -1456,11 +1510,14 @@
       '</div>' +
       '<div class="project-card-actions">' +
         '<button class="btn btn-ghost btn-p-open">打开</button>' +
+        (!isArticle && !p.visualEditorVersion ? '<button class="btn btn-ghost btn-p-convert">转换为可视化项目</button>' : '') +
         '<button class="btn btn-ghost btn-p-backup">备份</button>' +
         '<button class="btn btn-ghost btn-p-rename">重命名</button>' +
         '<button class="btn btn-ghost btn-p-del">删除</button>' +
       '</div>';
     card.querySelector('.btn-p-open').onclick = () => openProject(p.id);
+    const convert = card.querySelector('.btn-p-convert');
+    if (convert) convert.onclick = () => openProjectConversionModal(p);
     card.querySelector('.btn-p-backup').onclick = () => exportProjectBackup(p.id);
     card.querySelector('.btn-p-rename').onclick = () => {
       const name = prompt('项目新名称', p.name);
@@ -1578,6 +1635,7 @@
     $('#btn-projects').addEventListener('click', returnToProjects);
     $('#btn-new-project').addEventListener('click', openNewProjectModal);
     bindNewProjectModal();
+    bindProjectConversionModal();
     // 工程备份导入：点按钮选文件 → 解析 → 新建独立项目
     const importInput = $('#file-import-project');
     $('#btn-import-project').addEventListener('click', () => { if (importInput) importInput.click(); });

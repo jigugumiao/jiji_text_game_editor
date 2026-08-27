@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260827-04">
+<link rel="stylesheet" href="css/style.css?v=20260827-05">
 </head>
 <body>
 
@@ -83,7 +83,7 @@
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.66</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.67</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -271,6 +271,17 @@
   </div>
 </div>
 
+<!-- 旧项目转换：始终复制到新项目，不会修改原项目 -->
+<div id="project-convert-modal" class="modal hidden">
+  <div class="modal-box project-convert-box">
+    <div class="new-project-head"><span class="new-project-title">转换为可视化项目</span><button class="modal-x" id="project-convert-x" title="关闭">✕</button></div>
+    <p class="project-convert-copy">将创建一份独立副本；原项目和素材不会被修改。</p>
+    <div class="new-project-field"><label class="new-project-label">新项目名称</label><input id="project-convert-name" class="new-project-input" maxlength="60"></div>
+    <div id="project-convert-status" class="project-convert-status" aria-live="polite"></div>
+    <div class="modal-box-actions"><button id="project-convert-cancel" class="btn btn-ghost">取消</button><button id="project-convert-run" class="btn btn-primary">开始转换</button></div>
+  </div>
+</div>
+
 <!-- 生成器弹层（渐变 / 噪波） -->
 <div id="gen-modal" class="modal hidden">
   <div class="modal-box" id="gen-box"></div>
@@ -413,7 +424,8 @@
 <input type="file" id="file-audio" accept="audio/*" multiple hidden>
 
 <script src="js/zip.js?v=20260722-60"></script>
-<script src="js/storage.js?v=20260819-02"></script>
+<script src="js/storage.js?v=20260827-06"></script>
+<script src="js/project-converter.js?v=20260827-01"></script>
 <script src="js/story-vars.js?v=20260826-01"></script>
 <script src="js/story-options.js?v=20260827-02"></script>
 <script src="js/story-visual-doc.js?v=20260827-03"></script>
@@ -424,7 +436,7 @@
 <script src="js/ai.js?v=20260806-01"></script>
 <script src="js/lame.min.js?v=1"></script>
 <!-- sample-project.js 改为按需懒加载（内含压缩后内联示例素材 data URL，约 1.5MB，避免拖慢编辑器日常启动），见 editor.js ensureSampleProject() -->
-<script src="js/editor.js?v=20260827-02"></script>
+<script src="js/editor.js?v=20260827-07"></script>
 <!-- 文字浮动工具栏 -->
 <div id="bbcode-float" class="bbcode-float hidden">
   <div id="bbcode-drag" class="bbcode-drag-head">⋮⋮ 文字工具栏</div>

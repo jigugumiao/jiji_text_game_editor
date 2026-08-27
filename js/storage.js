@@ -20,6 +20,7 @@ const LS_STORY = _NS + 'story-editor:story';        // 节点数组
 const LS_STORY_TEXT = _NS + 'story-editor:story-text'; // 原始文本
 const LS_META = _NS + 'story-editor:meta';          // 标题等
 const LS_VARS = _NS + 'story-editor:vars';          // 变量库（名字/类型/初值）
+const LS_UI = _NS + 'story-editor:ui:';             // 可按测试/正式命名空间隔离的界面偏好
 
 // 剧情块系统：主剧情 + 其它剧情块。结构 { main: 文本, blocks: { 名称: 文本 } }
 // 主剧情(__MAIN__) 始终存在、置顶、不可删除，游戏默认从它开始。
@@ -167,6 +168,8 @@ function getProjectName(id) {
   return p ? p.name : '未知项目';
 }
 function getCurrentProjectId() { return localStorage.getItem(LS_CURRENT) || null; }
+function getUiPreference(key) { return localStorage.getItem(LS_UI + key); }
+function setUiPreference(key, value) { localStorage.setItem(LS_UI + key, String(value)); }
 function setCurrentProject(id) {
   localStorage.setItem(LS_CURRENT, id);
   _projectId = id;
@@ -221,6 +224,76 @@ async function getProjectStatsBatch(ids) {
     if (t) map[id].lineCount = t.split('\n').length;
   }
   return map;
+}
+
+// ============ 旧项目转可视化项目（复制事务） ============
+function _projectDataKeys(id) {
+  return {
+    blocks: LS_BLOCKS + ':' + id, vars: LS_VARS + ':' + id, meta: LS_META + ':' + id,
+    story: LS_STORY + ':' + id, storyText: LS_STORY_TEXT + ':' + id
+  };
+}
+function _readJson(raw, fallback) {
+  try { return raw ? JSON.parse(raw) : fallback; } catch (e) { return fallback; }
+}
+async function readProjectSnapshot(projectId) {
+  const keys = _projectDataKeys(projectId);
+  const data = {};
+  Object.keys(keys).forEach(name => { data[name] = localStorage.getItem(keys[name]); });
+  let assets = [];
+  try {
+    const prefix = projectId + PROJECT_NS_SEP;
+    assets = (await idbGetAll(STORE_ASSETS)).filter(r => r.key && r.key.indexOf(prefix) === 0)
+      .map(r => { const { key, ...rest } = r; return Object.assign({}, rest, { lib: r.lib || _libFromKey(key), id: r.id || _idFromKey(key) }); });
+  } catch (e) { throw new Error('读取项目素材失败：' + (e.message || e)); }
+  const parsedBlocks = _readJson(data.blocks, { main: data.storyText || '', blocks: {} });
+  return {
+    id: projectId, data, blocks: parsedBlocks, vars: _readJson(data.vars, []), assets
+  };
+}
+async function writeTemporaryProject(snapshot, targetId) {
+  const keys = _projectDataKeys(targetId);
+  const data = snapshot && snapshot.data || {};
+  Object.keys(keys).forEach(name => {
+    if (data[name] != null) localStorage.setItem(keys[name], data[name]);
+  });
+  for (const asset of (snapshot && snapshot.assets) || []) {
+    if (!asset || !asset.lib || !asset.id) continue;
+    await idbPut(STORE_ASSETS, Object.assign({}, asset, { key: targetId + PROJECT_NS_SEP + asset.lib + ':' + asset.id }));
+  }
+}
+async function validateTemporaryProject(targetId) {
+  const keys = _projectDataKeys(targetId);
+  const rawBlocks = localStorage.getItem(keys.blocks);
+  const blocks = _readJson(rawBlocks, null);
+  if (rawBlocks != null && (!blocks || typeof blocks !== 'object')) throw new Error('临时项目剧情块无效');
+  const rawVars = localStorage.getItem(keys.vars);
+  const vars = _readJson(rawVars, null);
+  if (rawVars != null && !Array.isArray(vars)) throw new Error('临时项目剧情状态无效');
+  try { await idbGetAll(STORE_ASSETS); } catch (e) { throw new Error('临时项目素材校验失败：' + (e.message || e)); }
+}
+async function registerTemporaryProject(targetId, name, metadata) {
+  const projects = _readProjects();
+  if (projects.some(p => p.id === targetId)) throw new Error('临时项目已注册');
+  projects.push(Object.assign({ id: targetId, name: name, mode: 'game', createdAt: Date.now() }, metadata || {}));
+  _writeProjects(projects);
+}
+async function cleanupTemporaryProject(targetId) {
+  const keys = _projectDataKeys(targetId);
+  Object.keys(keys).forEach(name => localStorage.removeItem(keys[name]));
+  const prefix = targetId + PROJECT_NS_SEP;
+  try {
+    const all = await idbGetAll(STORE_ASSETS);
+    for (const record of all) if (record.key && record.key.indexOf(prefix) === 0) await idbDelete(STORE_ASSETS, record.key);
+  } catch (e) { throw new Error('清理临时项目素材失败：' + (e.message || e)); }
+}
+async function copyProjectForVisual(sourceId, requestedName, adapter) {
+  const service = adapter || {
+    readProjectSnapshot, writeTemporaryProject, validateTemporaryProject,
+    registerTemporaryProject, cleanupTemporaryProject, createId: () => uid('proj'), listProjects
+  };
+  if (typeof ProjectConverter === 'undefined') throw new Error('转换服务未加载');
+  return ProjectConverter.copyProjectForVisual(sourceId, requestedName, service);
 }
 
 // 首次启动：把旧版无项目数据收进「默认项目」，并确保项目注册表存在
@@ -695,6 +768,9 @@ const Storage = {
   // 项目 API
   listProjects, createProject, renameProject, deleteProject, getProjectName, getProjectMode,
   getCurrentProjectId, setCurrentProject, getProjectStats, getProjectStatsBatch, migrateLegacyIfNeeded,
+  getUiPreference, setUiPreference,
+  // 旧项目安全转换：临时写入 → 校验 → 最后注册；源项目绝不改写
+  readProjectSnapshot, writeTemporaryProject, validateTemporaryProject, registerTemporaryProject, cleanupTemporaryProject, copyProjectForVisual,
   // 工程备份 / 恢复（跨设备搬运整个剧本：素材+变量+线索+设定）
   exportProject, importProject,
 };

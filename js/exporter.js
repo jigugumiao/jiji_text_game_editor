@@ -1948,7 +1948,9 @@ __STORY_DATA__
         // galgame 模式：点击选项即视为进入新场景/新段，标记段已结束；
         // 下一次 typeText / showDivider 登场前 beginSegmentIfNeeded() 会清空旧文字，进入新对话框
         markSegmentEnd();
-        if (opt.effects && opt.effects.length && (!opt.block || nodesOf(opt.block).length)) applyVarOps(opt.effects);
+        // Empty blocks are still valid targets.  Check that the block key
+        // exists instead of treating an empty node list as a missing block.
+        if (opt.effects && opt.effects.length && (!opt.block || Object.prototype.hasOwnProperty.call(DATA.blocks || {}, opt.block))) applyVarOps(opt.effects);
         if (opt.block){ callBlock(opt.block); execCur(); }
         else { curIdx++; execCur(); }
       });

@@ -30,9 +30,14 @@ assert.match(editorSource, /getUiPreference/, '提示已读状态必须通过命
 assert.match(editorSource, /setUiPreference/, '提示已读状态必须通过命名空间 UI 偏好保存');
 
 const StoryVisualUI = require(path.join(root, 'js', 'story-visual-ui.js'));
-['createController', 'renderDocument', 'describeNode', 'commitFocusedEditor', 'destroy'].forEach((name) => {
+['createController', 'renderDocument', 'describeNode', 'sourceFromTextEditor', 'commitFocusedEditor', 'destroy'].forEach((name) => {
   assert.equal(typeof StoryVisualUI[name], 'function', `StoryVisualUI 必须导出 ${name}`);
 });
+
+const text = (value) => ({ nodeType: 3, nodeValue: value });
+const element = (tagName, children, source) => ({ nodeType: 1, tagName, childNodes: children || [], dataset: source == null ? {} : { source } });
+assert.equal(StoryVisualUI.sourceFromTextEditor(element('DIV', [text('第一行'), element('DIV', [text('第二行')]), element('BR'), text('第三行')])), '第一行\n第二行\n第三行',
+  '可视化正文按 Enter 生成的 block/BR 必须回写为换行，不能吞掉内容');
 
 ['createEmptyOption', 'validateOptionDraft', 'conditionAstToDraft', 'conditionDraftToAst', 'effectDraftToOps'].forEach((name) => {
   assert.equal(typeof StoryVisualUI[name], 'function', `StoryVisualUI 必须导出 ${name}`);

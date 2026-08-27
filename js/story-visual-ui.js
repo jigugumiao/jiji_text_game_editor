@@ -197,10 +197,25 @@
   }
 
   function sourceFromTextEditor(element) {
-    return Array.prototype.map.call(element.childNodes, function (child) {
-      return child.nodeType === 1 && child.dataset && child.dataset.source != null
-        ? child.dataset.source : child.textContent;
-    }).join('');
+    // contenteditable creates <br> and block elements when the user presses
+    // Enter.  textContent alone drops those visual line breaks, so turn the
+    // browser DOM back into source text explicitly before replacing a span.
+    function readChildren(parent, root) {
+      var out = '';
+      Array.prototype.forEach.call(parent.childNodes || [], function (child, index) {
+        if (child.nodeType === 3) { out += child.nodeValue || ''; return; }
+        if (child.nodeType !== 1) return;
+        if (child.dataset && child.dataset.source != null) { out += child.dataset.source; return; }
+        var tag = String(child.tagName || '').toUpperCase();
+        if (tag === 'BR') { if (!out || out.charAt(out.length - 1) !== '\n') out += '\n'; return; }
+        var block = tag === 'DIV' || tag === 'P';
+        if (root && block && out && out.charAt(out.length - 1) !== '\n') out += '\n';
+        out += readChildren(child, false);
+        if (root && block && index < parent.childNodes.length - 1 && out.charAt(out.length - 1) !== '\n') out += '\n';
+      });
+      return out;
+    }
+    return readChildren(element, true);
   }
 
   function optionDraftFromOption(option, states) {
@@ -531,6 +546,7 @@
     createController: createController,
     renderDocument: renderDocument,
     describeNode: describeNode,
+    sourceFromTextEditor: sourceFromTextEditor,
     createEmptyOption: createEmptyOption,
     validateOptionDraft: validateOptionDraft,
     conditionAstToDraft: conditionAstToDraft,

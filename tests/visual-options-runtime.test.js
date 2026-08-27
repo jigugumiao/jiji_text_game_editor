@@ -34,7 +34,7 @@ assert.match(exporterSrc, /if \(unmet && opt\.unmetBehavior !== 'disable'\) retu
 assert.match(exporterSrc, /btn\.classList\.add\('is-disabled'\)/, 'disabled unmet options receive a disabled state');
 assert.match(exporterSrc, /btn\.disabled = true/, 'disabled unmet options cannot be clicked');
 assert.match(exporterSrc, /if \(!anyEnabled && shown === 0\)/, 'visible disabled options are not auto-skipped');
-assert.match(exporterSrc, /if \(opt\.effects && opt\.effects\.length && \(!opt\.block \|\| nodesOf\(opt\.block\)\.length\)\)/, 'effects run only after target validation');
+assert.match(exporterSrc, /if \(opt\.effects && opt\.effects\.length && \(!opt\.block \|\| Object\.prototype\.hasOwnProperty\.call\(DATA\.blocks \|\| \{\}, opt\.block\)\)\)/, 'effects run when the target block exists, including an empty block');
 assert.match(exporterSrc, /applyVarOps\(opt\.effects\);/, 'selected option effects are applied');
 assert.doesNotMatch(exporterSrc.match(/function fastReplay\([\s\S]*?\n  \}/)[0], /applyVarOps\(opt\.effects\)/, 'replay does not apply option effects a second time');
 

@@ -2061,7 +2061,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.79-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.80-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -6744,7 +6744,7 @@ __STORY_DATA__
     // 开场标题界面音乐：循环播放，直到点「开始游戏」时停止
     function startOpeningMusic() {
       if (openingAudio) return;
-      const name = (g.openingMusic || '').trim();
+      const name = String(g.openingMusic || '').trim();
       if (!name) return;
       const a = findAsset('music', { name: name });
       if (a && a.src) {
@@ -6777,7 +6777,7 @@ __STORY_DATA__
     startOpeningMusic();
     if (!openingAudio) document.addEventListener('pointerdown', onFirstGesture, true);
     // 作者信息：仅以文字展示在开始游戏下方（不再提供跳转个人空间的按钮）
-    const authorId = (g.authorId || '').trim();
+    const authorId = String(g.authorId || '').trim();
     if (authorId) {
       const aEl = document.getElementById('start-author');
       if (aEl) aEl.textContent = '作者：' + authorId;
@@ -18536,7 +18536,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.79</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.80</span></div>
         </div>
       </div>
     </div>

@@ -43,4 +43,9 @@ assert.match(exporterSrc, /StoryOptions\.selectEffects\(opt\.effects, function\(
 assert.match(exporterSrc, /if \(selectedEffects\.length\) applyVarOps\(selectedEffects\);/, 'only selected option effects are applied');
 assert.doesNotMatch(exporterSrc.match(/function fastReplay\([\s\S]*?\n  \}/)[0], /applyVarOps\(opt\.effects\)/, 'replay does not apply option effects a second time');
 
+// Old projects may contain malformed global fields.  Start-screen setup must not
+// abort before preloadAll paints its first status when those fields are non-strings.
+assert.match(exporterSrc, /const name = String\(g\.openingMusic \|\| ''\)\.trim\(\);/, 'opening music name is normalized before trim');
+assert.match(exporterSrc, /const authorId = String\(g\.authorId \|\| ''\)\.trim\(\);/, 'author id is normalized before trim');
+
 console.log('visual-options-runtime.test.js passed');

@@ -1125,7 +1125,7 @@ __STORY_DATA__
     // 开场标题界面音乐：循环播放，直到点「开始游戏」时停止
     function startOpeningMusic() {
       if (openingAudio) return;
-      const name = (g.openingMusic || '').trim();
+      const name = String(g.openingMusic || '').trim();
       if (!name) return;
       const a = findAsset('music', { name: name });
       if (a && a.src) {
@@ -1158,7 +1158,7 @@ __STORY_DATA__
     startOpeningMusic();
     if (!openingAudio) document.addEventListener('pointerdown', onFirstGesture, true);
     // 作者信息：仅以文字展示在开始游戏下方（不再提供跳转个人空间的按钮）
-    const authorId = (g.authorId || '').trim();
+    const authorId = String(g.authorId || '').trim();
     if (authorId) {
       const aEl = document.getElementById('start-author');
       if (aEl) aEl.textContent = '作者：' + authorId;

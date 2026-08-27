@@ -198,7 +198,7 @@
         return;
       }
       var token = document.createElement('span');
-      token.className = 'story-visual-state-token';
+      token.className = 'story-visual-state-token story-visual-state-token-read';
       token.contentEditable = 'false';
       token.dataset.source = part.source;
       token.dataset.name = part.name;

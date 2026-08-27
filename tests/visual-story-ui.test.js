@@ -37,6 +37,28 @@ assert.match(storageSource, /if \(m === 'game'\) project\.visualEditorVersion = 
 assert.match(styleSource, /\.editor-text-wrap\[hidden\], \.story-visual-editor\[hidden\] \{ display: none !important; \}/,
   '模式切换时被 hidden 的源码区或可视化区必须彻底隐藏，不能形成上下分栏');
 
+[
+  ['story-visual-state-token-read', 'read'],
+  ['story-visual-node-state_change', 'write'],
+  ['story-visual-node-option_group', 'option'],
+  ['story-visual-chip-background', 'background'],
+  ['story-visual-chip-item', 'item'],
+  ['story-visual-chip-music', 'music'],
+  ['story-visual-chip-sound', 'sound'],
+  ['story-visual-chip-flow', 'flow']
+].forEach(([selector, token]) => {
+  assert.match(styleSource, new RegExp('\\.' + selector + '[\\s\\S]*?var\\(--visual-chip-' + token + '-fg\\)'),
+    selector + ' 必须使用对应的低饱和 chip 前景 token');
+});
+assert.match(styleSource, /body\.dark\s*\{[\s\S]*?--visual-chip-read-bg:[^;]+;[\s\S]*?--visual-chip-flow-border:/,
+  '暗色主题必须覆盖 visual chip token，保持亮暗主题清晰');
+assert.match(styleSource, /\.story-visual-chip\s*\{[\s\S]*?box-shadow:\s*none;/,
+  '命令 chip 不得使用阴影卡片感');
+assert.match(visualUiSource, /token\.className = 'story-visual-state-token story-visual-state-token-read';/,
+  '正文状态插值必须标记为 read chip');
+assert.match(visualUiSource, /story-visual-chip story-visual-chip-' \+ descriptor\.category/,
+  '指令 chip 必须保留分类 class 以应用语义色彩');
+
 const StoryVisualUI = require(path.join(root, 'js', 'story-visual-ui.js'));
 ['createController', 'renderDocument', 'describeNode', 'sourceFromTextEditor', 'commitFocusedEditor', 'destroy'].forEach((name) => {
   assert.equal(typeof StoryVisualUI[name], 'function', `StoryVisualUI 必须导出 ${name}`);

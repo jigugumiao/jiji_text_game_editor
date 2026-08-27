@@ -28,6 +28,31 @@
   --cyan: #3f7d8c;
   --cyan-soft: rgba(63,125,140,.12);
   --danger: #c0392b;
+  /* 可视化剧情 chip：低饱和语义色，亮色背景约 10%。 */
+  --visual-chip-read-fg: #4F7B62;
+  --visual-chip-read-bg: rgba(79,123,98,.10);
+  --visual-chip-read-border: rgba(79,123,98,.35);
+  --visual-chip-write-fg: #3F7F7A;
+  --visual-chip-write-bg: rgba(63,127,122,.10);
+  --visual-chip-write-border: rgba(63,127,122,.35);
+  --visual-chip-option-fg: #527A9E;
+  --visual-chip-option-bg: rgba(82,122,158,.10);
+  --visual-chip-option-border: rgba(82,122,158,.35);
+  --visual-chip-background-fg: #8B6F57;
+  --visual-chip-background-bg: rgba(139,111,87,.10);
+  --visual-chip-background-border: rgba(139,111,87,.35);
+  --visual-chip-item-fg: #947348;
+  --visual-chip-item-bg: rgba(148,115,72,.10);
+  --visual-chip-item-border: rgba(148,115,72,.35);
+  --visual-chip-music-fg: #8A5B62;
+  --visual-chip-music-bg: rgba(138,91,98,.10);
+  --visual-chip-music-border: rgba(138,91,98,.35);
+  --visual-chip-sound-fg: #726C88;
+  --visual-chip-sound-bg: rgba(114,108,136,.10);
+  --visual-chip-sound-border: rgba(114,108,136,.35);
+  --visual-chip-flow-fg: #5E5B56;
+  --visual-chip-flow-bg: rgba(154,123,79,.10);
+  --visual-chip-flow-border: rgba(154,123,79,.38);
   /* 审阅卡片用色（保持浅色书卷感，暗色覆盖） */
   --review-card-bg: #ffffff;
   --review-opinion-bg: #fff7f0;
@@ -72,6 +97,31 @@ body.dark {
   --cyan: #6fb4c5;
   --cyan-soft: rgba(111,180,197,.16);
   --danger: #e35a4e;
+  /* 暗色背景加深至约 20%，前景提高亮度以保持可读性。 */
+  --visual-chip-read-fg: #9CC9AD;
+  --visual-chip-read-bg: rgba(79,123,98,.20);
+  --visual-chip-read-border: rgba(156,201,173,.48);
+  --visual-chip-write-fg: #91D0C9;
+  --visual-chip-write-bg: rgba(63,127,122,.20);
+  --visual-chip-write-border: rgba(145,208,201,.48);
+  --visual-chip-option-fg: #9FC4E6;
+  --visual-chip-option-bg: rgba(82,122,158,.20);
+  --visual-chip-option-border: rgba(159,196,230,.48);
+  --visual-chip-background-fg: #D2B59B;
+  --visual-chip-background-bg: rgba(139,111,87,.20);
+  --visual-chip-background-border: rgba(210,181,155,.48);
+  --visual-chip-item-fg: #D5B783;
+  --visual-chip-item-bg: rgba(148,115,72,.20);
+  --visual-chip-item-border: rgba(213,183,131,.48);
+  --visual-chip-music-fg: #D6AAB0;
+  --visual-chip-music-bg: rgba(138,91,98,.20);
+  --visual-chip-music-border: rgba(214,170,176,.48);
+  --visual-chip-sound-fg: #B8B2D1;
+  --visual-chip-sound-bg: rgba(114,108,136,.20);
+  --visual-chip-sound-border: rgba(184,178,209,.48);
+  --visual-chip-flow-fg: #D4CCBD;
+  --visual-chip-flow-bg: rgba(154,123,79,.20);
+  --visual-chip-flow-border: rgba(212,204,189,.48);
   /* 审阅卡片暗色适配 */
   --review-card-bg: var(--bg);
   --review-opinion-bg: rgba(217,105,78,.16);
@@ -352,14 +402,21 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 .story-visual-node { color: inherit; }
 .story-visual-node-text { outline: none; }
 .story-visual-state-token {
-  display: inline; color: inherit; border-bottom: 1px dotted var(--border-strong);
+  display: inline; padding: 0 3px; border: 1px solid; border-radius: 3px;
   cursor: text; white-space: pre-wrap;
 }
-.story-visual-node-option_group { display: block; width: 100%; padding: 0 0 0 12px; border: 0; border-left: 2px solid var(--border); background: transparent; color: inherit; font: inherit; line-height: inherit; text-align: left; cursor: pointer; }
+.story-visual-state-token-read { color: var(--visual-chip-read-fg); background: var(--visual-chip-read-bg); border-color: var(--visual-chip-read-border); }
+.story-visual-node-option_group { display: block; width: 100%; padding: 0 0 0 12px; border: 0; border-left: 2px solid var(--visual-chip-option-border); background: var(--visual-chip-option-bg); color: var(--visual-chip-option-fg); font: inherit; line-height: inherit; text-align: left; cursor: pointer; }
 .story-visual-node-state_change {
-  display: block; padding: 0; border: 0; background: transparent; color: inherit;
+  display: block; padding: 0 6px; border: 1px solid var(--visual-chip-write-border); border-radius: 3px; background: var(--visual-chip-write-bg); color: var(--visual-chip-write-fg);
   font: inherit; line-height: inherit; text-align: left; cursor: pointer;
 }
+.story-visual-chip { display: inline-flex; align-items: center; padding: 0 6px; border: 1px solid; border-radius: 3px; box-shadow: none; font: inherit; line-height: inherit; cursor: pointer; }
+.story-visual-chip-background { color: var(--visual-chip-background-fg); background: var(--visual-chip-background-bg); border-color: var(--visual-chip-background-border); }
+.story-visual-chip-item { color: var(--visual-chip-item-fg); background: var(--visual-chip-item-bg); border-color: var(--visual-chip-item-border); }
+.story-visual-chip-music { color: var(--visual-chip-music-fg); background: var(--visual-chip-music-bg); border-color: var(--visual-chip-music-border); }
+.story-visual-chip-sound { color: var(--visual-chip-sound-fg); background: var(--visual-chip-sound-bg); border-color: var(--visual-chip-sound-border); }
+.story-visual-chip-flow { color: var(--visual-chip-flow-fg); background: var(--visual-chip-flow-bg); border-color: var(--visual-chip-flow-border); }
 .story-visual-node-source_error { color: var(--danger); text-decoration: underline wavy currentColor; text-underline-offset: 3px; }
 .story-visual-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .story-visual-edit-button { opacity: .4; }

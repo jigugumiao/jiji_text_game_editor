@@ -287,7 +287,10 @@
       if (!node) return '';
       if (node.k === 'true') return 'true';
       if (node.k === 'bare') return node.name;
-      if (node.k === 'cmp') return node.name + node.op + value(node.val);
+      if (node.k === 'cmp') {
+        var operator = node.op === 'contains' || node.op === 'notcontains' ? ' ' + node.op + ' ' : node.op;
+        return node.name + operator + value(node.val);
+      }
       if (node.k === 'not') {
         var negated = walk(node.e, 'not');
         return '!' + ((node.e && (node.e.k === 'and' || node.e.k === 'or')) ? '(' + negated + ')' : negated);

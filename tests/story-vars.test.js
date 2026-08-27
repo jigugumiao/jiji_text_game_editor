@@ -120,6 +120,11 @@ const StoryVars = require('../js/story-vars.js');
   assert.equal(StoryVars.evalCondition('身份 contains "贵宾"', n => textVars[n]), true);
   assert.equal(StoryVars.evalCondition('身份 notcontains "平民"', n => textVars[n]), true);
   const containsAst = StoryVars.parseCondition('身份 contains "贵宾"');
+  const notContainsAst = StoryVars.parseCondition('身份 notcontains "平民"');
+  assert.equal(StoryVars.serializeCondition(containsAst), '身份 contains "贵宾"');
+  assert.equal(StoryVars.serializeCondition(notContainsAst), '身份 notcontains "平民"');
+  assert.deepEqual(StoryVars.parseCondition(StoryVars.serializeCondition(containsAst)), containsAst);
+  assert.deepEqual(StoryVars.parseCondition(StoryVars.serializeCondition(notContainsAst)), notContainsAst);
   assert.deepEqual(StoryVars.validateConditionTypes(containsAst, { 身份: 'text' }), { ok: true, errors: [] });
   assert.deepEqual(StoryVars.validateConditionTypes(containsAst, { 身份: 'number' }), {
     ok: false,

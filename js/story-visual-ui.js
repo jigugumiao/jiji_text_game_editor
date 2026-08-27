@@ -130,7 +130,7 @@
       var conditionErrors = validateConditionDraft(effect && effect.condition, types, '第 ' + (index + 1) + ' 条变量变化的');
       if (conditionErrors.length) { errors = errors.concat(conditionErrors); return; }
       var condition = effect && effect.condition ? conditionDraftToAst(effect.condition) : null;
-      var serializedCondition = condition && SV ? SV.serializeCondition(condition).replace(/(contains|notcontains)(?=")/g, ' $1 ') : null;
+      var serializedCondition = condition && SV ? SV.serializeCondition(condition) : null;
       ops.push({ name: name, op: op, val: String(value == null ? '' : value), condition: serializedCondition });
     });
     return { ok: errors.length === 0, ops: ops, errors: errors };

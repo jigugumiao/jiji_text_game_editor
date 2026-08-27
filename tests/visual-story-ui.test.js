@@ -28,6 +28,7 @@ assert.match(visualUiSource, /story-visual-context-tip/, '可视化编辑器必�
 assert.match(visualUiSource, /first-option/, '首次编辑选项必须触发提示');
 assert.match(visualUiSource, /first-condition/, '首次添加条件必须触发提示');
 assert.match(visualUiSource, /first-effect/, '首次添加效果必须触发提示');
+assert.match(visualUiSource, /if \(contextualTip\) form\.appendChild\(contextualTip\);/, '首次提示必须位于表单底部，不能挤动主要字段');
 assert.match(editorSource, /getUiPreference/, '提示已读状态必须通过命名空间 UI 偏好读取');
 assert.match(editorSource, /setUiPreference/, '提示已读状态必须通过命名空间 UI 偏好保存');
 assert.match(editorSource, /document\.querySelectorAll\('\.project-conversion-hint'\)\.forEach/,

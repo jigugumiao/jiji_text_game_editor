@@ -32,6 +32,14 @@ assert.deepEqual(StoryOptions.splitTopLevelFields('“买,钥匙”,商店'), ['
   assert.equal(StoryOptions.serializeOption(quoted.option).value, '<选项:"她说\\"好,走吧\\"",块A>');
 }
 
+// ---------- option without a jump ----------
+{
+  const noJump = StoryOptions.parseOptionTag('<选项:"拿走钥匙",变化:拿到钥匙=true>');
+  assert.equal(noJump.ok, true);
+  assert.equal(noJump.option.block, null);
+  assert.equal(StoryOptions.serializeOption(noJump.option).value, '<选项:"拿走钥匙",变化:拿到钥匙=true>');
+}
+
 // ---------- preservation and errors ----------
 {
   const unknown = StoryOptions.parseOptionTag('<选项:"A",块A,样式:红色>');

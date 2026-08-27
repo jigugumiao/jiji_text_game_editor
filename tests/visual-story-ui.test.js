@@ -85,8 +85,8 @@ assert.equal(StoryVisualUI.sourceFromTextEditor(element('DIV', [text('第一行'
 
 const stateMap = { 金币: 'number', 已见面: 'boolean', 名字: 'text' };
 assert.deepEqual(StoryVisualUI.createEmptyOption(['开场', '商店']), {
-  text: '', block: '开场', condition: null, unmetBehavior: 'hide', unmetMessage: '', effects: [], unknownFields: []
-}, '新选项应选择第一个剧情块，并保持可选字段为空');
+  text: '', block: null, condition: null, unmetBehavior: 'hide', unmetMessage: '', effects: [], unknownFields: []
+}, '新选项默认不跳转，避免把变量变化选项误导成必须跳转');
 
 const conditionDraft = StoryVisualUI.conditionAstToDraft(
   require(path.join(root, 'js', 'story-vars.js')).parseCondition('金币>=10 && (已见面 || 名字 contains "客")'), stateMap
@@ -115,7 +115,7 @@ assert.deepEqual(StoryVisualUI.effectDraftToOps([
 const invalidDraft = { text: '', block: '', condition: { mode: 'all', rows: [] }, effects: [{ name: '金币', op: '=', value: '1' }, { name: '金币', op: '+', value: '1' }, { name: '未知', op: '=', value: '1' }, { name: '已见面', op: '+', value: 'true' }], unknownFields: ['样式:红'] };
 const invalid = StoryVisualUI.validateOptionDraft(invalidDraft, stateMap, ['开场']);
 assert.equal(invalid.ok, false);
-['选项文字不能为空', '请选择目标剧情块', '变量「金币」重复', '变量「未知」不存在', '变量「已见面」不能使用此操作', '条件组不能为空', '此选项包含无法识别的高级字段，请在源码模式编辑'].forEach((message) => {
+['选项文字不能为空', '变量「金币」重复', '变量「未知」不存在', '变量「已见面」不能使用此操作', '条件组不能为空', '此选项包含无法识别的高级字段，请在源码模式编辑'].forEach((message) => {
   assert.ok(invalid.errors.includes(message), `应报告：${message}`);
 });
 
@@ -147,6 +147,11 @@ assert.match(editorSource, /storyPreview\.classList\.toggle\('hidden', !previewM
 assert.match(visualUiSource, /moveBetweenEditableParagraphs\(element, -1\)/, '正文输入框顶端按上键必须能移至上一段');
 assert.match(visualUiSource, /moveBetweenEditableParagraphs\(element, 1\)/, '正文输入框底端按下键必须能移至下一段');
 assert.match(visualUiSource, /story-visual-command-input/, '点击指令 chip 必须进入直接编辑状态');
+assert.match(visualUiSource, /不跳转，留在当前剧情/, '选项必须允许只改变变量而不跳转');
+assert.match(visualUiSource, /禁用时显示的文字/, '禁用提示必须明确说明其显示时机');
+assert.match(visualUiSource, /删除条件组/, '嵌套条件组必须可以删除');
+assert.match(visualUiSource, /选中后变量变化/, '变量变化必须明确发生在选中选项后');
+assert.match(visualUiSource, /form\.addEventListener\('contextmenu'/, '选项编辑表单必须屏蔽右键浏览器菜单');
 ['剧情状态', '选项', '背景', '物品', '音乐', '音效', '标题', '停顿', '分割线', '剧情块', '跳回', '随机跳转'].forEach((label) => {
   assert.match(editorSource, new RegExp("label: '" + label), '视觉插入菜单必须提供「' + label + '」');
 });

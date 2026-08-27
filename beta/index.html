@@ -428,6 +428,9 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 .story-visual-chip-music { color: var(--visual-chip-music-fg); background: var(--visual-chip-music-bg); border-color: var(--visual-chip-music-border); }
 .story-visual-chip-sound { color: var(--visual-chip-sound-fg); background: var(--visual-chip-sound-bg); border-color: var(--visual-chip-sound-border); }
 .story-visual-chip-flow { color: var(--visual-chip-flow-fg); background: var(--visual-chip-flow-bg); border-color: var(--visual-chip-flow-border); }
+.story-visual-command-editing { cursor: text; gap: 5px; }
+.story-visual-command-name { white-space: nowrap; }
+.story-visual-command-input { min-width: 10em; padding: 0 !important; color: inherit !important; background: transparent !important; border: 0 !important; border-radius: 0 !important; font: inherit !important; line-height: inherit; outline: none; }
 .story-visual-node-source_error { color: var(--danger); text-decoration: underline wavy currentColor; text-underline-offset: 3px; }
 .story-visual-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .story-visual-edit-button { opacity: .4; }
@@ -435,20 +438,23 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 .story-visual-editor input, .story-visual-editor textarea, .story-visual-editor select {
   color: var(--text); background: var(--bg); border-color: var(--border-strong);
 }
-.story-visual-option-form { max-width: 680px; padding: 20px 26px; font: inherit; line-height: 1.6; }
-.story-visual-form-title, .story-visual-form-label { font-weight: 600; }
+.story-visual-option-form { max-width: 720px; margin: 0 auto; padding: 28px 32px 36px; font: inherit; line-height: 1.6; }
+.story-visual-form-title { margin-bottom: 20px; padding-bottom: 13px; border-bottom: 1px solid var(--border); font-size: 18px; font-weight: 650; letter-spacing: .01em; }
+.story-visual-form-label { margin-top: 20px; font-weight: 600; color: var(--text); }
 .story-visual-context-tip { display: flex; align-items: baseline; gap: 10px; margin: 7px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); color: var(--text-2); font-size: 13px; }
 .story-visual-context-tip span { flex: 1; }
 .story-visual-context-tip-close { flex: 0 0 auto; padding: 0 !important; border: 0 !important; color: var(--text-2) !important; text-decoration: underline; }
-.story-visual-form-field { display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 10px; align-items: center; margin: 8px 0; }
-.story-visual-form-field input, .story-visual-form-field select { min-width: 0; padding: 4px 6px; font: inherit; }
-.story-visual-condition-area, .story-visual-effects-area { margin: 16px 0; }
-.story-visual-condition-group { margin: 8px 0 0 10px; padding-left: 10px; border-left: 1px solid var(--border); }
-.story-visual-condition-row, .story-visual-effect-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.story-visual-form-field { display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 12px; align-items: center; margin: 12px 0; color: var(--text-2); }
+.story-visual-form-field input, .story-visual-form-field select { min-width: 0; min-height: 32px; padding: 5px 8px; border-radius: 5px; font: inherit; }
+.story-visual-condition-area, .story-visual-effects-area { margin: 26px 0; padding-top: 2px; }
+.story-visual-condition-group { margin: 10px 0 0 10px; padding: 10px 0 2px 12px; border-left: 2px solid var(--border); }
+.story-visual-condition-row, .story-visual-effect-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 9px 0; }
 .story-visual-condition-row input, .story-visual-effect-row input { min-width: 7em; }
 .story-visual-condition-summary { margin-top: 7px; color: var(--text-3); font-size: 13px; }
-.story-visual-form-actions { display: flex; gap: 8px; margin-top: 20px; }
-.story-visual-option-form button { padding: 3px 8px; color: inherit; background: transparent; border: 1px solid var(--border-strong); border-radius: 3px; font: inherit; cursor: pointer; }
+.story-visual-form-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--border); }
+.story-visual-option-form button { min-height: 30px; padding: 4px 10px; color: inherit; background: transparent; border: 1px solid var(--border-strong); border-radius: 5px; font: inherit; cursor: pointer; }
+.story-visual-option-form .story-visual-form-primary { color: #fff; background: var(--accent); border-color: var(--accent); }
+.story-visual-option-form .story-visual-form-secondary { color: var(--text-2); }
 .story-visual-option-form button:disabled { opacity: .45; cursor: not-allowed; }
 .story-visual-form-error { margin: 8px 0; color: var(--danger); }
 /* 极淡、低存在感的行号，仅在编译报错时帮助定位行 */
@@ -2045,7 +2051,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.74-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.75-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -4733,6 +4739,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     return value.slice(0, at) + String(text == null ? '' : text) + value.slice(at);
   }
 
+  function serializeCommandEdit(node, value) {
+    var command = node && node.data || {};
+    var name = String(command.name || '').trim();
+    if (!name) return node && node.raw || '';
+    var nextValue = String(value == null ? '' : value).trim();
+    return '<' + name + (nextValue ? ':' + nextValue : '') + '>';
+  }
+
   function appendTextParts(element, descriptor) {
     descriptor.parts.forEach(function (part) {
       if (part.kind === 'text') {
@@ -4769,6 +4783,35 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       return out;
     }
     return readChildren(element, true);
+  }
+
+  function isCaretAtEditableBoundary(element, atEnd) {
+    var selection = typeof window !== 'undefined' && window.getSelection ? window.getSelection() : null;
+    if (!selection || selection.rangeCount !== 1 || !selection.isCollapsed) return false;
+    var range = selection.getRangeAt(0);
+    if (!element.contains(range.startContainer)) return false;
+    var edge = document.createRange();
+    edge.selectNodeContents(element);
+    edge.collapse(!!atEnd);
+    return atEnd
+      ? range.compareBoundaryPoints(Range.END_TO_END, edge) === 0
+      : range.compareBoundaryPoints(Range.START_TO_START, edge) === 0;
+  }
+
+  function moveBetweenEditableParagraphs(element, direction) {
+    if (!isCaretAtEditableBoundary(element, direction > 0)) return false;
+    var paragraphs = Array.prototype.slice.call(element.parentNode.querySelectorAll('.story-visual-node-text[contenteditable="true"]'));
+    var index = paragraphs.indexOf(element);
+    var target = paragraphs[index + direction];
+    if (!target) return false;
+    var range = document.createRange();
+    range.selectNodeContents(target);
+    range.collapse(direction < 0);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    target.focus();
+    return true;
   }
 
   function optionDraftFromOption(option, states) {
@@ -4895,8 +4938,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     });
     if (!readOnly) { var addEffect = document.createElement('button'); addEffect.type = 'button'; addEffect.textContent = '添加剧情状态变化'; addEffect.addEventListener('click', function () { draft.effects.push({ name: Object.keys(types)[0] || '', op: '=', value: '' }); context.tipKey = 'first-effect'; rerender(); }); effectsArea.appendChild(addEffect); }
     var actions = document.createElement('div'); actions.className = 'story-visual-form-actions';
-    var cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '取消'; cancel.addEventListener('click', context.close); actions.appendChild(cancel);
-    var submit = document.createElement('button'); submit.type = 'submit'; submit.textContent = '完成'; submit.disabled = readOnly; actions.appendChild(submit); form.appendChild(actions);
+    var cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'story-visual-form-secondary'; cancel.textContent = '取消'; cancel.addEventListener('click', context.close); actions.appendChild(cancel);
+    var submit = document.createElement('button'); submit.type = 'submit'; submit.className = 'story-visual-form-primary'; submit.textContent = '完成'; submit.disabled = readOnly; actions.appendChild(submit); form.appendChild(actions);
     form.addEventListener('submit', function (event) {
       event.preventDefault(); var nextDraft = readDraft(); var checked = validateOptionDraft(nextDraft, types, blocks);
       if (!checked.ok) { error.textContent = checked.errors[0]; error.hidden = false; return; }
@@ -4945,6 +4988,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
           if (options && options.commitTextNode) options.commitTextNode(node, textParts.leading + sourceFromTextEditor(element) + textParts.trailing);
         });
         element.addEventListener('keydown', function (event) {
+          if (event.key === 'ArrowUp' && moveBetweenEditableParagraphs(element, -1)) {
+            event.preventDefault();
+            return;
+          }
+          if (event.key === 'ArrowDown' && moveBetweenEditableParagraphs(element, 1)) {
+            event.preventDefault();
+            return;
+          }
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
             event.preventDefault();
             if (options && options.commitTextNode) options.commitTextNode(node, textParts.leading + sourceFromTextEditor(element) + textParts.trailing);
@@ -4968,7 +5019,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
         element.dataset.end = String(node.end);
         element.textContent = descriptor.summary;
         element.addEventListener('click', function () {
-          if (options && options.onEditCommand) options.onEditCommand(node);
+          if (options && options.onEditCommand) options.onEditCommand(node, element);
         });
       } else if (node.kind === 'option_group') {
         element = document.createElement('button');
@@ -5066,8 +5117,40 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
         }
       });
     }
-    function editCommand(node) {
-      if (typeof options.onEditCommand === 'function') options.onEditCommand(node);
+    function editCommand(node, element) {
+      if (!node || !node.data || !element || !element.parentNode) {
+        if (typeof options.onEditCommand === 'function') options.onEditCommand(node);
+        return;
+      }
+      var command = node.data;
+      var editor = document.createElement('input');
+      editor.type = 'text';
+      editor.className = 'story-visual-command-input';
+      editor.value = command.value == null ? '' : command.value;
+      editor.setAttribute('aria-label', '编辑「' + command.name + '」的内容');
+      editor.placeholder = command.name === '停顿' ? '毫秒（可留空）' : '填写内容';
+      var wrapper = document.createElement('span');
+      wrapper.className = element.className + ' story-visual-command-editing';
+      var name = document.createElement('span');
+      name.className = 'story-visual-command-name';
+      name.textContent = command.name + '：';
+      wrapper.append(name, editor);
+      element.replaceWith(wrapper);
+      var settled = false;
+      function finish(save) {
+        if (settled) return;
+        settled = true;
+        var replacement = serializeCommandEdit(node, editor.value);
+        if (save && replacement !== node.raw) commitTextNode(node, replacement);
+        else refresh();
+      }
+      editor.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+        else if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+      });
+      editor.addEventListener('blur', function () { finish(true); });
+      editor.focus();
+      editor.select();
     }
     var renderOptions = {
       getStates: options.getStates,
@@ -5149,6 +5232,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     insertAtVisualSelection: insertAtVisualSelection,
     splitEditableText: splitEditableText,
     sourceFromTextEditor: sourceFromTextEditor,
+    serializeCommandEdit: serializeCommandEdit,
     createEmptyOption: createEmptyOption,
     validateOptionDraft: validateOptionDraft,
     conditionAstToDraft: conditionAstToDraft,
@@ -9969,6 +10053,9 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     editorTextWrap.hidden = previewMode;
     storyVisualEditor.hidden = previewMode;
     storyPreview.hidden = !previewMode;
+    // The preview starts with a CSS `.hidden` class as well as the HTML
+    // attribute. Keep them aligned, otherwise it remains display:none.
+    storyPreview.classList.toggle('hidden', !previewMode);
     if (!previewMode && visualController) {
       if (visualController.getMode() === 'visual') visualController.showVisual();
       else visualController.showSource();
@@ -18265,7 +18352,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.74</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.75</span></div>
         </div>
       </div>
     </div>

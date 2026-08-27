@@ -22,10 +22,13 @@ assert.ok(parseMatch, 'parseStoryForExport is present');
 const context = { window: { StoryOptions, StoryVars: require('../js/story-vars.js') } };
 vm.createContext(context);
 vm.runInContext(parseMatch[0] + '\nthis.parseStoryForExport = parseStoryForExport;', context);
-const story = context.parseStoryForExport('<选项:"她说\\"好,走吧\\"",目标,条件:(金币>=10),不满足:禁用,提示:"还差,一点",变化:金币-10,样式:红>');
+const story = context.parseStoryForExport('<选项:"她说\\"好,走吧\\"",目标,条件:(金币>=10),不满足:禁用,提示:"还差,一点",变化:金币-10,条件变化:(勇气>=1)=>经验+1,样式:红>');
 assert.deepEqual(JSON.parse(JSON.stringify(story[0].options[0])), {
   text: '她说"好,走吧"', block: '目标', condition: '(金币>=10)', unmetBehavior: 'disable',
-  unmetMessage: '还差,一点', effects: [{ name: '金币', op: '-', val: '10', condition: null }], unknownFields: ['样式:红']
+  unmetMessage: '还差,一点', effects: [
+    { name: '金币', op: '-', val: '10', condition: null },
+    { name: '经验', op: '+', val: '1', condition: '勇气>=1' }
+  ], unknownFields: ['样式:红']
 });
 
 // Runtime behavior: unmet options hide by default, disable only when asked, and effects
@@ -35,7 +38,9 @@ assert.match(exporterSrc, /btn\.classList\.add\('is-disabled'\)/, 'disabled unme
 assert.match(exporterSrc, /btn\.disabled = true/, 'disabled unmet options cannot be clicked');
 assert.match(exporterSrc, /if \(!anyEnabled && shown === 0\)/, 'visible disabled options are not auto-skipped');
 assert.match(exporterSrc, /if \(opt\.effects && opt\.effects\.length && \(!opt\.block \|\| Object\.prototype\.hasOwnProperty\.call\(DATA\.blocks \|\| \{\}, opt\.block\)\)\)/, 'effects run when the target block exists, including an empty block');
-assert.match(exporterSrc, /applyVarOps\(opt\.effects\);/, 'selected option effects are applied');
+assert.match(exporterSrc, /const snapshot = Object\.assign\(\{\}, vars\);/, 'option effects snapshot variables before applying changes');
+assert.match(exporterSrc, /StoryOptions\.selectEffects\(opt\.effects, function\(name\)\{ return snapshot\[name\]; \}\)/, 'option effects are selected from the snapshot');
+assert.match(exporterSrc, /if \(selectedEffects\.length\) applyVarOps\(selectedEffects\);/, 'only selected option effects are applied');
 assert.doesNotMatch(exporterSrc.match(/function fastReplay\([\s\S]*?\n  \}/)[0], /applyVarOps\(opt\.effects\)/, 'replay does not apply option effects a second time');
 
 console.log('visual-options-runtime.test.js passed');

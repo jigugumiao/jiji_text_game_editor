@@ -101,6 +101,20 @@
     return effect;
   }
 
+  function selectEffects(effects, getVar) {
+    var selected = [];
+    if (!Array.isArray(effects) || typeof getVar !== 'function') return selected;
+    var SV = getStoryVars();
+    if (!SV || typeof SV.evalCondition !== 'function') return selected;
+    for (var i = 0; i < effects.length; i++) {
+      var effect = effects[i];
+      if (!effect || !effect.name || !effect.op || effect.val == null) continue;
+      if (effect.condition && !SV.evalCondition(effect.condition, getVar)) continue;
+      selected.push({ name: effect.name, op: effect.op, val: effect.val });
+    }
+    return selected;
+  }
+
   function makeOption() {
     return { text: '', block: null, condition: null, unmetBehavior: 'hide', unmetMessage: null, effects: [], unknownFields: [] };
   }
@@ -236,7 +250,7 @@
   }
 
   function buildRuntimeSource() {
-    var fns = [splitTopLevelFields, unescapeString, readString, escapeString, isOptional, getStoryVars, parseEffect, parseConditionalEffect, makeOption, parseOptionTag, isConditionComparator, extractOptionLine, normalizeOption, serializeOption, summarizeOption];
+    var fns = [splitTopLevelFields, unescapeString, readString, escapeString, isOptional, getStoryVars, parseEffect, parseConditionalEffect, selectEffects, makeOption, parseOptionTag, isConditionComparator, extractOptionLine, normalizeOption, serializeOption, summarizeOption];
     var src = '(function(){\n"use strict";\nvar OPTIONAL_PREFIXES=["条件:","不满足:","提示:","变化:","条件变化:"];\nvar SO={};\n';
     fns.forEach(function (fn) { src += fn.toString() + '\nSO.' + fn.name + '=' + fn.name + ';\n'; });
     return src + 'window.StoryOptions=SO;\n})();';
@@ -245,6 +259,7 @@
   var StoryOptions = {
     splitTopLevelFields: splitTopLevelFields,
     parseOptionTag: parseOptionTag,
+    selectEffects: selectEffects,
     extractOptionLine: extractOptionLine,
     serializeOption: serializeOption,
     summarizeOption: summarizeOption,

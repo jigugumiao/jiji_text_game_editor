@@ -1950,7 +1950,11 @@ __STORY_DATA__
         markSegmentEnd();
         // Empty blocks are still valid targets.  Check that the block key
         // exists instead of treating an empty node list as a missing block.
-        if (opt.effects && opt.effects.length && (!opt.block || Object.prototype.hasOwnProperty.call(DATA.blocks || {}, opt.block))) applyVarOps(opt.effects);
+        if (opt.effects && opt.effects.length && (!opt.block || Object.prototype.hasOwnProperty.call(DATA.blocks || {}, opt.block))) {
+          const snapshot = Object.assign({}, vars);
+          const selectedEffects = StoryOptions.selectEffects(opt.effects, function(name){ return snapshot[name]; });
+          if (selectedEffects.length) applyVarOps(selectedEffects);
+        }
         if (opt.block){ callBlock(opt.block); execCur(); }
         else { curIdx++; execCur(); }
       });

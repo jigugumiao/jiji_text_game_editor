@@ -36,6 +36,20 @@ assert.deepEqual(StoryOptions.splitTopLevelFields('“买,钥匙”,商店'), ['
   assert.deepEqual(malformed.option.unknownFields, ['条件变化:勇气>=1=>金币-1']);
 }
 
+// ---------- conditional effect selection uses the click-time snapshot ----------
+{
+  const effects = [
+    { name: '勇气', op: '+', val: '1', condition: null },
+    { name: '金币', op: '+', val: '10', condition: '勇气>=1' }
+  ];
+  assert.deepEqual(StoryOptions.selectEffects(effects, function (name) {
+    return name === '勇气' ? 0 : undefined;
+  }), [{ name: '勇气', op: '+', val: '1' }]);
+  assert.deepEqual(StoryOptions.selectEffects(effects, function (name) {
+    return name === '勇气' ? 1 : undefined;
+  }), [{ name: '勇气', op: '+', val: '1' }, { name: '金币', op: '+', val: '10' }]);
+}
+
 // ---------- backwards compatibility and escaping ----------
 {
   const old = StoryOptions.parseOptionTag('<选项:"A",块A,条件:金币>=2>');
@@ -99,6 +113,7 @@ assert.deepEqual(StoryOptions.splitTopLevelFields('“买,钥匙”,商店'), ['
   assert.equal(option.text, 'A, B');
   assert.deepEqual(JSON.parse(JSON.stringify(option.effects)), [{ name: '金币', op: '-', val: '1', condition: '金币>=2' }]);
   assert.deepEqual(Array.from(option.unknownFields), ['样式:红']);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.window.StoryOptions.selectEffects(option.effects, function () { return 2; }))), [{ name: '金币', op: '-', val: '1' }]);
 }
 
 console.log('story-options.test.js passed');

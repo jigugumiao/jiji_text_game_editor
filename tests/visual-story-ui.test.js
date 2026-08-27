@@ -84,6 +84,33 @@ assert.equal(StoryVisualUI.sourceFromTextEditor(element('DIV', [text('第一行'
   assert.equal(typeof StoryVisualUI[name], 'function', `StoryVisualUI 必须导出 ${name}`);
 });
 
+assert.match(visualUiSource, /rowLabel\('选项条件'\)/, '选项条件区必须使用明确标题');
+assert.doesNotMatch(visualUiSource, /rowLabel\('条件'\)/, '旧的笼统「条件」标题不得保留');
+['自然语言翻译：', '仅当满足以下', '添加执行条件', '移除执行条件'].forEach((text) => {
+  assert.ok(visualUiSource.includes(text), `条件树编辑器必须包含「${text}」`);
+});
+assert.match(styleSource, /\.story-visual-condition-tree/, '条件编辑器必须提供树形容器样式');
+assert.match(styleSource, /--visual-form-field-bg:/, '亮色主题必须定义变量表单 field token');
+assert.match(styleSource, /body\.dark\s*\{[\s\S]*?--visual-form-field-bg:/, '暗色主题必须覆盖变量表单 field token');
+assert.equal(typeof StoryVisualUI.conditionNaturalText, 'function', '必须导出条件自然语言翻译函数');
+const conditionTextDraft = {
+  mode: 'all', rows: [
+    { kind: 'comparison', name: '金币', op: '>=', value: 10 },
+    { kind: 'group', mode: 'any', rows: [{ kind: 'comparison', name: '已见面', op: '=', value: true }] }
+  ]
+};
+const StoryVarsForText = require(path.join(root, 'js', 'story-vars.js'));
+const naturalStateMap = { 金币: 'number', 已见面: 'boolean', 名字: 'text' };
+assert.equal(StoryVisualUI.conditionNaturalText(conditionTextDraft, naturalStateMap),
+  StoryVarsForText.summarizeCondition(StoryVisualUI.conditionDraftToAst(conditionTextDraft), naturalStateMap),
+  '完整嵌套条件必须翻译为 StoryVars 的中文摘要');
+assert.equal(StoryVisualUI.conditionNaturalText({ mode: 'all', rows: [{ kind: 'comparison', name: '', op: '', value: '' }] }, naturalStateMap), '请完成第 1 条条件。',
+  '未选择变量的条件必须给出明确提示');
+assert.equal(StoryVisualUI.conditionNaturalText({ mode: 'all', rows: [] }, naturalStateMap), '请先添加一条条件。',
+  '空条件组必须提示先添加条件');
+assert.ok(StoryVisualUI.validateOptionDraft({ text: '继续', block: null, condition: null, unmetBehavior: 'hide', unmetMessage: '', effects: [], unknownFields: ['条件变化:坏数据'] }, naturalStateMap, []).errors.includes('条件变量变化格式不正确，请在源码模式修复'),
+  '条件变量变化原文无法解析时必须提供源码修复提示');
+
 const stateMap = { 金币: 'number', 已见面: 'boolean', 名字: 'text' };
 assert.deepEqual(StoryVisualUI.createEmptyOption(['开场', '商店']), {
   text: '', block: null, condition: null, unmetBehavior: 'hide', unmetMessage: '', effects: [], unknownFields: []

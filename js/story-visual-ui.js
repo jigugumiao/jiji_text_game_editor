@@ -88,6 +88,26 @@
     return groupToAst(draft);
   }
 
+  function conditionNaturalText(draft, states) {
+    if (!draft || !Array.isArray(draft.rows) || !draft.rows.length) return '请先添加一条条件。';
+    var index = 0, incomplete = 0;
+    function checkGroup(group) {
+      if (!group || !Array.isArray(group.rows) || !group.rows.length) return false;
+      return group.rows.every(function (row) {
+        if (row && row.kind === 'group') return checkGroup(row);
+        index++;
+        var name = String(row && row.name || '').trim();
+        var value = row && row.value;
+        var complete = !!(name && row.op && value !== '' && value !== null && value !== undefined);
+        if (!complete && !incomplete) incomplete = index;
+        return complete;
+      });
+    }
+    if (!checkGroup(draft)) return '请完成第 ' + (incomplete || 1) + ' 条条件。';
+    var ast = conditionDraftToAst(draft), SV = getStoryVars();
+    return ast && SV && SV.summarizeCondition ? SV.summarizeCondition(ast, stateTypes(states)) : '请完成第 1 条条件。';
+  }
+
   function allowedOperations(type) {
     if (type === 'number') return ['+', '-', '='];
     if (type === 'boolean' || type === 'text') return ['='];
@@ -141,7 +161,8 @@
     var errors = [];
     if (!String(source.text == null ? '' : source.text).trim()) errors.push('选项文字不能为空');
     if (source.block && names.indexOf(source.block) < 0) errors.push('所选剧情块不存在');
-    if (Array.isArray(source.unknownFields) && source.unknownFields.length) errors.push('此选项包含无法识别的高级字段，请在源码模式编辑');
+    if (Array.isArray(source.unknownFields) && source.unknownFields.length) errors.push(source.unknownFields.some(function (field) { return String(field).indexOf('条件变化:') === 0; })
+      ? '条件变量变化格式不正确，请在源码模式修复' : '此选项包含无法识别的高级字段，请在源码模式编辑');
     errors = errors.concat(validateConditionDraft(source.condition, types, ''));
     var effectCheck = effectDraftToOps(source.effects, types);
     errors = errors.concat(effectCheck.errors);
@@ -351,7 +372,7 @@
     var title = document.createElement('div'); title.className = 'story-visual-form-title'; title.textContent = '编辑选项'; form.appendChild(title);
     var contextualTip = renderContextualTip(context);
     var error = document.createElement('div'); error.className = 'story-visual-form-error'; error.hidden = true; form.appendChild(error);
-    if (readOnly) { error.textContent = '此选项包含无法识别的高级字段，请在源码模式编辑'; error.hidden = false; }
+    if (readOnly) { error.textContent = draft.unknownFields.some(function (field) { return String(field).indexOf('条件变化:') === 0; }) ? '条件变量变化格式不正确，请在源码模式修复' : '此选项包含无法识别的高级字段，请在源码模式编辑'; error.hidden = false; }
     function field(label, input) { var line = document.createElement('label'); line.className = 'story-visual-form-field'; line.append(document.createTextNode(label), input); form.appendChild(line); return input; }
     var text = field('按钮文字', makeField('input', draft.text, null, readOnly));
     var blockChoices = [['', '不跳转，留在当前剧情']].concat((blocks || []).map(function (name) { return [name, name]; }));
@@ -367,64 +388,86 @@
     function rerender() { renderOptionEditor(host, node, readDraft(), context); }
     function readDraft() { return { text: text.value, block: block.value || null, condition: draft.condition, unmetBehavior: unmet.value, unmetMessage: message.value, effects: draft.effects, unknownFields: draft.unknownFields }; }
     function rowLabel(label) { var e = document.createElement('div'); e.className = 'story-visual-form-label'; e.textContent = label; return e; }
-    function renderGroup(group, parent, removeGroup) {
-      var groupEl = document.createElement('div'); groupEl.className = 'story-visual-condition-group';
-      var mode = makeField('select', group.mode, [['all', '全部满足'], ['any', '任一满足']], readOnly);
-      mode.addEventListener('change', function () { group.mode = mode.value; }); groupEl.appendChild(mode);
-      if (!readOnly && removeGroup) {
-        var removeGroupButton = document.createElement('button'); removeGroupButton.type = 'button'; removeGroupButton.textContent = '删除条件组';
-        removeGroupButton.addEventListener('click', function () { removeGroup(); }); groupEl.appendChild(removeGroupButton);
+    function renderConditionTree(group, parent, config) {
+      var tree = document.createElement('div'); tree.className = 'story-visual-condition-tree';
+      var header = document.createElement('div'); header.className = 'story-visual-condition-tree-header';
+      var heading = document.createElement('span'); heading.textContent = config.root ? config.rootHeading : '满足以下';
+      var mode = makeField('select', group.mode, [['all', '全部条件'], ['any', '任意条件']], readOnly);
+      mode.addEventListener('change', function () { group.mode = mode.value; rerender(); });
+      header.append(heading, mode);
+      if (!readOnly && config.remove) {
+        var removeGroupButton = document.createElement('button'); removeGroupButton.type = 'button'; removeGroupButton.textContent = config.root ? config.rootRemoveText : '删除条件组';
+        removeGroupButton.addEventListener('click', config.remove); header.appendChild(removeGroupButton);
       }
+      tree.appendChild(header);
       group.rows.forEach(function (row, index) {
-        if (row.kind === 'group') { renderGroup(row, groupEl, function () { group.rows.splice(index, 1); rerender(); }); return; }
+        if (row.kind === 'group') {
+          renderConditionTree(row, tree, { root: false, remove: function () { group.rows.splice(index, 1); rerender(); } });
+          return;
+        }
         var line = document.createElement('div'); line.className = 'story-visual-condition-row';
-        var name = makeField('select', row.name, [['', '变量']].concat(Object.keys(types).map(function (key) { return [key, key]; })), readOnly);
-        var type = types[name.value] || 'number';
-        var opChoices = type === 'number' ? [['>=', '不少于'], ['<=', '不多于'], ['>', '大于'], ['<', '小于'], ['=', '等于'], ['!=', '不等于']]
-          : type === 'text' ? [['=', '等于'], ['!=', '不等于'], ['contains', '包含'], ['notcontains', '不包含']]
-            : [['=', '是'], ['!=', '不是']];
-        var op = makeField('select', row.op, opChoices, readOnly);
-        var value = makeField('input', row.value, null, readOnly);
-        name.addEventListener('change', function () { row.name = name.value; rerender(); });
-        op.addEventListener('change', function () { row.op = op.value; }); value.addEventListener('input', function () { row.value = value.value; });
-        line.append(name, op, value);
+        var name = makeField('select', row.name, [['', '选择变量']].concat(Object.keys(types).map(function (key) { return [key, key]; })), readOnly);
+        name.addEventListener('change', function () { row.name = name.value; if (types[row.name] === 'boolean') { row.op = '='; row.value = true; } rerender(); });
+        line.appendChild(name);
+        if (name.value) {
+          var type = types[name.value];
+          if (type === 'boolean') {
+            var booleanValue = makeField('select', String(row.value), [['true', '为是'], ['false', '为否']], readOnly);
+            booleanValue.addEventListener('change', function () { row.op = '='; row.value = booleanValue.value === 'true'; rerender(); });
+            line.appendChild(booleanValue);
+          } else {
+            var opChoices = type === 'number' ? [['', '选择关系'], ['>=', '不少于'], ['<=', '不多于'], ['>', '大于'], ['<', '小于'], ['=', '等于'], ['!=', '不等于']]
+              : [['', '选择关系'], ['=', '等于'], ['!=', '不等于'], ['contains', '包含'], ['notcontains', '不包含']];
+            var op = makeField('select', row.op, opChoices, readOnly);
+            var value = makeField('input', row.value, null, readOnly);
+            op.addEventListener('change', function () { row.op = op.value; rerender(); }); value.addEventListener('input', function () { row.value = value.value; rerender(); });
+            line.append(op, value);
+          }
+        }
         if (!readOnly) { var remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '删除'; remove.addEventListener('click', function () { group.rows.splice(index, 1); rerender(); }); line.appendChild(remove); }
-        groupEl.appendChild(line);
+        tree.appendChild(line);
       });
       if (!readOnly) {
+        var actions = document.createElement('div'); actions.className = 'story-visual-condition-tree-actions';
         var addComparison = document.createElement('button'); addComparison.type = 'button'; addComparison.textContent = '添加条件';
-        addComparison.addEventListener('click', function () { group.rows.push({ kind: 'comparison', name: '', op: '=', value: '' }); rerender(); });
+        addComparison.addEventListener('click', function () { group.rows.push({ kind: 'comparison', name: '', op: '', value: '' }); rerender(); });
         var addGroup = document.createElement('button'); addGroup.type = 'button'; addGroup.textContent = '添加条件组';
         addGroup.addEventListener('click', function () { group.rows.push({ kind: 'group', mode: 'all', rows: [] }); rerender(); });
-        groupEl.append(addComparison, addGroup);
+        actions.append(addComparison, addGroup); tree.appendChild(actions);
       }
-      parent.appendChild(groupEl);
+      parent.appendChild(tree);
     }
-    conditionArea.appendChild(rowLabel('条件'));
+    conditionArea.appendChild(rowLabel('选项条件'));
     if (draft.condition) {
-      renderGroup(draft.condition, conditionArea, function () { draft.condition = null; rerender(); });
-      var conditionAst = conditionDraftToAst(draft.condition), SVForSummary = getStoryVars();
-      if (conditionAst && SVForSummary && SVForSummary.summarizeCondition) {
-        var summary = document.createElement('div'); summary.className = 'story-visual-condition-summary';
-        summary.textContent = SVForSummary.summarizeCondition(conditionAst, types); conditionArea.appendChild(summary);
-      }
+      renderConditionTree(draft.condition, conditionArea, { root: true, rootHeading: '满足以下', rootRemoveText: '删除条件组', remove: function () { draft.condition = null; rerender(); } });
+      var summary = document.createElement('div'); summary.className = 'story-visual-condition-summary';
+      summary.textContent = '自然语言翻译：' + conditionNaturalText(draft.condition, types); conditionArea.appendChild(summary);
     }
-    else if (!readOnly) { var addCondition = document.createElement('button'); addCondition.type = 'button'; addCondition.textContent = '添加条件'; addCondition.addEventListener('click', function () { draft.condition = { mode: 'all', rows: [{ kind: 'comparison', name: '', op: '=', value: '' }] }; context.tipKey = 'first-condition'; rerender(); }); conditionArea.appendChild(addCondition); }
+    else if (!readOnly) { var addCondition = document.createElement('button'); addCondition.type = 'button'; addCondition.textContent = '添加条件'; addCondition.addEventListener('click', function () { draft.condition = { mode: 'all', rows: [{ kind: 'comparison', name: '', op: '', value: '' }] }; context.tipKey = 'first-condition'; rerender(); }); conditionArea.appendChild(addCondition); }
     effectsArea.appendChild(rowLabel('选中后变量变化'));
     draft.effects.forEach(function (effect, index) {
       var line = document.createElement('div'); line.className = 'story-visual-effect-row';
-      var name = makeField('select', effect.name, [['', '变量']].concat(Object.keys(types).map(function (key) { return [key, key]; })), readOnly);
+      var name = makeField('select', effect.name, [['', '选择变量']].concat(Object.keys(types).map(function (key) { return [key, key]; })), readOnly);
       name.addEventListener('change', function () { effect.name = name.value; effect.op = allowedOperations(types[name.value])[0] || '='; rerender(); });
       line.appendChild(name);
       // Operation and value only become meaningful after the variable type is known.
       if (name.value) {
         var op = makeField('select', effect.op, allowedOperations(types[name.value]).map(function (value) { return [value, value === '+' ? '增加' : value === '-' ? '减少' : '设为']; }), readOnly);
-        var value = makeField('input', effect.value, null, readOnly);
-        op.addEventListener('change', function () { effect.op = op.value; }); value.addEventListener('input', function () { effect.value = value.value; });
+        var value = types[name.value] === 'boolean' ? makeField('select', String(effect.value), [['true', '为是'], ['false', '为否']], readOnly) : makeField('input', effect.value, null, readOnly);
+        op.addEventListener('change', function () { effect.op = op.value; rerender(); }); value.addEventListener('input', function () { effect.value = value.value; rerender(); }); value.addEventListener('change', function () { effect.value = types[name.value] === 'boolean' ? value.value === 'true' : value.value; rerender(); });
         line.append(op, value);
+        if (!readOnly && !effect.condition) { var addEffectCondition = document.createElement('button'); addEffectCondition.type = 'button'; addEffectCondition.textContent = '添加执行条件'; addEffectCondition.addEventListener('click', function () { effect.condition = { mode: 'all', rows: [{ kind: 'comparison', name: '', op: '', value: '' }] }; rerender(); }); line.appendChild(addEffectCondition); }
       }
       if (!readOnly) { var remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '删除'; remove.addEventListener('click', function () { draft.effects.splice(index, 1); rerender(); }); line.appendChild(remove); }
       effectsArea.appendChild(line);
+      if (effect.condition) renderConditionTree(effect.condition, effectsArea, { root: true, rootHeading: '仅当满足以下', rootRemoveText: '移除执行条件', remove: function () { effect.condition = null; rerender(); } });
+      var effectSummary = document.createElement('div'); effectSummary.className = 'story-visual-condition-summary';
+      if (!effect.name) effectSummary.textContent = '自然语言翻译：请先选择要变化的变量。';
+      else if (effect.condition) {
+        var effectConditionText = conditionNaturalText(effect.condition, types);
+        effectSummary.textContent = '自然语言翻译：' + (effectConditionText.indexOf('请完成第 ') === 0 ? effectConditionText.replace('请完成第 ', '请完成这条变化的第 ') : effectConditionText.indexOf('请先') === 0 ? effectConditionText : '当' + effectConditionText + '时，' + effect.name + ({ '+': '增加', '-': '减少', '=': '设为' }[effect.op] || '') + ' ' + (types[effect.name] === 'boolean' ? (effect.value === true || effect.value === 'true' ? '是' : '否') : effect.value) + '。');
+      } else effectSummary.textContent = '自然语言翻译：选中后，' + effect.name + ({ '+': '增加', '-': '减少', '=': '设为' }[effect.op] || '') + ' ' + (types[effect.name] === 'boolean' ? (effect.value === true || effect.value === 'true' ? '是' : '否') : effect.value) + '。';
+      effectsArea.appendChild(effectSummary);
     });
     if (!readOnly) { var addEffect = document.createElement('button'); addEffect.type = 'button'; addEffect.textContent = '添加变量变化'; addEffect.addEventListener('click', function () { draft.effects.push({ name: '', op: '=', value: '', condition: null }); context.tipKey = 'first-effect'; rerender(); }); effectsArea.appendChild(addEffect); }
     var actions = document.createElement('div'); actions.className = 'story-visual-form-actions';
@@ -731,6 +774,7 @@
     validateConditionDraft: validateConditionDraft,
     conditionAstToDraft: conditionAstToDraft,
     conditionDraftToAst: conditionDraftToAst,
+    conditionNaturalText: conditionNaturalText,
     effectDraftToOps: effectDraftToOps,
     optionDraftFromOption: optionDraftFromOption,
     commitFocusedEditor: commitFocusedEditor,

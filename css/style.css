@@ -343,7 +343,7 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 .editor-body { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; position: relative; }
 /* 行号槽：编辑器文字区（文字 + 行号）统一为一个横向 flex 容器 */
 .editor-text-wrap { flex: 1 1 0; display: flex; flex-direction: row; min-height: 0; min-width: 0; position: relative; }
-.editor-text-wrap.hidden { display: none; }
+.editor-text-wrap.hidden, .editor-text-wrap[hidden], .story-visual-editor[hidden] { display: none !important; }
 .story-visual-editor { flex: 1 1 0; min-height: 0; overflow: auto; background: var(--bg); color: var(--text); }
 .story-visual-document {
   min-height: 100%; padding: 20px 26px; white-space: pre-wrap; word-break: break-word;

@@ -108,6 +108,27 @@ assert.equal(StoryVisualUI.conditionNaturalText({ mode: 'all', rows: [{ kind: 'c
   '未选择变量的条件必须给出明确提示');
 assert.equal(StoryVisualUI.conditionNaturalText({ mode: 'all', rows: [] }, naturalStateMap), '请先添加一条条件。',
   '空条件组必须提示先添加条件');
+assert.equal(StoryVisualUI.conditionNaturalText({ mode: 'all', rows: [
+  { kind: 'comparison', name: '金币', op: '>=', value: 1 },
+  { kind: 'group', mode: 'all', rows: [] }
+] }, naturalStateMap), '请完成第 2 条条件。', '嵌套空组必须按前序条件序号提示下一条');
+assert.equal(StoryVisualUI.conditionNaturalText({ mode: 'all', rows: [{ kind: 'comparison', name: '金币', op: 'contains', value: 10 }] }, naturalStateMap), '请完成第 1 条条件。',
+  '未知关系必须视为未完成条件');
+assert.equal(StoryVisualUI.conditionDraftToAst({ mode: 'all', rows: [{ kind: 'comparison', name: '金币', op: '>=', value: 10 }] }).val.s, 'num',
+  '数字条件草稿必须序列化为数字标量，不能带引号');
+assert.equal(StoryVarsForText.serializeCondition(StoryVisualUI.conditionDraftToAst({ mode: 'all', rows: [{ kind: 'comparison', name: '金币', op: '>=', value: 10 }] })), '金币>=10',
+  '数字条件 10 序列化时不得带字符串引号');
+assert.equal(typeof StoryVisualUI.effectNaturalText, 'function', '必须导出变量变化自然语言翻译函数');
+assert.equal(StoryVisualUI.effectNaturalText({ name: '金币', op: '-', value: '', condition: null }, naturalStateMap), '请完成这条变量变化。',
+  '已选变量但未填写值时不能生成不完整变化文案');
+assert.doesNotMatch(visualUiSource, /value\.addEventListener\('input', function \(\) \{ effect\.value = value\.value; rerender\(\); \}\)/,
+  '变量变化输入时不得重建整张表单');
+assert.doesNotMatch(visualUiSource, /value\.addEventListener\('input', function \(\) \{ row\.value = value\.value; rerender\(\); \}\)/,
+  '条件值输入时不得重建整张表单');
+assert.match(visualUiSource, /value\.addEventListener\('input', function \(\) \{ row\.value = [\s\S]*?updateConditionSummary\(\); \}\)/,
+  '条件值输入必须在不重建表单的情况下更新摘要');
+assert.match(visualUiSource, /value\.addEventListener\('input', function \(\) \{ effect\.value = [\s\S]*?updateEffectSummary\(index\); \}\)/,
+  '变量变化值输入必须在不重建表单的情况下更新摘要');
 assert.ok(StoryVisualUI.validateOptionDraft({ text: '继续', block: null, condition: null, unmetBehavior: 'hide', unmetMessage: '', effects: [], unknownFields: ['条件变化:坏数据'] }, naturalStateMap, []).errors.includes('条件变量变化格式不正确，请在源码模式修复'),
   '条件变量变化原文无法解析时必须提供源码修复提示');
 

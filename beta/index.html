@@ -296,6 +296,13 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 .col-head-actions { display: inline-flex; align-items: center; gap: 6px; }
 .col-head-left { display: inline-flex; align-items: center; gap: 6px; }
 .col-head-right { display: inline-flex; align-items: center; gap: 5px; }
+.editor-mode-switch { display: inline-flex; align-items: center; border-left: 1px solid var(--border); padding-left: 6px; }
+.editor-mode-switch button {
+  border: 0; padding: 2px 5px; background: transparent; color: var(--text-3); cursor: pointer;
+  font: inherit; font-size: 12px; line-height: 1.4;
+}
+.editor-mode-switch button:hover, .editor-mode-switch button:focus-visible { color: var(--text); outline: none; text-decoration: underline; text-underline-offset: 3px; }
+.editor-mode-switch button[aria-pressed="true"] { color: var(--text); font-weight: 700; }
 .icon-btn {
   background: #fff; border: 1px solid var(--border-strong); color: var(--text-2);
   border-radius: var(--radius-sm); width: 30px; height: 28px; font-size: 15px; cursor: pointer; line-height: 1;
@@ -348,6 +355,45 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 /* 行号槽：编辑器文字区（文字 + 行号）统一为一个横向 flex 容器 */
 .editor-text-wrap { flex: 1 1 0; display: flex; flex-direction: row; min-height: 0; min-width: 0; position: relative; }
 .editor-text-wrap.hidden { display: none; }
+.story-visual-editor { flex: 1 1 0; min-height: 0; overflow: auto; background: var(--bg); color: var(--text); }
+.story-visual-document {
+  min-height: 100%; padding: 20px 26px; white-space: pre-wrap; word-break: break-word;
+  font-family: 'Noto Serif SC','Songti SC',serif; font-size: 16px; line-height: 1.95;
+}
+.story-visual-node { color: inherit; }
+.story-visual-node-text { outline: none; }
+.story-visual-state-token {
+  display: inline; color: inherit; border-bottom: 1px dotted var(--border-strong);
+  cursor: text; white-space: pre-wrap;
+}
+.story-visual-node-option_group { display: block; width: 100%; padding: 0 0 0 12px; border: 0; border-left: 2px solid var(--border); background: transparent; color: inherit; font: inherit; line-height: inherit; text-align: left; cursor: pointer; }
+.story-visual-node-state_change {
+  display: block; padding: 0; border: 0; background: transparent; color: inherit;
+  font: inherit; line-height: inherit; text-align: left; cursor: pointer;
+}
+.story-visual-node-source_error { color: var(--danger); text-decoration: underline wavy currentColor; text-underline-offset: 3px; }
+.story-visual-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.story-visual-edit-button { opacity: .4; }
+.story-visual-edit-button:hover, .story-visual-edit-button:focus-visible { opacity: 1; }
+.story-visual-editor input, .story-visual-editor textarea, .story-visual-editor select {
+  color: var(--text); background: var(--bg); border-color: var(--border-strong);
+}
+.story-visual-option-form { max-width: 680px; padding: 20px 26px; font: inherit; line-height: 1.6; }
+.story-visual-form-title, .story-visual-form-label { font-weight: 600; }
+.story-visual-context-tip { display: flex; align-items: baseline; gap: 10px; margin: 7px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); color: var(--text-2); font-size: 13px; }
+.story-visual-context-tip span { flex: 1; }
+.story-visual-context-tip-close { flex: 0 0 auto; padding: 0 !important; border: 0 !important; color: var(--text-2) !important; text-decoration: underline; }
+.story-visual-form-field { display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 10px; align-items: center; margin: 8px 0; }
+.story-visual-form-field input, .story-visual-form-field select { min-width: 0; padding: 4px 6px; font: inherit; }
+.story-visual-condition-area, .story-visual-effects-area { margin: 16px 0; }
+.story-visual-condition-group { margin: 8px 0 0 10px; padding-left: 10px; border-left: 1px solid var(--border); }
+.story-visual-condition-row, .story-visual-effect-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.story-visual-condition-row input, .story-visual-effect-row input { min-width: 7em; }
+.story-visual-condition-summary { margin-top: 7px; color: var(--text-3); font-size: 13px; }
+.story-visual-form-actions { display: flex; gap: 8px; margin-top: 20px; }
+.story-visual-option-form button { padding: 3px 8px; color: inherit; background: transparent; border: 1px solid var(--border-strong); border-radius: 3px; font: inherit; cursor: pointer; }
+.story-visual-option-form button:disabled { opacity: .45; cursor: not-allowed; }
+.story-visual-form-error { margin: 8px 0; color: var(--danger); }
 /* 极淡、低存在感的行号，仅在编译报错时帮助定位行 */
 .ln-gutter {
   flex: 0 0 auto; width: 3.4em; overflow: hidden;
@@ -507,7 +553,7 @@ body.portrait .lib-footer .btn { width: 100%; }
 .lib-tools-row .btn { width: auto; flex: 1 1 0; }
 .lib-hint { font-size: 12px; color: var(--text-3); padding: 4px 0 0; line-height: 1.5; }
 .asset-list { display: grid; grid-template-columns: 1fr; gap: 8px; align-items: stretch; }
-.var-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.var-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .var-name { flex: 1 1 auto; min-width: 0; max-width: 150px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 7px; font-size: 13px; background: #fff; color: var(--text); font-family: inherit; }
 .var-type { flex: 0 0 auto; padding: 6px 6px; border: 1px solid var(--border-strong); border-radius: 7px; font-size: 13px; background: #fff; color: var(--text); }
 .var-val { flex: 0 0 92px; }
@@ -516,6 +562,8 @@ body.portrait .lib-footer .btn { width: 100%; }
 .var-del { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: #993C1D; cursor: pointer; transition: .15s; }
 .var-del:hover { background: #fbeae3; border-color: #d98a6a; }
 .var-del .ico { width: 16px; height: 16px; }
+.var-row.var-invalid { border-color: #d98a6a; }
+.var-error { flex: 1 0 100%; color: #a84325; font-size: 12px; line-height: 1.35; }
 /* 变量库拖拽手柄 + 插入浮窗 */
 .var-handle { flex: 0 0 auto; width: 24px; align-self: stretch; display: flex; align-items: center; justify-content: center; cursor: grab; color: #8a6d3b; background: rgba(176,137,104,0.14); border: 1px dashed rgba(138,109,59,0.55); border-radius: 7px; font-size: 13px; line-height: 1; user-select: none; -webkit-user-select: none; touch-action: none; }
 .var-handle:hover { background: rgba(176,137,104,0.26); }
@@ -1526,6 +1574,12 @@ body.article-mode [data-ai-param] { display: none !important; }
 .mode-card-desc { font-size: 12px; color: var(--text-2); line-height: 1.5; }
 .modal-box-actions { display: flex; gap: 10px; margin-top: 18px; }
 .modal-box-actions .btn { width: auto; flex: 1; margin-top: 0; }
+.project-convert-copy { margin: 0 0 14px; color: var(--text-2); font-size: 13px; line-height: 1.6; }
+.project-convert-status { min-height: 20px; color: var(--text-2); font-size: 12px; line-height: 1.55; }
+.project-conversion-hint { display: flex; align-items: center; gap: 8px; margin: 8px 10px 0; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft); color: var(--text-2); font-size: 12px; }
+.project-conversion-hint span { flex: 1; }
+.project-conversion-hint .mini-btn { white-space: nowrap; }
+.project-conversion-hint .modal-x { flex: 0 0 auto; }
 body.dark .new-project-input { background: var(--bg-sunken); }
 body.dark .mode-card { background: var(--bg-sunken); }
 body.dark .mode-card:hover { background: var(--bg-soft); }
@@ -1935,7 +1989,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.60-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.69-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -1967,6 +2021,10 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
         <span class="col-head-left">
           <button id="outline-reopen" class="mini-btn hidden" title="展开导航"><svg class="ico" aria-hidden="true"><use href="#ic-compass"/></svg>导航</button>
           <span id="current-block-chip" class="block-chip" title="当前正在编辑的剧情块，点击在右侧仓库切换">主剧情</span>
+          <span class="editor-mode-switch" role="group" aria-label="编辑器模式">
+            <button id="editor-mode-visual" type="button">可视化编辑</button>
+            <button id="editor-mode-source" type="button">源码模式</button>
+          </span>
           <button id="btn-undo" class="icon-btn" title="撤销 (Ctrl+Z)" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-undo"/></svg></button>
           <button id="btn-redo" class="icon-btn" title="重做 (Ctrl+Y)" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-redo"/></svg></button>
         </span>
@@ -1991,6 +2049,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
         <div id="word-count" class="word-count">总字数：0</div>
         <div id="block-review-line" class="block-review-line"></div>
       </div>
+      <div id="story-visual-editor" class="story-visual-editor" hidden></div>
       <div id="story-preview" class="story-preview hidden"></div>
       <button id="todo-fab" class="todo-fab" type="button" title="素材待办：查看文字里召唤、但素材库还没有的素材"><svg class="ico" aria-hidden="true"><use href="#ic-clipboard"/></svg><span class="todo-fab-txt">待办</span><span id="todo-badge" class="todo-badge" hidden>0</span></button>
       <div id="todo-panel" class="todo-panel hidden">
@@ -2115,6 +2174,17 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
       <button id="new-project-cancel" class="btn btn-ghost">取消</button>
       <button id="new-project-create" class="btn btn-primary">创建</button>
     </div>
+  </div>
+</div>
+
+<!-- 旧项目转换：始终复制到新项目，不会修改原项目 -->
+<div id="project-convert-modal" class="modal hidden">
+  <div class="modal-box project-convert-box">
+    <div class="new-project-head"><span class="new-project-title">转换为可视化项目</span><button class="modal-x" id="project-convert-x" title="关闭">✕</button></div>
+    <p class="project-convert-copy">将创建一份独立副本；原项目和素材不会被修改。</p>
+    <div class="new-project-field"><label class="new-project-label">新项目名称</label><input id="project-convert-name" class="new-project-input" maxlength="60"></div>
+    <div id="project-convert-status" class="project-convert-status" aria-live="polite"></div>
+    <div class="modal-box-actions"><button id="project-convert-cancel" class="btn btn-ghost">取消</button><button id="project-convert-run" class="btn btn-primary">开始转换</button></div>
   </div>
 </div>
 
@@ -2429,6 +2499,7 @@ const LS_STORY = _NS + 'story-editor:story';        // 节点数组
 const LS_STORY_TEXT = _NS + 'story-editor:story-text'; // 原始文本
 const LS_META = _NS + 'story-editor:meta';          // 标题等
 const LS_VARS = _NS + 'story-editor:vars';          // 变量库（名字/类型/初值）
+const LS_UI = _NS + 'story-editor:ui:';             // 可按测试/正式命名空间隔离的界面偏好
 
 // 剧情块系统：主剧情 + 其它剧情块。结构 { main: 文本, blocks: { 名称: 文本 } }
 // 主剧情(__MAIN__) 始终存在、置顶、不可删除，游戏默认从它开始。
@@ -2576,6 +2647,8 @@ function getProjectName(id) {
   return p ? p.name : '未知项目';
 }
 function getCurrentProjectId() { return localStorage.getItem(LS_CURRENT) || null; }
+function getUiPreference(key) { return localStorage.getItem(LS_UI + key); }
+function setUiPreference(key, value) { localStorage.setItem(LS_UI + key, String(value)); }
 function setCurrentProject(id) {
   localStorage.setItem(LS_CURRENT, id);
   _projectId = id;
@@ -2630,6 +2703,76 @@ async function getProjectStatsBatch(ids) {
     if (t) map[id].lineCount = t.split('\n').length;
   }
   return map;
+}
+
+// ============ 旧项目转可视化项目（复制事务） ============
+function _projectDataKeys(id) {
+  return {
+    blocks: LS_BLOCKS + ':' + id, vars: LS_VARS + ':' + id, meta: LS_META + ':' + id,
+    story: LS_STORY + ':' + id, storyText: LS_STORY_TEXT + ':' + id
+  };
+}
+function _readJson(raw, fallback) {
+  try { return raw ? JSON.parse(raw) : fallback; } catch (e) { return fallback; }
+}
+async function readProjectSnapshot(projectId) {
+  const keys = _projectDataKeys(projectId);
+  const data = {};
+  Object.keys(keys).forEach(name => { data[name] = localStorage.getItem(keys[name]); });
+  let assets = [];
+  try {
+    const prefix = projectId + PROJECT_NS_SEP;
+    assets = (await idbGetAll(STORE_ASSETS)).filter(r => r.key && r.key.indexOf(prefix) === 0)
+      .map(r => { const { key, ...rest } = r; return Object.assign({}, rest, { lib: r.lib || _libFromKey(key), id: r.id || _idFromKey(key) }); });
+  } catch (e) { throw new Error('读取项目素材失败：' + (e.message || e)); }
+  const parsedBlocks = _readJson(data.blocks, { main: data.storyText || '', blocks: {} });
+  return {
+    id: projectId, data, blocks: parsedBlocks, vars: _readJson(data.vars, []), assets
+  };
+}
+async function writeTemporaryProject(snapshot, targetId) {
+  const keys = _projectDataKeys(targetId);
+  const data = snapshot && snapshot.data || {};
+  Object.keys(keys).forEach(name => {
+    if (data[name] != null) localStorage.setItem(keys[name], data[name]);
+  });
+  for (const asset of (snapshot && snapshot.assets) || []) {
+    if (!asset || !asset.lib || !asset.id) continue;
+    await idbPut(STORE_ASSETS, Object.assign({}, asset, { key: targetId + PROJECT_NS_SEP + asset.lib + ':' + asset.id }));
+  }
+}
+async function validateTemporaryProject(targetId) {
+  const keys = _projectDataKeys(targetId);
+  const rawBlocks = localStorage.getItem(keys.blocks);
+  const blocks = _readJson(rawBlocks, null);
+  if (rawBlocks != null && (!blocks || typeof blocks !== 'object')) throw new Error('临时项目剧情块无效');
+  const rawVars = localStorage.getItem(keys.vars);
+  const vars = _readJson(rawVars, null);
+  if (rawVars != null && !Array.isArray(vars)) throw new Error('临时项目剧情状态无效');
+  try { await idbGetAll(STORE_ASSETS); } catch (e) { throw new Error('临时项目素材校验失败：' + (e.message || e)); }
+}
+async function registerTemporaryProject(targetId, name, metadata) {
+  const projects = _readProjects();
+  if (projects.some(p => p.id === targetId)) throw new Error('临时项目已注册');
+  projects.push(Object.assign({ id: targetId, name: name, mode: 'game', createdAt: Date.now() }, metadata || {}));
+  _writeProjects(projects);
+}
+async function cleanupTemporaryProject(targetId) {
+  const keys = _projectDataKeys(targetId);
+  Object.keys(keys).forEach(name => localStorage.removeItem(keys[name]));
+  const prefix = targetId + PROJECT_NS_SEP;
+  try {
+    const all = await idbGetAll(STORE_ASSETS);
+    for (const record of all) if (record.key && record.key.indexOf(prefix) === 0) await idbDelete(STORE_ASSETS, record.key);
+  } catch (e) { throw new Error('清理临时项目素材失败：' + (e.message || e)); }
+}
+async function copyProjectForVisual(sourceId, requestedName, adapter) {
+  const service = adapter || {
+    readProjectSnapshot, writeTemporaryProject, validateTemporaryProject,
+    registerTemporaryProject, cleanupTemporaryProject, createId: () => uid('proj'), listProjects
+  };
+  if (typeof ProjectConverter === 'undefined') throw new Error('转换服务未加载');
+  return ProjectConverter.copyProjectForVisual(sourceId, requestedName, service);
 }
 
 // 首次启动：把旧版无项目数据收进「默认项目」，并确保项目注册表存在
@@ -3104,12 +3247,104 @@ const Storage = {
   // 项目 API
   listProjects, createProject, renameProject, deleteProject, getProjectName, getProjectMode,
   getCurrentProjectId, setCurrentProject, getProjectStats, getProjectStatsBatch, migrateLegacyIfNeeded,
+  getUiPreference, setUiPreference,
+  // 旧项目安全转换：临时写入 → 校验 → 最后注册；源项目绝不改写
+  readProjectSnapshot, writeTemporaryProject, validateTemporaryProject, registerTemporaryProject, cleanupTemporaryProject, copyProjectForVisual,
   // 工程备份 / 恢复（跨设备搬运整个剧本：素材+变量+线索+设定）
   exportProject, importProject,
 };
 
 if (typeof window !== 'undefined') window.Storage = Storage;
 if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
+
+</script>
+<script>
+/* inlined from js/project-converter.js */
+// js/project-converter.js — old game projects are copied, never upgraded in place.
+(function (root, factory) {
+  const api = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (root) root.ProjectConverter = api;
+})(typeof window !== 'undefined' ? window : globalThis, function () {
+  function nextConvertedName(sourceName, projects) {
+    const base = String(sourceName || '未命名项目').trim() || '未命名项目';
+    const names = new Set((projects || []).map(p => p && p.name));
+    const first = base + '（可视化版）';
+    if (!names.has(first)) return first;
+    let n = 2;
+    while (names.has(base + '（可视化版 ' + n + '）')) n++;
+    return base + '（可视化版 ' + n + '）';
+  }
+
+  function blockEntries(snapshot) {
+    const blocks = snapshot && snapshot.blocks || {};
+    const out = [['__MAIN__', blocks.main || '']];
+    Object.keys(blocks.blocks || {}).forEach(name => out.push([name, blocks.blocks[name] || '']));
+    return out;
+  }
+
+  function optionTokens(line) {
+    const tokens = [];
+    let start = line.indexOf('<选项:');
+    while (start !== -1) {
+      let end = start + 4;
+      while ((end = line.indexOf('>', end)) !== -1 && line[end - 1] === '=') end++;
+      if (end === -1) break;
+      tokens.push(line.slice(start, end + 1));
+      start = line.indexOf('<选项:', end + 1);
+    }
+    return tokens;
+  }
+
+  function analyzeProjectSnapshot(snapshot) {
+    const stateNames = new Set(((snapshot && snapshot.vars) || []).map(v => v && v.name).filter(Boolean));
+    const counts = { options: 0, stateChanges: 0, effects: 0 };
+    const issues = [];
+    blockEntries(snapshot).forEach(([block, text]) => String(text).split('\n').forEach((line, index) => {
+      const lineNo = index + 1;
+      const options = optionTokens(line);
+      counts.options += options.length;
+      counts.stateChanges += (line.match(/<变量:[^>]*>/g) || []).length;
+      counts.effects += (line.match(/(?:^|,)变化:([^,>]+)/g) || []).length;
+      options.forEach(option => {
+        const condition = /(?:^|,)条件:([^,>]+)/.exec(option);
+        if (condition) {
+          const refs = condition[1].match(/[\u4e00-\u9fa5A-Za-z_][\u4e00-\u9fa5A-Za-z0-9_]*/g) || [];
+          refs.filter(name => !['true', 'false', 'contains'].includes(name) && !stateNames.has(name)).forEach(name => {
+            issues.push({ block, line: lineNo, message: '条件引用了未定义的剧情状态：' + name });
+          });
+        }
+      });
+    }));
+    return { counts, issues };
+  }
+
+  function buildConversionReport(snapshot, analysis) {
+    const result = analysis || analyzeProjectSnapshot(snapshot);
+    return { counts: result.counts, issues: result.issues, lostContentCount: 0 };
+  }
+
+  async function copyProjectForVisual(sourceId, requestedName, adapter) {
+    if (!adapter) throw new Error('缺少项目存储适配器');
+    const snapshot = await adapter.readProjectSnapshot(sourceId);
+    if (!snapshot) throw new Error('找不到原项目');
+    const targetId = adapter.createId ? adapter.createId() : ('proj_visual_' + Date.now().toString(36));
+    try {
+      await adapter.writeTemporaryProject(snapshot, targetId);
+      await adapter.validateTemporaryProject(targetId);
+      await adapter.registerTemporaryProject(targetId, requestedName, {
+        visualEditorVersion: 1,
+        convertedFrom: sourceId
+      });
+      return { projectId: targetId, report: buildConversionReport(snapshot) };
+    } catch (error) {
+      try { await adapter.cleanupTemporaryProject(targetId); } catch (cleanupError) { console.error('清理转换临时数据失败', cleanupError); }
+      throw error;
+    }
+  }
+
+  return { nextConvertedName, analyzeProjectSnapshot, buildConversionReport, copyProjectForVisual };
+});
 
 </script>
 <script>
@@ -3245,7 +3480,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
   // ---------- 条件表达式：解析（AST）与求值分离，语法校验复用同一解析器 ----------
   // 文法：expr := or；or := and ('||' and)*；and := unary ('&&' unary)*；
   //       unary := '!' unary | primary；primary := '(' expr ')' | comparison | bare-name
-  // comparison := name op value，op ∈ >= <= == != > < =
+  // comparison := name op value，op ∈ >= <= == != > < = contains notcontains
   // AST 节点：{k:'or'|'and', l, r} · {k:'not', e} · {k:'cmp', name, op, val:{s:'num'|'str'|'bool'|'word', v}} · {k:'bare', name}
 
   // 解析失败返回 null。空表达式视为恒真，返回 { k:'true' }。
@@ -3294,7 +3529,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       if (tk.t !== 'name') return null;
       next();
       var nk = peek();
-      if (nk && nk.t === 'op' && (nk.v === '>=' || nk.v === '<=' || nk.v === '==' || nk.v === '!=' || nk.v === '>' || nk.v === '<' || nk.v === '=')) {
+      if (nk && nk.t === 'op' && (nk.v === '>=' || nk.v === '<=' || nk.v === '==' || nk.v === '!=' || nk.v === '>' || nk.v === '<' || nk.v === '=' || nk.v === 'contains' || nk.v === 'notcontains')) {
         next();
         var vk = next();
         if (!vk || vk.t === 'op') return null;
@@ -3315,7 +3550,13 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       if (ch === '"' || ch === '\u201c' || ch === '\u201d') {
         var closeCh = (ch === '"') ? '"' : '\u201d';
         var j = i + 1, str = '';
-        while (j < src.length && src[j] !== closeCh) { str += src[j]; j++; }
+        while (j < src.length && src[j] !== closeCh) {
+          if (src[j] === '\\' && closeCh === '"' && j + 1 < src.length) {
+            var escaped = src[j + 1];
+            if (escaped === '"' || escaped === '\\') { str += escaped; j += 2; continue; }
+          }
+          str += src[j]; j++;
+        }
         if (j >= src.length) return null;
         out.push({ t: 'str', v: str });
         i = j + 1;
@@ -3329,6 +3570,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
         // 兼容旧写法：单独的「=」按等于处理
         out.push({ t: 'op', v: ch }); i++; continue;
       }
+      var wordOp = src.slice(i).match(/^(notcontains|contains)(?![A-Za-z0-9_\u4e00-\u9fa5])/);
+      if (wordOp) { out.push({ t: 'op', v: wordOp[1] }); i += wordOp[1].length; continue; }
       var nm = src.slice(i).match(/^-?\d+(\.\d+)?/);
       if (nm && (i === 0 || !/[\w\u4e00-\u9fa5_]/.test(src[i - 1]))) {
         out.push({ t: 'num', v: nm[0] }); i += nm[0].length; continue;
@@ -3356,6 +3599,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       case '<=': return Number(lv) <= Number(rv);
       case '==': case '=': return lv == rv; // eslint-disable-line eqeqeq
       case '!=': return lv != rv;           // eslint-disable-line eqeqeq
+      case 'contains': return String(lv).indexOf(String(rv)) >= 0;
+      case 'notcontains': return String(lv).indexOf(String(rv)) < 0;
     }
     return false;
   }
@@ -3378,6 +3623,82 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     var ast = parseCondition(expr);
     if (!ast) return false;
     try { return !!evalAst(ast, getVar); } catch (e) { return false; }
+  }
+
+  // AST → 稳定的条件文本。不同优先级的逻辑组合显式加括号，避免编辑器往返时含义含混。
+  function serializeCondition(ast) {
+    function value(val) {
+      if (!val) return '';
+      if (val.s === 'num') return String(val.v);
+      if (val.s === 'bool') return val.v ? 'true' : 'false';
+      if (val.s === 'word') return String(val.v);
+      return '"' + String(val.v).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+    }
+    function walk(node, parentKind) {
+      if (!node) return '';
+      if (node.k === 'true') return 'true';
+      if (node.k === 'bare') return node.name;
+      if (node.k === 'cmp') return node.name + node.op + value(node.val);
+      if (node.k === 'not') {
+        var negated = walk(node.e, 'not');
+        return '!' + ((node.e && (node.e.k === 'and' || node.e.k === 'or')) ? '(' + negated + ')' : negated);
+      }
+      var op = node.k === 'and' ? ' && ' : ' || ';
+      var body = walk(node.l, node.k) + op + walk(node.r, node.k);
+      return parentKind && parentKind !== node.k && parentKind !== 'not' ? '(' + body + ')' : body;
+    }
+    return walk(ast, '');
+  }
+
+  function summarizeComparison(node) {
+    var words = {
+      '>=': '不少于', '<=': '不多于', '>': '大于', '<': '小于',
+      '==': '等于', '=': '等于', '!=': '不等于',
+      'contains': '包含', 'notcontains': '不包含'
+    };
+    var val = node.val || {};
+    var rendered = val.s === 'str' ? '“' + String(val.v) + '”' : String(val.v);
+    return node.name + (words[node.op] || node.op) + ' ' + rendered;
+  }
+
+  // AST → 面向作者的中文摘要。且的优先级高于“或者”，故其组合无需额外括号。
+  function summarizeCondition(ast, typeMap) { // eslint-disable-line no-unused-vars
+    function walk(node, parentPrec) {
+      if (!node) return '';
+      if (node.k === 'true') return '始终成立';
+      if (node.k === 'bare') return node.name + '是“是”';
+      if (node.k === 'cmp') return summarizeComparison(node);
+      if (node.k === 'not') return '不是（' + walk(node.e, 0) + '）';
+      var prec = node.k === 'and' ? 2 : 1;
+      var glue = node.k === 'and' ? ' 且' : '，或者';
+      var body = walk(node.l, prec) + glue + walk(node.r, prec);
+      return prec < parentPrec ? '（' + body + '）' : body;
+    }
+    return walk(ast, 0);
+  }
+
+  // 验证 AST 运算符是否与声明变量类型匹配。类型表为 {变量名: 'number'|'boolean'|'text'}。
+  function validateConditionTypes(ast, typeMap) {
+    var errors = [];
+    var map = typeMap || {};
+    function variableType(name) { return map[name]; }
+    function requireType(node, expected) {
+      var actual = variableType(node.name);
+      if (actual !== expected) errors.push({ name: node.name, op: node.op, expected: expected, actual: actual });
+    }
+    function walk(node) {
+      if (!node) return;
+      if (node.k === 'bare') {
+        var actual = variableType(node.name);
+        if (actual !== 'boolean') errors.push({ name: node.name, op: 'bare', expected: 'boolean', actual: actual });
+      } else if (node.k === 'cmp') {
+        if (node.op === 'contains' || node.op === 'notcontains') requireType(node, 'text');
+        else if (node.op === '>' || node.op === '<' || node.op === '>=' || node.op === '<=') requireType(node, 'number');
+      } else if (node.k === 'not') walk(node.e);
+      else { walk(node.l); walk(node.r); }
+    }
+    walk(ast);
+    return { ok: errors.length === 0, errors: errors };
   }
 
   // 正文插值：{名} / {名:真文案|假文案}；未定义保留原样；{{名}} 转义保留；布尔显示 真/假
@@ -3652,6 +3973,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     applyOps: applyOps,
     condTokenize: condTokenize,
     parseCondition: parseCondition,
+    serializeCondition: serializeCondition,
+    summarizeCondition: summarizeCondition,
+    validateConditionTypes: validateConditionTypes,
     evalCondition: evalCondition,
     interpolate: interpolate,
     inferTypeFromValue: inferTypeFromValue,
@@ -3664,6 +3988,1021 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
 
   if (typeof window !== 'undefined') window.StoryVars = StoryVars;
   if (typeof module !== 'undefined' && module.exports) module.exports = StoryVars;
+})();
+
+</script>
+<script>
+/* inlined from js/story-options.js */
+// js/story-options.js — 可视化选项的单一语法源
+(function () {
+  'use strict';
+
+  var OPTIONAL_PREFIXES = ['条件:', '不满足:', '提示:', '变化:'];
+
+  function splitTopLevelFields(source) {
+    var text = String(source == null ? '' : source);
+    var fields = [], start = 0, depth = 0, quote = null, escaped = false;
+    var pairs = { '“': '”', '‘': '’', '「': '」', '『': '』' };
+    for (var i = 0; i < text.length; i++) {
+      var ch = text.charAt(i);
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\') { escaped = true; continue; }
+      if (quote) {
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === '"') { quote = '"'; continue; }
+      if (pairs[ch]) { quote = pairs[ch]; continue; }
+      if (ch === '(') { depth++; continue; }
+      if (ch === ')' && depth > 0) { depth--; continue; }
+      if (ch === ',' && depth === 0) {
+        fields.push(text.slice(start, i).trim());
+        start = i + 1;
+      }
+    }
+    fields.push(text.slice(start).trim());
+    return fields;
+  }
+
+  function unescapeString(value) {
+    return value.replace(/\\([\\"nrt])/g, function (_, ch) {
+      return ch === 'n' ? '\n' : ch === 'r' ? '\r' : ch === 't' ? '\t' : ch;
+    });
+  }
+
+  function readString(field) {
+    var s = String(field == null ? '' : field).trim();
+    var last = s.charAt(s.length - 1);
+    var pairs = { '"': '"', '“': '”', '‘': '’', '「': '」', '『': '』' };
+    if (s.length < 2 || !pairs[s.charAt(0)] || pairs[s.charAt(0)] !== last) return null;
+    return unescapeString(s.slice(1, -1));
+  }
+
+  function escapeString(value) {
+    return String(value == null ? '' : value)
+      .replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+      .replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+  }
+
+  function isOptional(field) {
+    for (var i = 0; i < OPTIONAL_PREFIXES.length; i++) {
+      if (field.indexOf(OPTIONAL_PREFIXES[i]) === 0) return true;
+    }
+    return false;
+  }
+
+  function parseEffect(value) {
+    var SV = typeof window !== 'undefined' ? window.StoryVars : null;
+    if (!SV && typeof require === 'function') {
+      try { SV = require('./story-vars.js'); } catch (_) { SV = null; }
+    }
+    if (!SV || typeof SV.parseVarLine !== 'function') return null;
+    var parsed = SV.parseVarLine('<变量:' + value + '>');
+    return parsed.bad.length === 0 && parsed.ops.length === 1 ? parsed.ops[0] : null;
+  }
+
+  function makeOption() {
+    return { text: '', block: null, condition: null, unmetBehavior: 'hide', unmetMessage: null, effects: [], unknownFields: [] };
+  }
+
+  function parseOptionTag(raw) {
+    var source = String(raw == null ? '' : raw).trim();
+    if (source.slice(0, 4) !== '<选项:' || source.charAt(source.length - 1) !== '>') {
+      return { ok: false, option: null, error: '选项标签格式不正确' };
+    }
+    var fields = splitTopLevelFields(source.slice(4, -1));
+    var text = readString(fields.shift());
+    if (text === null) return { ok: false, option: null, error: '选项文字必须使用引号' };
+    var option = makeOption();
+    option.text = text;
+    if (fields.length && !isOptional(fields[0])) {
+      var blockValue = readString(fields[0]);
+      option.block = blockValue === null ? fields[0].trim() : blockValue;
+      fields.shift();
+    }
+    for (var i = 0; i < fields.length; i++) {
+      var field = fields[i];
+      if (field.indexOf('条件:') === 0) option.condition = field.slice(3).trim() || null;
+      else if (field.indexOf('不满足:') === 0) {
+        var behavior = field.slice(4).trim();
+        if (behavior === '隐藏') option.unmetBehavior = 'hide';
+        else if (behavior === '禁用') option.unmetBehavior = 'disable';
+        else option.unknownFields.push(field);
+      } else if (field.indexOf('提示:') === 0) {
+        var message = readString(field.slice(3));
+        if (message === null) option.unknownFields.push(field);
+        else option.unmetMessage = message;
+      } else if (field.indexOf('变化:') === 0) {
+        var effect = parseEffect(field.slice(3).trim());
+        if (effect) option.effects.push(effect);
+        else option.unknownFields.push(field);
+      } else option.unknownFields.push(field);
+    }
+    return { ok: true, option: option, error: null };
+  }
+
+  function isConditionComparator(source, start, at) {
+    if (source.charAt(at + 1) === '=') return true;
+    var following = source.charAt(at + 1);
+    if (!following || following === '<' || /\s/.test(following)) return false;
+    var field = splitTopLevelFields(source.slice(start + 4, at)).pop() || '';
+    return field.indexOf('条件:') === 0;
+  }
+
+  function extractOptionLine(line) {
+    var text = String(line == null ? '' : line), matches = [], cursor = 0;
+    var quotePairs = { '“': '”', '‘': '’', '「': '」', '『': '』' };
+    while (cursor < text.length) {
+      var start = text.indexOf('<选项:', cursor);
+      if (start < 0) break;
+      var quote = null, escaped = false, end = -1;
+      for (var i = start + 4; i < text.length; i++) {
+        var ch = text.charAt(i);
+        if (escaped) { escaped = false; continue; }
+        if (ch === '\\') { escaped = true; continue; }
+        if (quote) { if (ch === quote) quote = null; continue; }
+        if (ch === '"') { quote = '"'; continue; }
+        if (quotePairs[ch]) { quote = quotePairs[ch]; continue; }
+        if (ch === '>' && !isConditionComparator(text, start, i)) { end = i + 1; break; }
+      }
+      if (end < 0) {
+        var rawTail = text.slice(start);
+        matches.push({ start: start, end: text.length, raw: rawTail, ok: false, option: null, error: '选项标签未闭合' });
+        break;
+      }
+      var raw = text.slice(start, end), parsed = parseOptionTag(raw);
+      matches.push({ start: start, end: end, raw: raw, ok: parsed.ok, option: parsed.option, error: parsed.error });
+      cursor = end;
+    }
+    return matches;
+  }
+
+  function normalizeOption(input) {
+    var source = input || {}, option = makeOption();
+    option.text = String(source.text == null ? '' : source.text).trim();
+    option.block = source.block == null || String(source.block).trim() === '' ? null : String(source.block).trim();
+    option.condition = source.condition == null || String(source.condition).trim() === '' ? null : String(source.condition).trim();
+    option.unmetBehavior = source.unmetBehavior === 'disable' ? 'disable' : 'hide';
+    option.unmetMessage = source.unmetMessage != null && String(source.unmetMessage).trim() !== '' ? String(source.unmetMessage) : null;
+    option.effects = Array.isArray(source.effects) ? source.effects.map(function (effect) {
+      return { name: String(effect.name == null ? '' : effect.name).trim(), op: effect.op, val: String(effect.val == null ? '' : effect.val).trim() };
+    }) : [];
+    option.unknownFields = Array.isArray(source.unknownFields) ? source.unknownFields.slice() : [];
+    return option;
+  }
+
+  function serializeOption(input) {
+    var option = normalizeOption(input);
+    if (!option.text) return { ok: false, value: null, error: '选项文字不能为空' };
+    var fields = ['"' + escapeString(option.text) + '"'];
+    if (option.block) fields.push(option.block.indexOf(',') >= 0 || /["\\\r\n]/.test(option.block) ? '"' + escapeString(option.block) + '"' : option.block);
+    if (option.condition) fields.push('条件:' + option.condition);
+    if (option.unmetBehavior === 'disable') fields.push('不满足:禁用');
+    if (option.unmetMessage) fields.push('提示:"' + escapeString(option.unmetMessage) + '"');
+    for (var i = 0; i < option.effects.length; i++) {
+      var effect = parseEffect(option.effects[i].name + option.effects[i].op + option.effects[i].val);
+      if (!effect) return { ok: false, value: null, error: '变量变化格式不正确' };
+      fields.push('变化:' + effect.name + effect.op + effect.val);
+    }
+    for (var j = 0; j < option.unknownFields.length; j++) fields.push(String(option.unknownFields[j]));
+    return { ok: true, value: '<选项:' + fields.join(',') + '>', error: null };
+  }
+
+  function summarizeOption(input) {
+    var option = normalizeOption(input), parts = [option.text || '未命名选项'];
+    if (option.block) parts.push('→ ' + option.block);
+    if (option.condition) parts.push('条件：' + option.condition);
+    if (option.unmetBehavior === 'disable') parts.push('不满足时禁用');
+    if (option.effects.length) parts.push('变化 ' + option.effects.length + ' 项');
+    return parts.join(' · ');
+  }
+
+  function buildRuntimeSource() {
+    var fns = [splitTopLevelFields, unescapeString, readString, escapeString, isOptional, parseEffect, makeOption, parseOptionTag, isConditionComparator, extractOptionLine, normalizeOption, serializeOption, summarizeOption];
+    var src = '(function(){\n"use strict";\nvar OPTIONAL_PREFIXES=["条件:","不满足:","提示:","变化:"];\nvar SO={};\n';
+    fns.forEach(function (fn) { src += fn.toString() + '\nSO.' + fn.name + '=' + fn.name + ';\n'; });
+    return src + 'window.StoryOptions=SO;\n})();';
+  }
+
+  var StoryOptions = {
+    splitTopLevelFields: splitTopLevelFields,
+    parseOptionTag: parseOptionTag,
+    extractOptionLine: extractOptionLine,
+    serializeOption: serializeOption,
+    summarizeOption: summarizeOption,
+    normalizeOption: normalizeOption
+    ,buildRuntimeSource: buildRuntimeSource
+  };
+  if (typeof window !== 'undefined') window.StoryOptions = StoryOptions;
+  if (typeof module !== 'undefined' && module.exports) module.exports = StoryOptions;
+})();
+
+</script>
+<script>
+/* inlined from js/story-visual-doc.js */
+// js/story-visual-doc.js — 可视化剧情编辑器的无损源码文档模型
+(function () {
+  'use strict';
+
+  function dependency(name, path) {
+    if (typeof window !== 'undefined' && window[name]) return window[name];
+    if (typeof require === 'function') {
+      try { return require(path); } catch (_) { return null; }
+    }
+    return null;
+  }
+
+  function splitLines(source) {
+    var lines = [], re = /\r\n|\n|\r/g, start = 0, match;
+    while ((match = re.exec(source)) !== null) {
+      lines.push({ start: start, end: match.index, separatorEnd: re.lastIndex });
+      start = re.lastIndex;
+    }
+    if (start < source.length || source.length === 0) lines.push({ start: start, end: source.length, separatorEnd: source.length });
+    return lines;
+  }
+
+  function scan(source) {
+    var text = String(source == null ? '' : source);
+    var StoryOptions = dependency('StoryOptions', './story-options.js');
+    var StoryVars = dependency('StoryVars', './story-vars.js');
+    var nodes = [], plainStart = -1, plainEnd = -1;
+
+    function push(kind, start, end, data, diagnostics) {
+      if (start === end) return;
+      if (kind === 'text') {
+        if (plainStart < 0) plainStart = start;
+        plainEnd = end;
+        return;
+      }
+      flushPlain();
+      nodes.push({ kind: kind, start: start, end: end, raw: text.slice(start, end), data: data || {}, diagnostics: diagnostics || [] });
+    }
+    function flushPlain() {
+      if (plainStart >= 0) {
+        nodes.push({ kind: 'text', start: plainStart, end: plainEnd, raw: text.slice(plainStart, plainEnd), data: {}, diagnostics: [] });
+        plainStart = -1;
+        plainEnd = -1;
+      }
+    }
+    function isStandaloneState(line) {
+      var trimmed = line.trim();
+      if (!trimmed || !StoryVars) return null;
+      var parsed = StoryVars.parseVarLine(trimmed);
+      if (parsed.ops.length && parsed.bad.length === 0) return { effects: parsed.ops };
+      var input = StoryVars.parsePlayerInput(trimmed);
+      return input ? { playerInput: input, effects: [] } : null;
+    }
+    function appendGeneric(start, end) {
+      var cursor = start, re = /<[^\r\n<>]+>/g, fragment = text.slice(start, end), match;
+      while ((match = re.exec(fragment)) !== null) {
+        var tagStart = start + match.index, tagEnd = tagStart + match[0].length;
+        if (tagStart > cursor) push('text', cursor, tagStart);
+        push('raw_command', tagStart, tagEnd, { command: match[0] });
+        cursor = tagEnd;
+      }
+      if (cursor < end) push('text', cursor, end);
+    }
+
+    splitLines(text).forEach(function (line) {
+      var rawLine = text.slice(line.start, line.end);
+      var state = isStandaloneState(rawLine);
+      if (state) {
+        push('state_change', line.start, line.end, state);
+      } else {
+        var matches = StoryOptions && StoryOptions.extractOptionLine ? StoryOptions.extractOptionLine(rawLine) : [];
+        if (matches.length) {
+          var cursor = line.start;
+          matches.forEach(function (match) {
+            var start = line.start + match.start, end = line.start + match.end;
+            if (cursor < start) appendGeneric(cursor, start);
+            if (match.ok) {
+              push('option_group', start, end, { option: match.option, options: [match.option] });
+            } else {
+              push('source_error', start, end, {}, [{ kind: 'malformed_option', severity: 'error', message: match.error || '无法识别的选项指令' }]);
+            }
+            cursor = end;
+          });
+          if (cursor < line.end) appendGeneric(cursor, line.end);
+        } else {
+          appendGeneric(line.start, line.end);
+        }
+      }
+      if (line.separatorEnd > line.end) push('text', line.end, line.separatorEnd);
+    });
+    flushPlain();
+    return { source: text, nodes: nodes };
+  }
+
+  function serializeUnchanged(doc) {
+    if (!doc || typeof doc.source !== 'string') throw new TypeError('Visual document must include its source');
+    return doc.source;
+  }
+
+  function replaceNode(source, node, replacement) {
+    var text = String(source == null ? '' : source);
+    if (!node || typeof node.start !== 'number' || typeof node.end !== 'number'
+      || text.slice(node.start, node.end) !== node.raw) {
+      throw new Error('Node span does not match its raw source');
+    }
+    return text.slice(0, node.start) + String(replacement == null ? '' : replacement) + text.slice(node.end);
+  }
+
+  // Standalone visual directives own their line.  This keeps an emptied state
+  // change from turning into an unexplained blank line when its final effect is
+  // removed by the visual editor.
+  function removeNode(source, node) {
+    var text = String(source == null ? '' : source);
+    if (!node || typeof node.start !== 'number' || typeof node.end !== 'number'
+      || text.slice(node.start, node.end) !== node.raw) {
+      throw new Error('Node span does not match its raw source');
+    }
+    var lineStart = Math.max(text.lastIndexOf('\n', node.start - 1), text.lastIndexOf('\r', node.start - 1)) + 1;
+    var nextBreak = /\r\n|\n|\r/.exec(text.slice(node.end));
+    var lineEnd = nextBreak ? node.end + nextBreak.index : text.length;
+    if (node.start !== lineStart || node.end !== lineEnd) return replaceNode(text, node, '');
+    if (nextBreak && nextBreak.index === 0) return text.slice(0, node.start) + text.slice(node.end + nextBreak[0].length);
+    if (node.start > 0) {
+      var previousStart = node.start - (text.charAt(node.start - 1) === '\n' && text.charAt(node.start - 2) === '\r' ? 2 : 1);
+      return text.slice(0, previousStart) + text.slice(node.end);
+    }
+    return text.slice(node.end);
+  }
+
+  function findNodeAtOffset(doc, offset) {
+    if (!doc || !Array.isArray(doc.nodes) || typeof offset !== 'number') return null;
+    for (var i = 0; i < doc.nodes.length; i++) {
+      var node = doc.nodes[i];
+      if (offset >= node.start && offset < node.end) return node;
+    }
+    return null;
+  }
+
+  function summarizeDiagnostics(docOrNodes) {
+    var nodes = Array.isArray(docOrNodes) ? docOrNodes : (docOrNodes && docOrNodes.nodes) || [];
+    var diagnostics = [];
+    nodes.forEach(function (node) {
+      (node.diagnostics || []).forEach(function (diagnostic) {
+        diagnostics.push({ kind: diagnostic.kind, severity: diagnostic.severity, message: diagnostic.message, start: node.start, end: node.end, node: node });
+      });
+    });
+    return diagnostics;
+  }
+
+  // Project-wide state usage is kept here instead of in the editor so callers
+  // can safely preview destructive library operations before touching storage.
+  function buildStateReferenceIndex(blockMap, states) {
+    var StoryVars = dependency('StoryVars', './story-vars.js');
+    var StoryOptions = dependency('StoryOptions', './story-options.js');
+    var references = [], byName = {}, seen = {}, duplicates = [];
+    (states || []).forEach(function (state) {
+      var name = state && String(state.name == null ? '' : state.name).trim();
+      if (!name) return;
+      if (seen[name] && duplicates.indexOf(name) < 0) duplicates.push(name);
+      seen[name] = true;
+    });
+    function add(name, kind, block, line, extra) {
+      if (!name) return;
+      var ref = { name: name, kind: kind, block: block, line: line };
+      if (extra) Object.keys(extra).forEach(function (key) { ref[key] = extra[key]; });
+      references.push(ref);
+      if (!byName[name]) byName[name] = [];
+      byName[name].push(ref);
+    }
+    function addConditionRefs(expr, block, line) {
+      if (!StoryVars || !StoryVars.parseCondition) return;
+      var ast = StoryVars.parseCondition(expr);
+      function walk(node) {
+        if (!node) return;
+        if (node.k === 'bare') add(node.name, 'condition', block, line, { requiredType: 'boolean' });
+        else if (node.k === 'cmp') {
+          var required = null;
+          if (node.op === '>' || node.op === '<' || node.op === '>=' || node.op === '<=') required = 'number';
+          if (node.op === 'contains' || node.op === 'notcontains') required = 'text';
+          add(node.name, 'condition', block, line, { requiredType: required });
+        }
+        if (node.l) walk(node.l);
+        if (node.r) walk(node.r);
+        if (node.e) walk(node.e);
+      }
+      walk(ast);
+    }
+    Object.keys(blockMap || {}).forEach(function (block) {
+      String(blockMap[block] == null ? '' : blockMap[block]).split(/\r\n|\n|\r/).forEach(function (raw, i) {
+        var line = i + 1, trimmed = raw.trim();
+        if (!trimmed || /^\s*\/\//.test(raw)) return;
+        var parsed = StoryVars && StoryVars.parseVarLine ? StoryVars.parseVarLine(trimmed) : { ops: [], bad: [] };
+        if (parsed.ops.length && parsed.bad.length === 0) {
+          parsed.ops.forEach(function (op) {
+            add(op.name, 'change', block, line, { op: op.op, requiredType: (op.op === '+' || op.op === '-') ? 'number' : null });
+          });
+          return;
+        }
+        var playerInput = StoryVars && StoryVars.parsePlayerInput ? StoryVars.parsePlayerInput(trimmed) : null;
+        if (playerInput) {
+          add(playerInput.name, 'player_input', block, line, { requiredType: 'text' });
+          return;
+        }
+        if (StoryOptions && StoryOptions.extractOptionLine) {
+          StoryOptions.extractOptionLine(raw).forEach(function (match) {
+            if (!match.ok || !match.option) return;
+            if (match.option.condition) addConditionRefs(match.option.condition, block, line);
+            (match.option.effects || []).forEach(function (effect) {
+              add(effect.name, 'effect', block, line, { op: effect.op, requiredType: (effect.op === '+' || effect.op === '-') ? 'number' : null });
+            });
+          });
+        }
+        if (StoryVars && StoryVars.extractRefs) {
+          StoryVars.extractRefs(raw).forEach(function (ref) {
+            add(ref.name, 'read', block, line, { requiredType: ref.disp ? 'boolean' : null });
+          });
+        }
+      });
+    });
+    return { references: references, byName: byName, duplicates: duplicates };
+  }
+
+  function findIncompatibleStateReferences(index, name, nextType) {
+    var refs = index && index.byName && index.byName[name] ? index.byName[name] : [];
+    return refs.filter(function (ref) { return ref.requiredType && ref.requiredType !== nextType; });
+  }
+
+  var VisualDoc = {
+    scan: scan,
+    serializeUnchanged: serializeUnchanged,
+    replaceNode: replaceNode,
+    removeNode: removeNode,
+    findNodeAtOffset: findNodeAtOffset,
+    summarizeDiagnostics: summarizeDiagnostics,
+    buildStateReferenceIndex: buildStateReferenceIndex,
+    findIncompatibleStateReferences: findIncompatibleStateReferences
+  };
+  if (typeof window !== 'undefined') window.StoryVisualDoc = VisualDoc;
+  if (typeof module !== 'undefined' && module.exports) module.exports = VisualDoc;
+})();
+
+</script>
+<script>
+/* inlined from js/story-visual-ui.js */
+// js/story-visual-ui.js — 可视化剧情编辑器的轻量壳层
+(function () {
+  'use strict';
+
+  function getVisualDoc() {
+    if (typeof window !== 'undefined' && window.StoryVisualDoc) return window.StoryVisualDoc;
+    if (typeof require === 'function') {
+      try { return require('./story-visual-doc.js'); } catch (_) { return null; }
+    }
+    return null;
+  }
+
+  function stateTypes(states) {
+    if (Array.isArray(states)) {
+      return states.reduce(function (map, state) {
+        if (state && state.name) map[state.name] = state.type;
+        return map;
+      }, {});
+    }
+    return states || {};
+  }
+
+  function getStoryVars() {
+    if (typeof window !== 'undefined' && window.StoryVars) return window.StoryVars;
+    if (typeof require === 'function') {
+      try { return require('./story-vars.js'); } catch (_) { return null; }
+    }
+    return null;
+  }
+
+  function getStoryOptions() {
+    if (typeof window !== 'undefined' && window.StoryOptions) return window.StoryOptions;
+    if (typeof require === 'function') {
+      try { return require('./story-options.js'); } catch (_) { return null; }
+    }
+    return null;
+  }
+
+  function createEmptyOption(blocks) {
+    var names = Array.isArray(blocks) ? blocks : [];
+    return { text: '', block: names.length ? names[0] : null, condition: null, unmetBehavior: 'hide', unmetMessage: '', effects: [], unknownFields: [] };
+  }
+
+  function conditionAstToDraft(ast, states) {
+    if (!ast || ast.k === 'true') return null;
+    function comparison(node) {
+      if (node.k === 'bare') return { kind: 'comparison', name: node.name, op: '==', value: true };
+      if (node.k === 'cmp') return { kind: 'comparison', name: node.name, op: node.op, value: node.val && node.val.v };
+      return null;
+    }
+    function group(node) {
+      if (node.k === 'and' || node.k === 'or') {
+        var mode = node.k === 'and' ? 'all' : 'any';
+        var rows = [];
+        function add(part) {
+          if (part && part.k === node.k) { add(part.l); add(part.r); return; }
+          var cmp = comparison(part);
+          rows.push(cmp || group(part));
+        }
+        add(node);
+        return { kind: 'group', mode: mode, rows: rows };
+      }
+      var row = comparison(node);
+      return { kind: 'group', mode: 'all', rows: row ? [row] : [] };
+    }
+    var root = group(ast);
+    delete root.kind;
+    return root;
+  }
+
+  function conditionDraftToAst(draft) {
+    if (!draft) return null;
+    function rowToAst(row) {
+      if (!row) return null;
+      if (row.kind === 'group') return groupToAst(row);
+      if (row.kind !== 'comparison' || !row.name || !row.op) return null;
+      var value = row.value;
+      var scalar = typeof value === 'boolean' ? { s: 'bool', v: value }
+        : typeof value === 'number' ? { s: 'num', v: value }
+          : { s: 'str', v: String(value == null ? '' : value) };
+      return { k: 'cmp', name: String(row.name), op: row.op, val: scalar };
+    }
+    function groupToAst(group) {
+      var rows = Array.isArray(group && group.rows) ? group.rows.map(rowToAst).filter(Boolean) : [];
+      if (!rows.length) return null;
+      var kind = group.mode === 'any' ? 'or' : 'and';
+      return rows.slice(1).reduce(function (tree, row) { return { k: kind, l: tree, r: row }; }, rows[0]);
+    }
+    return groupToAst(draft);
+  }
+
+  function allowedOperations(type) {
+    if (type === 'number') return ['+', '-', '='];
+    if (type === 'boolean' || type === 'text') return ['='];
+    return [];
+  }
+
+  function effectDraftToOps(draft, states) {
+    var types = stateTypes(states), effects = Array.isArray(draft) ? draft : [];
+    var ops = [], errors = [], seen = {};
+    effects.forEach(function (effect) {
+      var name = String(effect && effect.name || '').trim();
+      var op = effect && effect.op;
+      var value = effect && (effect.value !== undefined ? effect.value : effect.val);
+      if (!name || !types[name]) { errors.push('变量「' + name + '」不存在'); return; }
+      if (seen[name]) errors.push('变量「' + name + '」重复');
+      seen[name] = true;
+      if (allowedOperations(types[name]).indexOf(op) < 0) { errors.push('变量「' + name + '」不能使用此操作'); return; }
+      if (types[name] === 'boolean' && value !== true && value !== false && value !== 'true' && value !== 'false') { errors.push('变量「' + name + '」的值不正确'); return; }
+      if (types[name] === 'number' && !/^-?\d+(\.\d+)?$/.test(String(value == null ? '' : value))) { errors.push('变量「' + name + '」的值不正确'); return; }
+      ops.push({ name: name, op: op, val: String(value == null ? '' : value) });
+    });
+    return { ok: errors.length === 0, ops: ops, errors: errors };
+  }
+
+  function validateOptionDraft(draft, states, blocks) {
+    var source = draft || {}, types = stateTypes(states), names = Array.isArray(blocks) ? blocks : [];
+    var errors = [];
+    if (!String(source.text == null ? '' : source.text).trim()) errors.push('选项文字不能为空');
+    if (!source.block || names.indexOf(source.block) < 0) errors.push('请选择目标剧情块');
+    if (Array.isArray(source.unknownFields) && source.unknownFields.length) errors.push('此选项包含无法识别的高级字段，请在源码模式编辑');
+    function checkGroup(group) {
+      if (!group || !Array.isArray(group.rows) || !group.rows.length) { errors.push('条件组不能为空'); return; }
+      group.rows.forEach(function (row) {
+        if (row && row.kind === 'group') { checkGroup(row); return; }
+        if (!row || !types[row.name]) { errors.push('变量「' + String(row && row.name || '') + '」不存在'); return; }
+        var type = types[row.name], valid = type === 'number' ? ['>', '<', '>=', '<=', '==', '!=', '='] : type === 'text' ? ['==', '!=', '=', 'contains', 'notcontains'] : ['==', '!=', '='];
+        if (valid.indexOf(row.op) < 0) errors.push('变量「' + row.name + '」不能使用此操作');
+      });
+    }
+    if (source.condition) checkGroup(source.condition);
+    var effectCheck = effectDraftToOps(source.effects, types);
+    errors = errors.concat(effectCheck.errors);
+    return { ok: errors.length === 0, errors: errors, effects: effectCheck.ops, condition: conditionDraftToAst(source.condition) };
+  }
+
+  function describeStateChange(node) {
+    var data = node.data || {};
+    var effects = data.effects || [];
+    var words = { '+': '增加', '-': '减少', '=': '设为' };
+    var summary = effects.map(function (effect) {
+      if (!effect || !effect.name || !words[effect.op]) return '';
+      var value = String(effect.val == null ? '' : effect.val);
+      if (value === 'true') value = '真';
+      if (value === 'false') value = '假';
+      return effect.name + words[effect.op] + (value ? ' ' + value : '');
+    }).filter(Boolean).join('，');
+    if (!summary && data.playerInput && data.playerInput.name) summary = '输入' + data.playerInput.name;
+    return { kind: 'state_change', summary: summary, editable: true };
+  }
+
+  function describeText(node, states) {
+    var source = String(node.raw == null ? '' : node.raw);
+    var types = stateTypes(states);
+    var parts = [], cursor = 0;
+    var tokenRe = /\{\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*(?::\s*([^}\s|]*)\s*\|\s*([^}]*))?\s*\}/g;
+    var match;
+    while ((match = tokenRe.exec(source)) !== null) {
+      // {{变量}} is the established escaped literal form, not an inline token.
+      if (match.index > 0 && source.charAt(match.index - 1) === '{') continue;
+      if (match.index > cursor) parts.push({ kind: 'text', value: source.slice(cursor, match.index) });
+      var token = { kind: 'state_token', source: match[0], name: match[1], type: types[match[1]] };
+      if (match[2] !== undefined && match[3] !== undefined) {
+        token.trueText = match[2];
+        token.falseText = match[3];
+      }
+      parts.push(token);
+      cursor = tokenRe.lastIndex;
+    }
+    if (cursor < source.length || !parts.length) parts.push({ kind: 'text', value: source.slice(cursor) });
+    return { kind: 'text', editable: true, parts: parts };
+  }
+
+  // DOM-free description boundary: Node tests can verify visual language without
+  // requiring a browser, and the renderer below only consumes this result.
+  function describeNode(node, states) {
+    if (!node) return null;
+    if (node.kind === 'text') return describeText(node, states);
+    if (node.kind === 'state_change') return describeStateChange(node);
+    return { kind: node.kind, raw: node.raw, editable: false };
+  }
+
+  function appendTextParts(element, descriptor) {
+    descriptor.parts.forEach(function (part) {
+      if (part.kind === 'text') {
+        element.appendChild(document.createTextNode(part.value));
+        return;
+      }
+      var token = document.createElement('span');
+      token.className = 'story-visual-state-token';
+      token.contentEditable = 'false';
+      token.dataset.source = part.source;
+      token.dataset.name = part.name;
+      token.textContent = part.source;
+      element.appendChild(token);
+    });
+  }
+
+  function sourceFromTextEditor(element) {
+    // contenteditable creates <br> and block elements when the user presses
+    // Enter.  textContent alone drops those visual line breaks, so turn the
+    // browser DOM back into source text explicitly before replacing a span.
+    function readChildren(parent, root) {
+      var out = '';
+      Array.prototype.forEach.call(parent.childNodes || [], function (child, index) {
+        if (child.nodeType === 3) { out += child.nodeValue || ''; return; }
+        if (child.nodeType !== 1) return;
+        if (child.dataset && child.dataset.source != null) { out += child.dataset.source; return; }
+        var tag = String(child.tagName || '').toUpperCase();
+        if (tag === 'BR') { if (!out || out.charAt(out.length - 1) !== '\n') out += '\n'; return; }
+        var block = tag === 'DIV' || tag === 'P';
+        if (root && block && out && out.charAt(out.length - 1) !== '\n') out += '\n';
+        out += readChildren(child, false);
+        if (root && block && index < parent.childNodes.length - 1 && out.charAt(out.length - 1) !== '\n') out += '\n';
+      });
+      return out;
+    }
+    return readChildren(element, true);
+  }
+
+  function optionDraftFromOption(option, states) {
+    var source = option || {}, SV = getStoryVars();
+    return {
+      text: source.text || '', block: source.block || null,
+      condition: source.condition && SV ? conditionAstToDraft(SV.parseCondition(source.condition), states) : null,
+      unmetBehavior: source.unmetBehavior === 'disable' ? 'disable' : 'hide',
+      unmetMessage: source.unmetMessage || '',
+      effects: (source.effects || []).map(function (effect) { return { name: effect.name, op: effect.op, value: effect.val }; }),
+      unknownFields: (source.unknownFields || []).slice()
+    };
+  }
+
+  function makeField(tag, value, choices, disabled) {
+    var element = document.createElement(tag);
+    if (tag === 'select') (choices || []).forEach(function (choice) {
+      var opt = document.createElement('option'); opt.value = choice[0]; opt.textContent = choice[1];
+      if (String(value) === String(choice[0])) opt.selected = true;
+      element.appendChild(opt);
+    });
+    else element.value = value == null ? '' : value;
+    element.disabled = !!disabled;
+    return element;
+  }
+
+  function renderContextualTip(form, context) {
+    var key = context && context.tipKey;
+    if (!key || !context.getUiPreference || !context.setUiPreference) return;
+    var preferenceKey = 'visual-story-tip-dismissed:' + key;
+    if (context.getUiPreference(preferenceKey)) return;
+    var messages = {
+      'first-option': '选项决定玩家能去哪里：先写按钮文字和目标剧情块，其他内容可以慢慢补。',
+      'first-condition': '条件决定这个选项何时出现。先从一条简单的「不少于」或「为真」开始。',
+      'first-effect': '剧情状态变化会在玩家点击选项后发生，例如扣金币、拿到钥匙或提高好感度。'
+    };
+    if (!messages[key]) return;
+    var tip = document.createElement('div');
+    tip.className = 'story-visual-context-tip';
+    var text = document.createElement('span'); text.textContent = messages[key];
+    var close = document.createElement('button'); close.type = 'button'; close.className = 'story-visual-context-tip-close'; close.textContent = '知道了';
+    close.addEventListener('click', function () { context.setUiPreference(preferenceKey, '1'); tip.remove(); });
+    tip.append(text, close);
+    form.appendChild(tip);
+  }
+
+  function renderOptionEditor(host, node, initialDraft, context) {
+    var states = context.getStates ? context.getStates() : [], types = stateTypes(states);
+    var blocks = context.getBlocks ? context.getBlocks() : [];
+    var draft = initialDraft;
+    var readOnly = draft.unknownFields && draft.unknownFields.length;
+    host.replaceChildren();
+    var form = document.createElement('form');
+    form.className = 'story-visual-option-form';
+    form.noValidate = true;
+    var title = document.createElement('div'); title.className = 'story-visual-form-title'; title.textContent = '编辑选项'; form.appendChild(title);
+    renderContextualTip(form, context);
+    var error = document.createElement('div'); error.className = 'story-visual-form-error'; error.hidden = true; form.appendChild(error);
+    if (readOnly) { error.textContent = '此选项包含无法识别的高级字段，请在源码模式编辑'; error.hidden = false; }
+    function field(label, input) { var line = document.createElement('label'); line.className = 'story-visual-form-field'; line.append(document.createTextNode(label), input); form.appendChild(line); return input; }
+    var text = field('按钮文字', makeField('input', draft.text, null, readOnly));
+    var blockChoices = [['', '选择剧情块']].concat((blocks || []).map(function (name) { return [name, name]; }));
+    var block = field('目标剧情块', makeField('select', draft.block || '', blockChoices, readOnly));
+    var unmet = field('未满足时', makeField('select', draft.unmetBehavior, [['hide', '隐藏'], ['disable', '仅禁用']], readOnly));
+    var message = field('禁用提示', makeField('input', draft.unmetMessage, null, readOnly));
+    var messageLine = message.parentNode;
+    messageLine.hidden = unmet.value !== 'disable';
+    unmet.addEventListener('change', function () { messageLine.hidden = unmet.value !== 'disable'; });
+    var conditionArea = document.createElement('div'); conditionArea.className = 'story-visual-condition-area'; form.appendChild(conditionArea);
+    var effectsArea = document.createElement('div'); effectsArea.className = 'story-visual-effects-area'; form.appendChild(effectsArea);
+    function rerender() { renderOptionEditor(host, node, readDraft(), context); }
+    function readDraft() { return { text: text.value, block: block.value || null, condition: draft.condition, unmetBehavior: unmet.value, unmetMessage: message.value, effects: draft.effects, unknownFields: draft.unknownFields }; }
+    function rowLabel(label) { var e = document.createElement('div'); e.className = 'story-visual-form-label'; e.textContent = label; return e; }
+    function renderGroup(group, parent) {
+      var groupEl = document.createElement('div'); groupEl.className = 'story-visual-condition-group';
+      var mode = makeField('select', group.mode, [['all', '全部满足'], ['any', '任一满足']], readOnly);
+      mode.addEventListener('change', function () { group.mode = mode.value; }); groupEl.appendChild(mode);
+      group.rows.forEach(function (row, index) {
+        if (row.kind === 'group') { renderGroup(row, groupEl); return; }
+        var line = document.createElement('div'); line.className = 'story-visual-condition-row';
+        var name = makeField('select', row.name, [['', '变量']].concat(Object.keys(types).map(function (key) { return [key, key]; })), readOnly);
+        var type = types[name.value] || 'number';
+        var opChoices = type === 'number' ? [['>=', '不少于'], ['<=', '不多于'], ['>', '大于'], ['<', '小于'], ['=', '等于'], ['!=', '不等于']]
+          : type === 'text' ? [['=', '等于'], ['!=', '不等于'], ['contains', '包含'], ['notcontains', '不包含']]
+            : [['=', '是'], ['!=', '不是']];
+        var op = makeField('select', row.op, opChoices, readOnly);
+        var value = makeField('input', row.value, null, readOnly);
+        name.addEventListener('change', function () { row.name = name.value; rerender(); });
+        op.addEventListener('change', function () { row.op = op.value; }); value.addEventListener('input', function () { row.value = value.value; });
+        line.append(name, op, value);
+        if (!readOnly) { var remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '删除'; remove.addEventListener('click', function () { group.rows.splice(index, 1); rerender(); }); line.appendChild(remove); }
+        groupEl.appendChild(line);
+      });
+      if (!readOnly) {
+        var addComparison = document.createElement('button'); addComparison.type = 'button'; addComparison.textContent = '添加比较';
+        addComparison.addEventListener('click', function () { group.rows.push({ kind: 'comparison', name: Object.keys(types)[0] || '', op: '=', value: '' }); rerender(); });
+        var addGroup = document.createElement('button'); addGroup.type = 'button'; addGroup.textContent = '添加条件组';
+        addGroup.addEventListener('click', function () { group.rows.push({ kind: 'group', mode: 'all', rows: [] }); rerender(); });
+        groupEl.append(addComparison, addGroup);
+      }
+      parent.appendChild(groupEl);
+    }
+    conditionArea.appendChild(rowLabel('条件'));
+    if (draft.condition) {
+      renderGroup(draft.condition, conditionArea);
+      var conditionAst = conditionDraftToAst(draft.condition), SVForSummary = getStoryVars();
+      if (conditionAst && SVForSummary && SVForSummary.summarizeCondition) {
+        var summary = document.createElement('div'); summary.className = 'story-visual-condition-summary';
+        summary.textContent = SVForSummary.summarizeCondition(conditionAst, types); conditionArea.appendChild(summary);
+      }
+    }
+    else if (!readOnly) { var addCondition = document.createElement('button'); addCondition.type = 'button'; addCondition.textContent = '添加条件'; addCondition.addEventListener('click', function () { draft.condition = { mode: 'all', rows: [] }; context.tipKey = 'first-condition'; rerender(); }); conditionArea.appendChild(addCondition); }
+    effectsArea.appendChild(rowLabel('变量变化'));
+    draft.effects.forEach(function (effect, index) {
+      var line = document.createElement('div'); line.className = 'story-visual-effect-row';
+      var name = makeField('select', effect.name, [['', '变量']].concat(Object.keys(types).map(function (key) { return [key, key]; })), readOnly);
+      var op = makeField('select', effect.op, allowedOperations(types[name.value]).map(function (value) { return [value, value === '+' ? '增加' : value === '-' ? '减少' : '设为']; }), readOnly);
+      var value = makeField('input', effect.value, null, readOnly);
+      name.addEventListener('change', function () { effect.name = name.value; effect.op = allowedOperations(types[name.value])[0] || '='; rerender(); });
+      op.addEventListener('change', function () { effect.op = op.value; }); value.addEventListener('input', function () { effect.value = value.value; });
+      line.append(name, op, value);
+      if (!readOnly) { var remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '删除'; remove.addEventListener('click', function () { draft.effects.splice(index, 1); rerender(); }); line.appendChild(remove); }
+      effectsArea.appendChild(line);
+    });
+    if (!readOnly) { var addEffect = document.createElement('button'); addEffect.type = 'button'; addEffect.textContent = '添加剧情状态变化'; addEffect.addEventListener('click', function () { draft.effects.push({ name: Object.keys(types)[0] || '', op: '=', value: '' }); context.tipKey = 'first-effect'; rerender(); }); effectsArea.appendChild(addEffect); }
+    var actions = document.createElement('div'); actions.className = 'story-visual-form-actions';
+    var cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '取消'; cancel.addEventListener('click', context.close); actions.appendChild(cancel);
+    var submit = document.createElement('button'); submit.type = 'submit'; submit.textContent = '完成'; submit.disabled = readOnly; actions.appendChild(submit); form.appendChild(actions);
+    form.addEventListener('submit', function (event) {
+      event.preventDefault(); var nextDraft = readDraft(); var checked = validateOptionDraft(nextDraft, types, blocks);
+      if (!checked.ok) { error.textContent = checked.errors[0]; error.hidden = false; return; }
+      var SV = getStoryVars(), SO = getStoryOptions();
+      var option = { text: nextDraft.text, block: nextDraft.block, condition: checked.condition ? SV.serializeCondition(checked.condition) : null, unmetBehavior: nextDraft.unmetBehavior, unmetMessage: nextDraft.unmetMessage, effects: checked.effects, unknownFields: [] };
+      var serialized = SO && SO.serializeOption ? SO.serializeOption(option) : { ok: false, error: '无法保存选项' };
+      if (!serialized.ok) { error.textContent = serialized.error || '无法保存选项'; error.hidden = false; context.restore(); return; }
+      var saved = context.commit(serialized.value);
+      if (saved && !saved.ok) { error.textContent = saved.error || '无法保存选项'; error.hidden = false; }
+    });
+    host.appendChild(form);
+  }
+
+  // The visual surface deliberately renders from the lossless document model.
+  // It never serializes or normalizes source merely because a user changed modes.
+  function renderDocument(host, doc, onDiagnostic, options) {
+    if (!host || !doc) return doc;
+    host.replaceChildren();
+    var surface = document.createElement('div');
+    surface.className = 'story-visual-document';
+    surface.setAttribute('role', 'document');
+    surface.setAttribute('aria-label', '可视化剧情内容');
+
+    (doc.nodes || []).forEach(function (node) {
+      var descriptor = describeNode(node, options && options.getStates ? options.getStates() : null);
+      if (node.kind === 'state_change' && !descriptor.summary) return;
+      var element = document.createElement(node.kind === 'option_group' ? 'div' : 'span');
+      element.className = 'story-visual-node story-visual-node-' + node.kind;
+      element.dataset.start = String(node.start);
+      element.dataset.end = String(node.end);
+      if (node.kind === 'text') {
+        element.contentEditable = 'true';
+        element.spellcheck = false;
+        appendTextParts(element, descriptor);
+        element.addEventListener('blur', function () {
+          if (options && options.commitTextNode) options.commitTextNode(node, sourceFromTextEditor(element));
+        });
+        element.addEventListener('keydown', function (event) {
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+            event.preventDefault();
+            if (options && options.commitTextNode) options.commitTextNode(node, sourceFromTextEditor(element));
+          }
+        });
+      } else if (node.kind === 'state_change') {
+        element = document.createElement('button');
+        element.type = 'button';
+        element.className = 'story-visual-node story-visual-node-state_change story-visual-edit-button';
+        element.dataset.start = String(node.start);
+        element.dataset.end = String(node.end);
+        element.textContent = descriptor.summary;
+        element.addEventListener('click', function () {
+          if (options && options.onEditState) options.onEditState(node);
+        });
+      } else if (node.kind === 'option_group') {
+        element = document.createElement('button');
+        element.type = 'button';
+        element.className = 'story-visual-node story-visual-node-option_group story-visual-edit-button';
+        element.dataset.start = String(node.start);
+        element.dataset.end = String(node.end);
+        var SO = getStoryOptions();
+        element.textContent = SO && SO.summarizeOption ? SO.summarizeOption(node.data && node.data.option) : node.raw;
+        element.addEventListener('click', function () {
+          if (options && options.onEditOption) options.onEditOption(node);
+        });
+      } else {
+        element.textContent = node.raw;
+      }
+      if (node.diagnostics && node.diagnostics.length) {
+        element.classList.add('has-diagnostic');
+        element.tabIndex = 0;
+        element.setAttribute('role', 'button');
+        element.setAttribute('aria-label', node.diagnostics[0].message);
+        var report = function () { if (onDiagnostic) onDiagnostic(node.diagnostics[0]); };
+        element.addEventListener('click', report);
+        element.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); report(); }
+        });
+      }
+      surface.appendChild(element);
+    });
+    host.appendChild(surface);
+    return doc;
+  }
+
+  // Public no-op retained for consumers which create no controller.
+  function commitFocusedEditor() {}
+  function destroy() {}
+
+  function createController(options) {
+    var sourceTextarea = options.sourceTextarea;
+    var visualHost = options.visualHost;
+    var sourceWrap = options.sourceWrap || (sourceTextarea && sourceTextarea.closest('.editor-text-wrap'));
+    var getSource = options.getSource;
+    var onDiagnostic = options.onDiagnostic;
+    var lastNode = null;
+    var currentDocument = null;
+    var mode = 'source';
+    var isCommitting = false;
+    var editingOption = null;
+    var sourceBeforeOptionEdit = null;
+
+    function commitTextNode(node, replacement) {
+      if (isCommitting || !node || replacement === node.raw) return;
+      var VisualDoc = getVisualDoc();
+      if (!VisualDoc) return;
+      try {
+        isCommitting = true;
+        var next = VisualDoc.replaceNode(getSource(), node, replacement);
+        options.setSource(next);
+        currentDocument = VisualDoc.scan(next);
+        renderDocument(visualHost, currentDocument, onDiagnostic, renderOptions);
+      } finally {
+        isCommitting = false;
+      }
+    }
+    function editState(node) {
+      if (typeof options.onEditState === 'function') options.onEditState(node);
+    }
+    function editOption(node) {
+      if (!node || !node.data || !node.data.option || !visualHost) return;
+      editingOption = node;
+      sourceBeforeOptionEdit = getSource();
+      renderOptionEditor(visualHost, node, optionDraftFromOption(node.data.option, options.getStates ? options.getStates() : null), {
+        getStates: options.getStates,
+        getBlocks: options.getBlocks,
+        tipKey: 'first-option',
+        getUiPreference: options.getUiPreference,
+        setUiPreference: options.setUiPreference,
+        close: function () { editingOption = null; sourceBeforeOptionEdit = null; refresh(); },
+        restore: function () { if (sourceBeforeOptionEdit != null) options.setSource(sourceBeforeOptionEdit); },
+        commit: function (replacement) {
+          var VisualDoc = getVisualDoc();
+          try {
+            var next = VisualDoc.replaceNode(getSource(), editingOption, replacement);
+            options.setSource(next);
+            editingOption = null; sourceBeforeOptionEdit = null;
+            refresh();
+            return { ok: true };
+          } catch (_) {
+            if (sourceBeforeOptionEdit != null) options.setSource(sourceBeforeOptionEdit);
+            return { ok: false, error: '无法保存选项' };
+          }
+        }
+      });
+    }
+    var renderOptions = {
+      getStates: options.getStates,
+      commitTextNode: commitTextNode,
+      onEditState: editState,
+      onEditOption: editOption
+    };
+
+    function refresh() {
+      var VisualDoc = getVisualDoc();
+      if (!VisualDoc) return null;
+      if (editingOption) return currentDocument;
+      currentDocument = VisualDoc.scan(getSource());
+      renderDocument(visualHost, currentDocument, onDiagnostic, renderOptions);
+      return currentDocument;
+    }
+    function rememberSelection() {
+      if (!currentDocument || !sourceTextarea) return;
+      var VisualDoc = getVisualDoc();
+      lastNode = VisualDoc && VisualDoc.findNodeAtOffset(currentDocument, sourceTextarea.selectionStart);
+    }
+    function showVisual() {
+      commitFocusedEditor();
+      refresh();
+      rememberSelection();
+      mode = 'visual';
+      if (sourceWrap) sourceWrap.hidden = true;
+      if (visualHost) visualHost.hidden = false;
+    }
+    function showSource() {
+      commitFocusedEditor();
+      mode = 'source';
+      if (visualHost) visualHost.hidden = true;
+      if (sourceWrap) sourceWrap.hidden = false;
+      if (sourceTextarea) {
+        var position = lastNode ? lastNode.start : sourceTextarea.selectionStart;
+        position = Math.max(0, Math.min(position, sourceTextarea.value.length));
+        sourceTextarea.focus();
+        try { sourceTextarea.setSelectionRange(position, position); } catch (_) {}
+      }
+    }
+    return {
+      showVisual: showVisual,
+      showSource: showSource,
+      refresh: refresh,
+      commitFocusedEditor: function () {
+        var active = typeof document !== 'undefined' && document.activeElement;
+        if (active && active.matches && active.matches('.story-visual-node-text[contenteditable="true"]')) active.blur();
+      },
+      getMode: function () { return mode; },
+      destroy: destroy
+    };
+  }
+
+  var StoryVisualUI = {
+    createController: createController,
+    renderDocument: renderDocument,
+    describeNode: describeNode,
+    sourceFromTextEditor: sourceFromTextEditor,
+    createEmptyOption: createEmptyOption,
+    validateOptionDraft: validateOptionDraft,
+    conditionAstToDraft: conditionAstToDraft,
+    conditionDraftToAst: conditionDraftToAst,
+    effectDraftToOps: effectDraftToOps,
+    commitFocusedEditor: commitFocusedEditor,
+    destroy: destroy
+  };
+  if (typeof window !== 'undefined') window.StoryVisualUI = StoryVisualUI;
+  if (typeof module !== 'undefined' && module.exports) module.exports = StoryVisualUI;
 })();
 
 </script>
@@ -4457,7 +5796,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   }
   #options-bar .opt-btn:hover { background: rgba(58,134,255,0.34); border-color: #5a9bff; transform: translateY(-2px); }
   #options-bar .opt-btn:active { transform: translateY(0); }
-  /* 条件不满足的选项已在 presentOptions 直接隐藏（不渲染），不再需要置灰样式 */
+  #options-bar .opt-btn.is-disabled, #options-bar .opt-btn.is-disabled:hover { opacity: .52; cursor: not-allowed; filter: grayscale(.4); transform: none; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.22); }
   @keyframes optIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
   #item-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); backdrop-filter: blur(2px); z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.3s ease-out; }
   #item-overlay.open { opacity: 1; pointer-events: auto; }
@@ -5775,7 +7114,7 @@ __STORY_DATA__
     else if (stack.length){ doReturn(); }   // 没有历史选项则退化为普通跳回
     else { finish(); }
   }
-  // 选项 UI：底部排列按钮（最多 6 个）；条件不满足的选项直接隐藏（不渲染），仅保留满足条件的
+  // 选项 UI：条件不满足默认隐藏；作者可要求保留为不可点击的禁用项。
   function presentOptions(n){
     awaitingClick = false; hint.style.display = 'none';
     hideOptions();
@@ -5786,12 +7125,17 @@ __STORY_DATA__
     let anyEnabled = false;
     let shown = 0;
     opts.forEach(function(opt, ci){
-      // 条件不满足：直接隐藏该选项（不渲染按钮），对玩家完全不可见
-      if (opt.condition && !evalCond(opt.condition)) return;
-      anyEnabled = true;
+      const unmet = !!(opt.condition && !evalCond(opt.condition));
+      if (unmet && opt.unmetBehavior !== 'disable') return;
+      if (!unmet) anyEnabled = true;
       const btn = document.createElement('button');
       btn.className = 'opt-btn';
       btn.textContent = opt.text || ('选项' + (shown + 1));
+      if (unmet) {
+        btn.classList.add('is-disabled');
+        btn.disabled = true;
+        if (opt.unmetMessage) { btn.title = opt.unmetMessage; btn.setAttribute('aria-label', btn.textContent + '：' + opt.unmetMessage); btn.textContent += '（' + opt.unmetMessage + '）'; }
+      }
       btn.style.animationDelay = (shown * 0.05) + 's';
       shown++;
       // 注意：ci 是原始选项下标，用于 recordedChoices 存档 / 读档重放还原选择路径
@@ -5803,13 +7147,17 @@ __STORY_DATA__
         // galgame 模式：点击选项即视为进入新场景/新段，标记段已结束；
         // 下一次 typeText / showDivider 登场前 beginSegmentIfNeeded() 会清空旧文字，进入新对话框
         markSegmentEnd();
+        // Empty blocks are still valid targets.  Check that the block key
+        // exists instead of treating an empty node list as a missing block.
+        if (opt.effects && opt.effects.length && (!opt.block || Object.prototype.hasOwnProperty.call(DATA.blocks || {}, opt.block))) applyVarOps(opt.effects);
         if (opt.block){ callBlock(opt.block); execCur(); }
         else { curIdx++; execCur(); }
       });
       bar.appendChild(btn);
     });
-    // 同行所有选项条件都不满足：本行自动跳过，继续推进（避免卡死）
-    if (!anyEnabled) {
+    // 同行所有选项都被隐藏时自动跳过；若作者要求展示禁用项，
+    // 必须留在此处让玩家能读到提示，而不能把它们立即跳过。
+    if (!anyEnabled && shown === 0) {
       hideOptions();
       curIdx++;
       if (curIdx >= nodesOf(curBlock).length) doReturn();
@@ -5847,6 +7195,7 @@ __STORY_DATA__
   // 实现由 js/story-vars.js 统一提供，构建时注入下方占位处（见 buildRuntimeHTML），
   // 保证导出游戏与编辑器预览的解析/求值行为完全同源。
   __STORY_VARS_RUNTIME__
+  __STORY_OPTIONS_RUNTIME__
   // 把 {名} / {名:是|否} 替换为当前变量值；未定义变量保留原样；{{名}} 转义保留
   function interpolateVars(s){
     return StoryVars.interpolate(s, function(n){ return vars[n]; });
@@ -6381,41 +7730,6 @@ function parseStoryForExport(src) {
   const RE_RANDOM_TEXT = /^<随机句子:([\s\S]*?)>$/;
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
-  // 解析一行内所有 <选项:"文字",块名,条件:...> 指令，返回 [{text, extra, index, close, ok}]。
-  // 条件表达式允许出现 >、<、>=、<= 等运算符（如 条件:力量>=20、条件:金币<=5），
-  // 因此「闭合 >」不能取表达式里碰到的第一个 >，而是取下一个 <选项: 之前（或行尾前）的最后一个 >。
-  function extractOptionLine(line) {
-    const TAG = '<选项:';
-    const out = [];
-    let from = 0;
-    while (from <= line.length) {
-      const start = line.indexOf(TAG, from);
-      if (start < 0) break;
-      const next = line.indexOf(TAG, start + TAG.length);
-      const endB = next < 0 ? line.length : next;
-      let close = -1;
-      for (let k = start + TAG.length; k < endB; k++) { if (line[k] === '>') close = k; }
-      from = start + TAG.length;
-      if (close < 0) continue; // 无闭合 >，交给编辑器的「未闭合」校验报错
-      const body = line.slice(start + TAG.length, close);
-      const m = body.match(/^\s*"([^"]*)"\s*(?:,\s*([\s\S]*))?$/);
-      out.push({ text: m ? m[1] : '', extra: (m && m[2] ? m[2] : '').trim(), index: start, close: close, ok: !!m });
-    }
-    return out;
-  }
-  // 把选项的 extra 段（块名[,条件:…]）拆成 { block, condition }
-  function splitOptionExtra(extra) {
-    const e = (extra || '').trim();
-    if (!e) return { block: null, condition: null };
-    const ci = e.indexOf('条件:');
-    if (ci >= 0) {
-      return {
-        block: e.slice(0, ci).replace(/,\s*$/, '').trim() || null,
-        condition: e.slice(ci + 3).replace(/,\s*$/, '').trim() || null
-      };
-    }
-    return { block: e, condition: null };
-  }
   const RE_PLAYER_INPUT = /^<玩家输入变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*,\s*"([\s\S]*?)"\s*>$/;
   const CN = { '背景': 'background', '物品': 'item', '叠层': 'overlay', '音乐': 'music', '音效': 'sound' };
   const lines = (src || '').split(/\r?\n/);
@@ -6462,10 +7776,9 @@ function parseStoryForExport(src) {
     else if (t.indexOf('<选项:') >= 0) {
       flush();
       const options = [];
-      for (const o of extractOptionLine(t)) {
+      for (const o of window.StoryOptions.extractOptionLine(t)) {
         if (!o.ok) continue;
-        const sp = splitOptionExtra(o.extra);
-        options.push({ text: o.text, block: sp.block, condition: sp.condition });
+        options.push(o.option);
       }
       if (options.length) story.push({ type: 'options', options });
     }
@@ -6641,6 +7954,10 @@ function buildRuntimeHTML(data, mode) {
     // （用函数形式的 replacement，避免序列化源码中的 $ 字符被当作替换模式）
     .replace('__STORY_VARS_RUNTIME__', (function () {
       try { return (window.StoryVars && window.StoryVars.buildRuntimeSource) ? window.StoryVars.buildRuntimeSource() : ''; }
+      catch (e) { return ''; }
+    })())
+    .replace('__STORY_OPTIONS_RUNTIME__', (function () {
+      try { return (window.StoryOptions && window.StoryOptions.buildRuntimeSource) ? window.StoryOptions.buildRuntimeSource() : ''; }
       catch (e) { return ''; }
     })())
     .replace('__SRC__', safe(ITEM_VIEWER_SOURCE))
@@ -8245,6 +9562,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   function isLandscapeNow() { return !isPortraitNow(); }
   let previewMode = false;
   let splitMode = false;
+  let visualController = null;
+  const EDITOR_MODE_KEY = 'storyeditor:editor-mode';
   let pendingEffectTag = null; // 特效按钮用的临时标签名
 
   // 全局属性
@@ -8342,41 +9661,6 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   }
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
-  // 解析一行内所有 <选项:"文字",块名,条件:...> 指令，返回 [{text, extra, index, close, ok}]。
-  // 条件表达式允许出现 >、<、>=、<= 等运算符（如 条件:力量>=20、条件:金币<=5），
-  // 因此「闭合 >」不能取表达式里碰到的第一个 >，而是取下一个 <选项: 之前（或行尾前）的最后一个 >。
-  function extractOptionLine(line) {
-    const TAG = '<选项:';
-    const out = [];
-    let from = 0;
-    while (from <= line.length) {
-      const start = line.indexOf(TAG, from);
-      if (start < 0) break;
-      const next = line.indexOf(TAG, start + TAG.length);
-      const endB = next < 0 ? line.length : next;
-      let close = -1;
-      for (let k = start + TAG.length; k < endB; k++) { if (line[k] === '>') close = k; }
-      from = start + TAG.length;
-      if (close < 0) continue; // 无闭合 >，交给下方的「未闭合」校验报错
-      const body = line.slice(start + TAG.length, close);
-      const m = body.match(/^\s*"([^"]*)"\s*(?:,\s*([\s\S]*))?$/);
-      out.push({ text: m ? m[1] : '', extra: (m && m[2] ? m[2] : '').trim(), index: start, close: close, ok: !!m });
-    }
-    return out;
-  }
-  // 把选项的 extra 段（块名[,条件:…]）拆成 { block, condition }
-  function splitOptionExtra(extra) {
-    const e = (extra || '').trim();
-    if (!e) return { block: null, condition: null };
-    const ci = e.indexOf('条件:');
-    if (ci >= 0) {
-      return {
-        block: e.slice(0, ci).replace(/,\s*$/, '').trim() || null,
-        condition: e.slice(ci + 3).replace(/,\s*$/, '').trim() || null
-      };
-    }
-    return { block: e, condition: null };
-  }
   // 变量操作：<变量:名=值> / <变量:名+数> / <变量:名-数>（独占一行；一行可含多个，按 <变量:...> 逐个提取）
   // 解析统一走 js/story-vars.js（window.StoryVars），编辑器与导出端共用同一实现
   // 玩家输入：<玩家输入变量:变量名,"引导文字">（独占一行；引导文字可空 "")
@@ -8479,10 +9763,9 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       } else if (t.indexOf('<选项:') >= 0) {
         flush();
         const options = [];
-        for (const o of extractOptionLine(t)) {
-          if (!o.ok) continue;
-          // 保留原始 extra 作为 block（含 ,条件:… 尾巴），storyToText 可原样还原，避免往返丢条件
-          options.push({ text: o.text, block: o.extra || null });
+          for (const o of window.StoryOptions.extractOptionLine(t)) {
+            if (!o.ok) continue;
+            options.push(o.option);
         }
         if (options.length) story.push({ type: 'options', options });
       } else {
@@ -8516,7 +9799,10 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       else if (n.type === 'returnrechoose') out.push('<跳回重选>');
       else if (n.type === 'varop') out.push(window.StoryVars.serializeVarOps(n.ops));
       else if (n.type === 'playerinput') out.push('<玩家输入变量:' + n.name + ',"' + (n.prompt || '') + '">');
-      else if (n.type === 'options') out.push(n.options.map(o => '<选项:"' + (o.text || '') + '"' + (o.block ? ',' + o.block : '') + '>').join(' '));
+      else if (n.type === 'options') out.push(n.options.map(function (o) {
+        const result = window.StoryOptions.serializeOption(o);
+        return result.ok ? result.value : '';
+      }).filter(Boolean).join(' '));
     }
     return out.join('\n');
   }
@@ -8607,9 +9893,9 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
           html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 玩家输入 → 变量「' + escapeHtml(m[1]) + '」' + (m[2] ? '：' + escapeHtml(m[2]) : '') + '</span></div>';
         } else if (t.indexOf('<选项:') >= 0) {
           const opts = [];
-          for (const o of extractOptionLine(t)) {
+          for (const o of window.StoryOptions.extractOptionLine(t)) {
             if (!o.ok) continue;
-            opts.push(o.text + (o.extra ? ' → ' + o.extra : ''));
+            opts.push(window.StoryOptions.summarizeOption(o.option));
           }
           html += '<div class="pv-line"><span class="pv-cmd option"><svg class="ico" aria-hidden="true"><use href="#ic-circle-dot"/></svg> 选项：' + opts.map(o => escapeHtml(o)).join(' ｜ ') + '</span></div>';
         } else {
@@ -8742,6 +10028,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   // ============ 初始化 ============
   function init() {
     bindGlobal();
+    bindVisualEditorMode();
     bindTodoEvents(); // 素材待办浮动按钮事件
     bindImageProcessor(); // 背景图处理面板（滑块/下拉/按钮事件，只绑一次）
     bindAudioProcessor(); // 音频处理面板（裁切/压缩，只绑一次）
@@ -8755,6 +10042,39 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       renderProjectsScreen();
       showProjectsScreen(true);
     });
+  }
+
+  function bindVisualEditorMode() {
+    const visualButton = $('#editor-mode-visual');
+    const sourceButton = $('#editor-mode-source');
+    const visualHost = $('#story-visual-editor');
+    if (!visualButton || !sourceButton || !visualHost || !window.StoryVisualUI) return;
+    visualButton.setAttribute('aria-controls', 'story-visual-editor');
+    sourceButton.setAttribute('aria-controls', 'editor-text-wrap');
+    visualController = window.StoryVisualUI.createController({
+      sourceTextarea: storyText,
+      sourceWrap: editorTextWrap,
+      visualHost: visualHost,
+      getSource: () => storyText.value,
+      setSource: (next) => { storyText.value = next; commitEdit(); },
+      getStates: () => window.Storage.getVars(),
+      getBlocks: () => window.Storage.listBlockNames(),
+      getUiPreference: (key) => window.Storage.getUiPreference(key),
+      setUiPreference: (key, value) => window.Storage.setUiPreference(key, value),
+      onDiagnostic: () => {}
+    });
+    function setMode(next) {
+      if (next === 'visual') visualController.showVisual();
+      else visualController.showSource();
+      visualButton.setAttribute('aria-pressed', String(next === 'visual'));
+      sourceButton.setAttribute('aria-pressed', String(next === 'source'));
+      try { localStorage.setItem(EDITOR_MODE_KEY, next); } catch (_) {}
+    }
+    visualButton.addEventListener('click', () => setMode('visual'));
+    sourceButton.addEventListener('click', () => setMode('source'));
+    let preferred = 'visual';
+    try { preferred = localStorage.getItem(EDITOR_MODE_KEY) === 'source' ? 'source' : 'visual'; } catch (_) {}
+    setMode(preferred);
   }
 
   // ============ 暗色模式（#btn-theme） ============
@@ -9627,6 +10947,60 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     refreshReviewToggleBadge();
     refreshBlockReviewLine();
     ftResetSession(); // 全文助理对话按工程隔离：切工程时重置内存态，下次开面板从本工程 key 重新加载
+    const project = window.Storage.listProjects().find(p => p.id === id);
+    if (project && project.mode !== 'article' && !project.visualEditorVersion) showOldProjectConversionHint(project);
+  }
+
+  let conversionProjectId = null;
+  function closeProjectConversionModal() {
+    $('#project-convert-modal').classList.add('hidden');
+    conversionProjectId = null;
+  }
+  function openProjectConversionModal(project) {
+    if (!project || project.mode === 'article' || project.visualEditorVersion) return;
+    conversionProjectId = project.id;
+    $('#project-convert-name').value = window.ProjectConverter.nextConvertedName(project.name, window.Storage.listProjects());
+    $('#project-convert-status').textContent = '';
+    const run = $('#project-convert-run'); run.textContent = '开始转换'; run.disabled = false;
+    $('#project-convert-modal').classList.remove('hidden');
+  }
+  function showOldProjectConversionHint(project) {
+    const existing = document.querySelector('.project-conversion-hint');
+    if (existing) existing.remove();
+    const prefKey = 'conversion-hint-dismissed:' + project.id;
+    if (window.Storage.getUiPreference(prefKey)) return;
+    const hint = document.createElement('div');
+    hint.className = 'project-conversion-hint';
+    hint.innerHTML = '<span>试试可视化编辑：先复制这份旧项目，原项目保持不变。</span><button type="button" class="mini-btn">转换为可视化项目</button><button type="button" class="modal-x" title="不再提示">✕</button>';
+    hint.querySelector('.mini-btn').onclick = () => openProjectConversionModal(project);
+    hint.querySelector('.modal-x').onclick = () => { window.Storage.setUiPreference(prefKey, '1'); hint.remove(); };
+    $('#editor-body').prepend(hint);
+  }
+  function bindProjectConversionModal() {
+    const modal = $('#project-convert-modal');
+    const close = closeProjectConversionModal;
+    $('#project-convert-x').addEventListener('click', close);
+    $('#project-convert-cancel').addEventListener('click', close);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    $('#project-convert-run').addEventListener('click', async () => {
+      if (!conversionProjectId) return close();
+      const source = window.Storage.listProjects().find(p => p.id === conversionProjectId);
+      if (!source) return close();
+      const name = ($('#project-convert-name').value || '').trim() || window.ProjectConverter.nextConvertedName(source.name, window.Storage.listProjects());
+      const run = $('#project-convert-run'); const status = $('#project-convert-status');
+      run.disabled = true; status.textContent = '正在复制并校验项目…';
+      try {
+        const result = await window.Storage.copyProjectForVisual(source.id, name);
+        await openProject(result.projectId);
+        const counts = result.report.counts;
+        status.textContent = '转换完成：已复制 ' + counts.options + ' 个选项、' + counts.stateChanges + ' 个剧情状态变化、' + counts.effects + ' 个选项效果；未丢失内容。新项目已打开。';
+        run.textContent = '完成'; run.disabled = false;
+        conversionProjectId = null;
+      } catch (error) {
+        status.textContent = '转换失败，临时数据已清理：' + (error && error.message ? error.message : error) + '。可立即重试。';
+        run.disabled = false;
+      }
+    });
   }
   // 记录已渲染的项目签名（各项目 id 拼串），用于判断「返回项目页」时是否需要整页重建
   let _projectsSignature = null;
@@ -9678,11 +11052,14 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       '</div>' +
       '<div class="project-card-actions">' +
         '<button class="btn btn-ghost btn-p-open">打开</button>' +
+        (!isArticle && !p.visualEditorVersion ? '<button class="btn btn-ghost btn-p-convert">转换为可视化项目</button>' : '') +
         '<button class="btn btn-ghost btn-p-backup">备份</button>' +
         '<button class="btn btn-ghost btn-p-rename">重命名</button>' +
         '<button class="btn btn-ghost btn-p-del">删除</button>' +
       '</div>';
     card.querySelector('.btn-p-open').onclick = () => openProject(p.id);
+    const convert = card.querySelector('.btn-p-convert');
+    if (convert) convert.onclick = () => openProjectConversionModal(p);
     card.querySelector('.btn-p-backup').onclick = () => exportProjectBackup(p.id);
     card.querySelector('.btn-p-rename').onclick = () => {
       const name = prompt('项目新名称', p.name);
@@ -9800,6 +11177,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     $('#btn-projects').addEventListener('click', returnToProjects);
     $('#btn-new-project').addEventListener('click', openNewProjectModal);
     bindNewProjectModal();
+    bindProjectConversionModal();
     // 工程备份导入：点按钮选文件 → 解析 → 新建独立项目
     const importInput = $('#file-import-project');
     $('#btn-import-project').addEventListener('click', () => { if (importInput) importInput.click(); });
@@ -9839,7 +11217,11 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       Object.defineProperty(storyText, 'value', {
         configurable: true,
         get() { return desc.get.call(this); },
-        set(v) { desc.set.call(this, v); scheduleLineNumbers(); }
+        set(v) {
+          desc.set.call(this, v);
+          scheduleLineNumbers();
+          if (visualController && visualController.getMode() === 'visual') visualController.refresh();
+        }
       });
     })();
     buildLineNumbers();
@@ -10798,10 +12180,10 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       const le = optCtx.lineEnd - (range.end - range.start);
       const line = nv.slice(ls, le);
       // 本行可能含多个 <选项:...>（同一行多个选项），需定位 drop 点所在 / 最近的那个。
-      // 用 extractOptionLine 拿到每个选项的真实闭合位置（条件表达式里的 > 不算闭合）。
+      // 共享语法模块提供真实标签边界（条件里的 > 不会提前截断）。
       const segs = [];
-      for (const o of extractOptionLine(line)) {
-        segs.push({ s: o.index, e: o.close + 1, seg: line.slice(o.index, o.close + 1), extra: o.extra });
+      for (const o of window.StoryOptions.extractOptionLine(line)) {
+        segs.push({ s: o.start, e: o.end, seg: o.raw, extra: o.raw.slice('<选项:'.length, -1) });
       }
       let target = null;
       for (const sg of segs) { if (range.start >= ls + sg.s && range.start <= ls + sg.e) { target = sg; break; } }
@@ -10988,11 +12370,14 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       tools.querySelector('#t-var-fix').onclick = () => openVarFixer();
       tools.querySelector('#t-var-add').onclick = () => {
         const vars = window.Storage.getVars();
-        vars.push({ name: '', type: 'number', value: 0 });
+        let base = '新变量', name = base, suffix = 2;
+        while (vars.some(v => v.name === name)) name = base + suffix++;
+        vars.push({ name: name, type: 'number', value: 0 });
         window.Storage.saveVars(vars);
         renderVariableList(list);
-        const first = list.querySelector('.var-name');
-        if (first) first.focus();
+        const inputs = list.querySelectorAll('.var-name');
+        const created = inputs[inputs.length - 1];
+        if (created) { created.focus(); created.select(); }
       };
       const vars = window.Storage.getVars();
       setLibCount(countEl, vars.length, '变量库');
@@ -11095,8 +12480,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
           b.textContent = '改名为「' + fix.to + '」';
           b.onclick = () => {
             if (!confirm('把全部剧情块里的「' + fix.from + '」改名为「' + fix.to + '」？')) return;
-            const n = renameVarEverywhere(fix.from, fix.to);
-            toast(n ? ('已更新 ' + n + ' 个剧情块中的引用') : '没有需要更新的引用');
+            const result = renameVarEverywhere(fix.from, fix.to);
+            toast(result.ok ? (result.changed ? ('已更新 ' + result.changed + ' 个剧情块中的引用') : '没有需要更新的引用') : result.error);
             renderVarFixer();
           };
         } else if (fix.type === 'remove_tag') {
@@ -11153,19 +12538,41 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     return true;
   }
 
-  function renameVarEverywhere(oldName, newName) {
-    if (!oldName || oldName === newName) return 0;
+  function collectStateBlockMap() {
+    const out = {};
+    window.Storage.listBlockNames().forEach((name) => {
+      out[name] = name === activeBlock ? storyText.value : (window.Storage.getBlockText(name) || '');
+    });
+    return out;
+  }
+
+  function saveStateBlockMap(blockMap) {
+    const blocks = window.Storage.loadBlocks();
+    blocks.main = blockMap[MAIN_BLOCK] || '';
+    blocks.blocks = blocks.blocks || {};
+    Object.keys(blocks.blocks).forEach((name) => { blocks.blocks[name] = blockMap[name] || ''; });
+    window.Storage.saveBlocks(blocks);
+  }
+
+  function stateValidationMessage(issues) {
+    const first = issues[0];
+    return first ? ('改动后无法保存：' + (first.message || '剧情变量校验失败')) : '';
+  }
+
+  // All replacements are prepared and checked before either story blocks or
+  // the library is persisted. This prevents half-renamed projects.
+  function renameVarEverywhere(oldName, newName, nextVars) {
+    if (!oldName || oldName === newName) return { ok: true, changed: 0 };
     const names = window.Storage.listBlockNames();
     const escOld = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const reInterp = new RegExp('\\{\\s*(' + escOld + ')(?=[\\s}:]|\\})', 'g');   // {旧名} 或 {旧名:…}
     const reVarOp = new RegExp('<变量:\\s*(' + escOld + ')(?=\\s*[=+\\-])', 'g'); // <变量:旧名=值> 等
     const reInput = new RegExp('<玩家输入变量:\\s*(' + escOld + ')(?=\\s*,)', 'g'); // <玩家输入变量:旧名,"…">
     const reCond = new RegExp('(^|[^A-Za-z0-9_\\u4e00-\\u9fa5])(' + escOld + ')(?=[^A-Za-z0-9_\\u4e00-\u9fa5]|$)', 'g'); // 条件表达式里的变量名（整词）
+    const rewritten = {};
     let changed = 0;
     names.forEach((nm) => {
-      let text, save;
-      if (nm === activeBlock) { text = storyText.value; save = function (v) { storyText.value = v; commitEdit(); }; }
-      else { text = window.Storage.getBlockText(nm) || ''; save = function (v) { window.Storage.setBlockText(nm, v); }; }
+      const text = nm === activeBlock ? storyText.value : (window.Storage.getBlockText(nm) || '');
       let nt = text
         .replace(reInterp, function () { return '{' + newName; })
         .replace(reVarOp, function () { return '<变量:' + newName; })
@@ -11178,9 +12585,21 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
         if (rw.changed) { lines[i] = rw.line; lineChanged = true; }
       }
       if (lineChanged) nt = lines.join('\n');
-      if (nt !== text) { save(nt); changed++; }
+      rewritten[nm] = nt;
+      if (nt !== text) changed++;
     });
-    return changed;
+    const validation = window.StoryVars.analyze(rewritten, nextVars || window.Storage.getVars());
+    const errors = validation.issues.filter((issue) => issue.severity === 'error');
+    if (errors.length) return { ok: false, changed: 0, error: stateValidationMessage(errors) };
+    saveStateBlockMap(rewritten);
+    if (rewritten[activeBlock] !== storyText.value) {
+      storyText.value = rewritten[activeBlock];
+      text = storyText.value;
+      pushHistory();
+      updateWordCount();
+      scheduleOutline();
+    }
+    return { ok: true, changed: changed };
   }
 
   // 选项条件指令里的变量名改写（<选项:"文字",块名,条件:…>），返回 { line, changed }
@@ -11188,19 +12607,17 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     let newLine = line;
     // 选项行的条件变量：<选项:"文字",块名,条件:金币>=5>（整词规则；条件允许 < > <= >= 运算符）
     if (newLine.indexOf('<选项:') >= 0) {
-      const TAG = '<选项:';
       const repls = [];
-      for (const o of extractOptionLine(newLine)) {
+      for (const o of window.StoryOptions.extractOptionLine(newLine)) {
         if (!o.ok) continue;
-        const sp = splitOptionExtra(o.extra);
-        if (!sp.condition) continue;
-        const newCond = sp.condition.replace(reCond, function (m, pre) { return pre + newName; });
-        if (newCond !== sp.condition) {
-          const body = newLine.slice(o.index + TAG.length, o.close);
-          const bStart = body.indexOf(sp.condition);
+        const condition = o.option.condition;
+        if (!condition) continue;
+        const newCond = condition.replace(reCond, function (m, pre) { return pre + newName; });
+        if (newCond !== condition) {
+          const bStart = o.raw.indexOf(condition);
           if (bStart >= 0) {
-            const abs = o.index + TAG.length + bStart;
-            repls.push({ start: abs, end: abs + sp.condition.length, text: newCond });
+            const abs = o.start + bStart;
+            repls.push({ start: abs, end: abs + condition.length, text: newCond });
           }
         }
       }
@@ -11208,6 +12625,23 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       for (const r of repls) { newLine = newLine.slice(0, r.start) + r.text + newLine.slice(r.end); }
     }
     return { line: newLine, changed: newLine !== line };
+  }
+
+  function showStateRowError(row, message) {
+    let error = row.querySelector('.var-error');
+    if (!error) { error = document.createElement('div'); error.className = 'var-error'; row.appendChild(error); }
+    row.classList.add('var-invalid');
+    error.textContent = message;
+  }
+
+  function clearStateRowError(row) {
+    row.classList.remove('var-invalid');
+    const error = row.querySelector('.var-error');
+    if (error) error.remove();
+  }
+
+  function formatStateReferences(refs) {
+    return refs.map(ref => '【' + (ref.block === MAIN_BLOCK ? '主剧情' : ref.block) + '】第 ' + ref.line + ' 行').join('、');
   }
 
   // 变量库：集中定义变量（名字/类型/初值）。正文用 {名} 读取、<变量:名=值> 赋值。
@@ -11253,39 +12687,59 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       name.onchange = () => {
         const oldName = vars[idx].name;
         const nm = name.value.trim();
+        clearStateRowError(row);
+        if (!nm) {
+          showStateRowError(row, '变量名不能为空。');
+          name.focus();
+          return;
+        }
         // 变量名合法性：与解析端一致（字母/下划线/中文开头，可含数字，不能以数字开头）
-        if (nm && !/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(nm)) {
-          if (/^[0-9]/.test(nm)) alert('不可以用纯数字开头作为变量名。');
-          else alert('变量名只能包含 字母 / 数字 / 下划线 / 中文，且不能以数字开头。');
-          name.value = oldName; // 还原为上次合法名
+        if (!/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(nm)) {
+          showStateRowError(row, /^[0-9]/.test(nm) ? '变量名不能以数字开头。' : '变量名只能包含字母、数字、下划线或中文。');
           name.focus();
           return;
         }
         if (nm === oldName) return; // 没改
         // 同名冲突：变量名全局唯一，重名会把引用指错
-        if (nm && window.Storage.getVars().some((v2, i2) => i2 !== idx && v2.name === nm)) {
-          alert('已存在同名变量「' + nm + '」，请换一个名字。');
-          name.value = oldName;
+        if (window.Storage.getVars().some((v2, i2) => i2 !== idx && v2.name === nm)) {
+          showStateRowError(row, '已存在同名变量「' + nm + '」。');
           name.focus();
           return;
         }
-        vars[idx].name = nm; window.Storage.saveVars(vars);
-        // 同步更新正文所有剧情块里对该变量的引用（{旧名} / <变量:旧名=…> / <玩家输入变量:旧名,…> / <选项:…,条件:旧名…> 条件）
-        if (oldName) {
-          const changed = renameVarEverywhere(oldName, nm);
-          if (changed) toast('已同步更新文本中 ' + changed + ' 处对该变量的「' + oldName + '」的引用');
+        const nextVars = vars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { name: nm } : {}));
+        const result = renameVarEverywhere(oldName, nm, nextVars);
+        if (!result.ok) {
+          showStateRowError(row, result.error);
+          name.focus();
+          return;
         }
+        window.Storage.saveVars(nextVars);
+        if (result.changed) toast('已同步更新 ' + result.changed + ' 个剧情块中对「' + oldName + '」的引用');
         renderVariableList(list); refreshTodo();
       };
       const type = document.createElement('select'); type.className = 'var-type';
-      [['number', '数字'], ['text', '文本'], ['boolean', '布尔']].forEach(([val, lab]) => {
+      [['number', '数字'], ['boolean', '是 / 否'], ['text', '文字']].forEach(([val, lab]) => {
         const o = document.createElement('option'); o.value = val; o.textContent = lab; if (v.type === val) o.selected = true; type.appendChild(o);
       });
       type.onchange = () => {
-        v.type = type.value;
-        if (v.type === 'boolean') v.value = (v.value === true || v.value === 'true');
-        else if (v.type === 'number') v.value = Number(v.value) || 0;
-        window.Storage.saveVars(vars); renderVariableList(list);
+        clearStateRowError(row);
+        const nextType = type.value;
+        const index = window.StoryVisualDoc.buildStateReferenceIndex(collectStateBlockMap(), vars);
+        const conflicts = window.StoryVisualDoc.findIncompatibleStateReferences(index, v.name, nextType);
+        if (conflicts.length) {
+          type.value = v.type;
+          showStateRowError(row, '不能改为「' + ({ number: '数字', boolean: '是 / 否', text: '文字' }[nextType]) + '」：' + formatStateReferences(conflicts));
+          return;
+        }
+        const nextVars = vars.map((item, itemIdx) => {
+          if (itemIdx !== idx) return Object.assign({}, item);
+          const next = Object.assign({}, item, { type: type.value });
+          if (next.type === 'boolean') next.value = (next.value === true || next.value === 'true');
+          else if (next.type === 'number') next.value = Number.isFinite(Number(next.value)) ? Number(next.value) : 0;
+          else next.value = next.value == null ? '' : String(next.value);
+          return next;
+        });
+        window.Storage.saveVars(nextVars); renderVariableList(list); refreshTodo();
       };
       const valWrap = document.createElement('div'); valWrap.className = 'var-val';
       function renderVal() {
@@ -11295,20 +12749,43 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
           [['true', '真'], ['false', '假']].forEach(([val, lab]) => {
             const o = document.createElement('option'); o.value = val; o.textContent = lab; if (String(v.value) === val) o.selected = true; s.appendChild(o);
           });
-          s.onchange = () => { v.value = (s.value === 'true'); window.Storage.saveVars(vars); refreshTodo(); };
+          s.onchange = () => {
+            const nextVars = vars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { value: s.value === 'true' } : {}));
+            window.Storage.saveVars(nextVars); refreshTodo();
+          };
           valWrap.appendChild(s);
         } else {
           const inp = document.createElement('input'); inp.className = 'var-value';
           inp.type = (v.type === 'number') ? 'number' : 'text';
           inp.value = (v.value == null ? '' : v.value);
-          inp.onchange = () => { v.value = (v.type === 'number') ? Number(inp.value) : inp.value; window.Storage.saveVars(vars); refreshTodo(); };
+          inp.onchange = () => {
+            clearStateRowError(row);
+            if (v.type === 'number' && (inp.value.trim() === '' || !Number.isFinite(Number(inp.value)))) {
+              showStateRowError(row, '数字初值必须是有限数字。');
+              inp.focus();
+              return;
+            }
+            const value = v.type === 'number' ? Number(inp.value) : inp.value;
+            const nextVars = vars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { value: value } : {}));
+            window.Storage.saveVars(nextVars); refreshTodo();
+          };
           valWrap.appendChild(inp);
         }
       }
       renderVal();
       const del = document.createElement('button'); del.className = 'var-del'; del.title = '删除变量'; del.type = 'button';
       del.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-trash"/></svg>';
-      del.onclick = () => { vars.splice(idx, 1); window.Storage.saveVars(vars); renderVariableList(list); refreshTodo(); };
+      del.onclick = () => {
+        clearStateRowError(row);
+        const index = window.StoryVisualDoc.buildStateReferenceIndex(collectStateBlockMap(), vars);
+        const refs = index.byName[v.name] || [];
+        if (refs.length) {
+          showStateRowError(row, '变量正在被引用，不能删除：' + formatStateReferences(refs));
+          return;
+        }
+        const nextVars = vars.filter((_, itemIdx) => itemIdx !== idx);
+        window.Storage.saveVars(nextVars); renderVariableList(list); refreshTodo();
+      };
       row.appendChild(handle); row.appendChild(name); row.appendChild(type); row.appendChild(valWrap); row.appendChild(del);
       list.appendChild(row);
     });
@@ -11499,14 +12976,12 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     const edges = [];
     names.forEach((name) => {
       const raw = window.Storage.getBlockText(name) || '';
-      // 选项解析必须按行进行：extractOptionLine 以「行内最后一个 > 才算闭合」为边界，
-      // 跨整块多行文本会误把后续行（如 <停顿>）的 > 当作选项闭合符。
+      // 选项解析必须按行进行，避免跨行把后续指令当成标签内容。
       let lineOff = 0;
       raw.split(/\r?\n/).forEach((line) => {
-        for (const o of extractOptionLine(line)) {
+        for (const o of window.StoryOptions.extractOptionLine(line)) {
           if (!o.ok) continue;
-          const sp = splitOptionExtra(o.extra);
-          edges.push({ from: name, to: sp.block, label: o.text || '选项', charIndex: lineOff + o.index, kind: 'option' });
+          edges.push({ from: name, to: o.option.block, label: o.option.text || '选项', charIndex: lineOff + o.start, kind: 'option' });
         }
         lineOff += line.length + 1;
       });
@@ -11622,6 +13097,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   // 切换到某个剧情块编辑（先提交当前块文本）
   function switchBlock(name) {
     if (name === activeBlock) { renderLibrary(); updateBlockChip(); return; }
+    if (visualController) visualController.commitFocusedEditor();
     window.Storage.setBlockText(activeBlock, storyText.value);
     activeBlock = name;
     text = window.Storage.getBlockText(name) || '';
@@ -11637,6 +13113,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     refreshBlockReviewLine();
     renderReviewPanel();
     refreshReviewToggleBadge();
+    if (visualController && visualController.getMode() === 'visual') visualController.refresh();
   }
   // 在光标处插入「进入剧情块」指令
   function insertBlockJump(name) { insertAtCursor('<剧情块:' + name + '>'); }
@@ -14187,14 +15664,12 @@ self.onmessage = function (e) {
               });
             }
           } else if (t.indexOf('<选项:') >= 0) {
-            const opts = extractOptionLine(t).filter(o => o.ok);
+            const opts = window.StoryOptions.extractOptionLine(t).filter(o => o.ok);
             if (!opts.length) pushIssue(prefix, n, 'error', '选项指令格式不正确（如 <选项:"文字"> 或 <选项:"文字",块名>）');
             else {
               if (opts.length > 6) pushIssue(prefix, n, 'error', '一行最多放置 6 个选项，当前 ' + opts.length + ' 个');
               for (const o of opts) {
-                // 条件选项：<选项:"文字",块名,条件:金币>=20>（条件里允许 < > <= >=，解析时已按「真正的闭合 >」取整段 extra）
-                const sp = splitOptionExtra(o.extra);
-                const bn = sp.block;
+                const bn = o.option.block;
                 if (bn === MAIN_BLOCK) pushIssue(prefix, n, 'warning', '不建议选项跳到主剧情块');
                 else if (bn && !blockNames.has(bn)) pushIssue(prefix, n, 'warning', '选项指向的剧情块「' + bn + '」未找到，点击可能无效');
                 // 条件表达式的检查（空条件/语法/未定义变量）由 StoryVars.analyze 统一处理
@@ -14523,6 +15998,7 @@ self.onmessage = function (e) {
     el.textContent = '总字数：' + countNarrativeChars(storyText.value);
   }
   function commitEdit() {
+    if (visualController) visualController.commitFocusedEditor();
     clearTimeout(histTimer);
     text = storyText.value;
     pushHistory();
@@ -16654,7 +18130,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.54</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.69</span></div>
         </div>
       </div>
     </div>

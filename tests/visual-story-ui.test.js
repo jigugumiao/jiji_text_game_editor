@@ -125,8 +125,12 @@ assert.doesNotMatch(visualUiSource, /value\.addEventListener\('input', function 
   '变量变化输入时不得重建整张表单');
 assert.doesNotMatch(visualUiSource, /value\.addEventListener\('input', function \(\) \{ row\.value = value\.value; rerender\(\); \}\)/,
   '条件值输入时不得重建整张表单');
-assert.match(visualUiSource, /value\.addEventListener\('input', function \(\) \{ row\.value = [\s\S]*?updateConditionSummary\(\); \}\)/,
-  '条件值输入必须在不重建表单的情况下更新摘要');
+assert.match(visualUiSource, /value\.addEventListener\('input', function \(\) \{ row\.value = [\s\S]*?config\.onValueInput\(\); \}\)/,
+  '条件值输入必须在不重建表单的情况下调用所属树的摘要回调');
+assert.match(visualUiSource, /renderConditionTree\(draft\.condition, conditionArea, \{[\s\S]*?onValueInput: updateConditionSummary[\s\S]*?\}\);/,
+  '选项根条件树必须刷新选项条件翻译');
+assert.match(visualUiSource, /renderConditionTree\(effect\.condition, effectsArea, \{[\s\S]*?onValueInput: function \(\) \{ updateEffectSummary\(index\); \}[\s\S]*?\}\);/,
+  'effect 条件树必须刷新所属变量变化的翻译');
 assert.match(visualUiSource, /value\.addEventListener\('input', function \(\) \{ effect\.value = [\s\S]*?updateEffectSummary\(index\); \}\)/,
   '变量变化值输入必须在不重建表单的情况下更新摘要');
 assert.ok(StoryVisualUI.validateOptionDraft({ text: '继续', block: null, condition: null, unmetBehavior: 'hide', unmetMessage: '', effects: [], unknownFields: ['条件变化:坏数据'] }, naturalStateMap, []).errors.includes('条件变量变化格式不正确，请在源码模式修复'),

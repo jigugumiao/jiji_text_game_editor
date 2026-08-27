@@ -431,7 +431,7 @@
       tree.appendChild(header);
       group.rows.forEach(function (row, index) {
         if (row.kind === 'group') {
-          renderConditionTree(row, tree, { root: false, remove: function () { group.rows.splice(index, 1); rerender(); } });
+          renderConditionTree(row, tree, { root: false, onValueInput: config.onValueInput, remove: function () { group.rows.splice(index, 1); rerender(); } });
           return;
         }
         var line = document.createElement('div'); line.className = 'story-visual-condition-row';
@@ -449,7 +449,7 @@
               : [['', '选择关系'], ['=', '等于'], ['!=', '不等于'], ['contains', '包含'], ['notcontains', '不包含']];
             var op = makeField('select', row.op, opChoices, readOnly);
             var value = makeField('input', row.value, null, readOnly);
-            op.addEventListener('change', function () { row.op = op.value; rerender(); }); value.addEventListener('input', function () { row.value = inputValueForType(type, value); updateConditionSummary(); });
+            op.addEventListener('change', function () { row.op = op.value; rerender(); }); value.addEventListener('input', function () { row.value = inputValueForType(type, value); config.onValueInput(); });
             line.append(op, value);
           }
         }
@@ -468,7 +468,7 @@
     }
     conditionArea.appendChild(rowLabel('选项条件'));
     if (draft.condition) {
-      renderConditionTree(draft.condition, conditionArea, { root: true, rootHeading: '满足以下', rootRemoveText: '删除条件组', remove: function () { draft.condition = null; rerender(); } });
+      renderConditionTree(draft.condition, conditionArea, { root: true, rootHeading: '满足以下', rootRemoveText: '删除条件组', onValueInput: updateConditionSummary, remove: function () { draft.condition = null; rerender(); } });
       var summary = document.createElement('div'); summary.className = 'story-visual-condition-summary';
       summary.textContent = '自然语言翻译：' + conditionNaturalText(draft.condition, types); conditionSummary = summary; conditionArea.appendChild(summary);
     }
@@ -489,7 +489,7 @@
       }
       if (!readOnly) { var remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '删除'; remove.addEventListener('click', function () { draft.effects.splice(index, 1); rerender(); }); line.appendChild(remove); }
       effectsArea.appendChild(line);
-      if (effect.condition) renderConditionTree(effect.condition, effectsArea, { root: true, rootHeading: '仅当满足以下', rootRemoveText: '移除执行条件', remove: function () { effect.condition = null; rerender(); } });
+      if (effect.condition) renderConditionTree(effect.condition, effectsArea, { root: true, rootHeading: '仅当满足以下', rootRemoveText: '移除执行条件', onValueInput: function () { updateEffectSummary(index); }, remove: function () { effect.condition = null; rerender(); } });
       var effectSummary = document.createElement('div'); effectSummary.className = 'story-visual-condition-summary';
       effectSummary.textContent = '自然语言翻译：' + effectNaturalText(effect, types);
       effectSummaries[index] = effectSummary;

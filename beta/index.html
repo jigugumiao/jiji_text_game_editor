@@ -354,7 +354,7 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 .editor-body { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; position: relative; }
 /* 行号槽：编辑器文字区（文字 + 行号）统一为一个横向 flex 容器 */
 .editor-text-wrap { flex: 1 1 0; display: flex; flex-direction: row; min-height: 0; min-width: 0; position: relative; }
-.editor-text-wrap.hidden { display: none; }
+.editor-text-wrap.hidden, .editor-text-wrap[hidden], .story-visual-editor[hidden] { display: none !important; }
 .story-visual-editor { flex: 1 1 0; min-height: 0; overflow: auto; background: var(--bg); color: var(--text); }
 .story-visual-document {
   min-height: 100%; padding: 20px 26px; white-space: pre-wrap; word-break: break-word;
@@ -1989,7 +1989,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.70-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.71-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -18133,7 +18133,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.70</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.71</span></div>
         </div>
       </div>
     </div>

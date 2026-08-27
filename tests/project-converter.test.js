@@ -10,18 +10,18 @@ assert.equal(Converter.nextConvertedName('迷雾村', [
 const snapshot = {
   id: 'old-project',
   blocks: {
-    main: '<选项:"购买钥匙",商店,条件:金币>=10,变化:金币-10>\n<变量:钥匙=true>',
+    main: '<选项:"购买钥匙",商店,条件:金币>=10,变化:金币-10,条件变化:(钥匙=false)=>声望+1>\n<变量:钥匙=true>',
     blocks: { 支线: '<选项:"开门",结局,条件:钥匙,变化:金币+1>' }
   },
   vars: [{ name: '金币', type: 'number', value: 0 }, { name: '钥匙', type: 'boolean', value: false }],
   assets: [{ lib: 'item', id: 'key' }]
 };
 const analysis = Converter.analyzeProjectSnapshot(snapshot);
-assert.deepEqual(analysis.counts, { options: 2, stateChanges: 1, effects: 2 });
+assert.deepEqual(analysis.counts, { options: 2, stateChanges: 1, effects: 3 });
 assert.deepEqual(analysis.issues, []);
 
 const report = Converter.buildConversionReport(snapshot, analysis);
-assert.deepEqual(report.counts, { options: 2, stateChanges: 1, effects: 2 });
+assert.deepEqual(report.counts, { options: 2, stateChanges: 1, effects: 3 });
 assert.equal(report.lostContentCount, 0);
 assert.deepEqual(report.issues, []);
 
@@ -66,7 +66,7 @@ async function assertFailedCopy(failure) {
   });
   assert.deepEqual(snapshot, {
     id: 'old-project',
-    blocks: { main: '<选项:"购买钥匙",商店,条件:金币>=10,变化:金币-10>\n<变量:钥匙=true>', blocks: { 支线: '<选项:"开门",结局,条件:钥匙,变化:金币+1>' } },
+    blocks: { main: '<选项:"购买钥匙",商店,条件:金币>=10,变化:金币-10,条件变化:(钥匙=false)=>声望+1>\n<变量:钥匙=true>', blocks: { 支线: '<选项:"开门",结局,条件:钥匙,变化:金币+1>' } },
     vars: [{ name: '金币', type: 'number', value: 0 }, { name: '钥匙', type: 'boolean', value: false }], assets: [{ lib: 'item', id: 'key' }]
   });
   console.log('project-converter.test.js passed');

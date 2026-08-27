@@ -21,33 +21,29 @@
     return out;
   }
 
-  function optionTokens(line) {
-    const tokens = [];
-    let start = line.indexOf('<选项:');
-    while (start !== -1) {
-      let end = start + 4;
-      while ((end = line.indexOf('>', end)) !== -1 && line[end - 1] === '=') end++;
-      if (end === -1) break;
-      tokens.push(line.slice(start, end + 1));
-      start = line.indexOf('<选项:', end + 1);
+  function getStoryOptions() {
+    const root = typeof window !== 'undefined' ? window : globalThis;
+    if (root.StoryOptions) return root.StoryOptions;
+    if (typeof require === 'function') {
+      try { return require('./story-options.js'); } catch (_) { return null; }
     }
-    return tokens;
+    return null;
   }
 
   function analyzeProjectSnapshot(snapshot) {
     const stateNames = new Set(((snapshot && snapshot.vars) || []).map(v => v && v.name).filter(Boolean));
     const counts = { options: 0, stateChanges: 0, effects: 0 };
     const issues = [];
+    const StoryOptions = getStoryOptions();
     blockEntries(snapshot).forEach(([block, text]) => String(text).split('\n').forEach((line, index) => {
       const lineNo = index + 1;
-      const options = optionTokens(line);
+      const options = StoryOptions ? StoryOptions.extractOptionLine(line) : [];
       counts.options += options.length;
       counts.stateChanges += (line.match(/<变量:[^>]*>/g) || []).length;
-      counts.effects += (line.match(/(?:^|,)变化:([^,>]+)/g) || []).length;
+      counts.effects += options.reduce((total, option) => total + (option.ok ? option.option.effects.length : 0), 0);
       options.forEach(option => {
-        const condition = /(?:^|,)条件:([^,>]+)/.exec(option);
-        if (condition) {
-          const refs = condition[1].match(/[\u4e00-\u9fa5A-Za-z_][\u4e00-\u9fa5A-Za-z0-9_]*/g) || [];
+        if (option.ok && option.option.condition) {
+          const refs = option.option.condition.match(/[\u4e00-\u9fa5A-Za-z_][\u4e00-\u9fa5A-Za-z0-9_]*/g) || [];
           refs.filter(name => !['true', 'false', 'contains'].includes(name) && !stateNames.has(name)).forEach(name => {
             issues.push({ block, line: lineNo, message: '条件引用了未定义的剧情状态：' + name });
           });

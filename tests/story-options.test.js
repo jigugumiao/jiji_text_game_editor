@@ -16,9 +16,24 @@ assert.deepEqual(StoryOptions.splitTopLevelFields('“买,钥匙”,商店'), ['
   assert.equal(parsed.ok, true);
   assert.deepEqual(parsed.option, {
     text: '购买钥匙', block: '商店', condition: '(金币>=10)', unmetBehavior: 'disable',
-    unmetMessage: '需要 10 金币', effects: [{ name: '金币', op: '-', val: '10' }, { name: '拿到钥匙', op: '=', val: 'true' }], unknownFields: []
+    unmetMessage: '需要 10 金币', effects: [{ name: '金币', op: '-', val: '10', condition: null }, { name: '拿到钥匙', op: '=', val: 'true', condition: null }], unknownFields: []
   });
   assert.deepEqual(StoryOptions.serializeOption(parsed.option), { ok: true, value: raw, error: null });
+}
+
+// ---------- conditional effects ----------
+{
+  const raw = '<选项:"购买",商店,条件变化:(勇气>=1)=>金币-10,变化:拿到钥匙=true>';
+  const parsed = StoryOptions.parseOptionTag(raw);
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.option.effects, [
+    { name: '金币', op: '-', val: '10', condition: '勇气>=1' },
+    { name: '拿到钥匙', op: '=', val: 'true', condition: null }
+  ]);
+  assert.deepEqual(StoryOptions.serializeOption(parsed.option), { ok: true, value: raw, error: null });
+
+  const malformed = StoryOptions.parseOptionTag('<选项:"A",块A,条件变化:勇气>=1=>金币-1>');
+  assert.deepEqual(malformed.option.unknownFields, ['条件变化:勇气>=1=>金币-1']);
 }
 
 // ---------- backwards compatibility and escaping ----------
@@ -61,6 +76,9 @@ assert.deepEqual(StoryOptions.splitTopLevelFields('“买,钥匙”,商店'), ['
   const chineseQuote = StoryOptions.extractOptionLine('<选项:“含 > 的文字”,块A>')[0];
   assert.equal(chineseQuote.raw, '<选项:“含 > 的文字”,块A>');
   assert.equal(chineseQuote.option.text, '含 > 的文字');
+  const conditional = StoryOptions.extractOptionLine('<选项:"购买",商店,条件变化:(勇气>0 && 金币>=10)=>金币-10>')[0];
+  assert.equal(conditional.raw, '<选项:"购买",商店,条件变化:(勇气>0 && 金币>=10)=>金币-10>');
+  assert.equal(conditional.option.effects[0].condition, '勇气>0 && 金币>=10');
 }
 
 // ---------- summaries and normalizing ----------
@@ -77,9 +95,9 @@ assert.deepEqual(StoryOptions.splitTopLevelFields('“买,钥匙”,商店'), ['
   const context = { window: { StoryVars: require('../js/story-vars.js') } };
   vm.createContext(context);
   vm.runInContext(StoryOptions.buildRuntimeSource(), context);
-  const option = context.window.StoryOptions.parseOptionTag('<选项:"A, B",块,条件:(金币>=2),样式:红>').option;
+  const option = context.window.StoryOptions.parseOptionTag('<选项:"A, B",块,条件变化:(金币>=2)=>金币-1,样式:红>').option;
   assert.equal(option.text, 'A, B');
-  assert.equal(option.condition, '(金币>=2)');
+  assert.deepEqual(JSON.parse(JSON.stringify(option.effects)), [{ name: '金币', op: '-', val: '1', condition: '金币>=2' }]);
   assert.deepEqual(Array.from(option.unknownFields), ['样式:红']);
 }
 

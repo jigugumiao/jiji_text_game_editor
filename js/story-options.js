@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var OPTIONAL_PREFIXES = ['条件:', '不满足:', '提示:', '变化:'];
+  var OPTIONAL_PREFIXES = ['条件:', '不满足:', '提示:', '变化:', '条件变化:'];
 
   function splitTopLevelFields(source) {
     var text = String(source == null ? '' : source);
@@ -56,14 +56,49 @@
     return false;
   }
 
-  function parseEffect(value) {
+  function getStoryVars() {
     var SV = typeof window !== 'undefined' ? window.StoryVars : null;
     if (!SV && typeof require === 'function') {
       try { SV = require('./story-vars.js'); } catch (_) { SV = null; }
     }
+    return SV;
+  }
+
+  function parseEffect(value) {
+    var SV = getStoryVars();
     if (!SV || typeof SV.parseVarLine !== 'function') return null;
     var parsed = SV.parseVarLine('<变量:' + value + '>');
-    return parsed.bad.length === 0 && parsed.ops.length === 1 ? parsed.ops[0] : null;
+    if (parsed.bad.length !== 0 || parsed.ops.length !== 1) return null;
+    return { name: parsed.ops[0].name, op: parsed.ops[0].op, val: parsed.ops[0].val, condition: null };
+  }
+
+  function parseConditionalEffect(value) {
+    var source = String(value == null ? '' : value).trim();
+    if (source.charAt(0) !== '(') return null;
+    var depth = 0, quote = null, escaped = false, close = -1;
+    var pairs = { '“': '”', '‘': '’', '「': '」', '『': '』' };
+    for (var i = 0; i < source.length; i++) {
+      var ch = source.charAt(i);
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\') { escaped = true; continue; }
+      if (quote) { if (ch === quote) quote = null; continue; }
+      if (ch === '"') { quote = '"'; continue; }
+      if (pairs[ch]) { quote = pairs[ch]; continue; }
+      if (ch === '(') { depth++; continue; }
+      if (ch === ')') {
+        depth--;
+        if (depth === 0) { close = i; break; }
+        if (depth < 0) return null;
+      }
+    }
+    if (close < 0 || source.slice(close + 1, close + 3) !== '=>') return null;
+    var condition = source.slice(1, close).trim();
+    var SV = getStoryVars();
+    if (!SV || typeof SV.parseCondition !== 'function' || !SV.parseCondition(condition)) return null;
+    var effect = parseEffect(source.slice(close + 3).trim());
+    if (!effect) return null;
+    effect.condition = condition;
+    return effect;
   }
 
   function makeOption() {
@@ -87,7 +122,11 @@
     }
     for (var i = 0; i < fields.length; i++) {
       var field = fields[i];
-      if (field.indexOf('条件:') === 0) option.condition = field.slice(3).trim() || null;
+      if (field.indexOf('条件变化:') === 0) {
+        var conditionalEffect = parseConditionalEffect(field.slice(5));
+        if (conditionalEffect) option.effects.push(conditionalEffect);
+        else option.unknownFields.push(field);
+      } else if (field.indexOf('条件:') === 0) option.condition = field.slice(3).trim() || null;
       else if (field.indexOf('不满足:') === 0) {
         var behavior = field.slice(4).trim();
         if (behavior === '隐藏') option.unmetBehavior = 'hide';
@@ -107,6 +146,8 @@
   }
 
   function isConditionComparator(source, start, at) {
+    var previous = source.charAt(at - 1);
+    if (previous === '=' || previous === '<') return true;
     if (source.charAt(at + 1) === '=') return true;
     var following = source.charAt(at + 1);
     if (!following || following === '<' || /\s/.test(following)) return false;
@@ -120,7 +161,7 @@
     while (cursor < text.length) {
       var start = text.indexOf('<选项:', cursor);
       if (start < 0) break;
-      var quote = null, escaped = false, end = -1;
+      var quote = null, escaped = false, depth = 0, end = -1;
       for (var i = start + 4; i < text.length; i++) {
         var ch = text.charAt(i);
         if (escaped) { escaped = false; continue; }
@@ -128,7 +169,9 @@
         if (quote) { if (ch === quote) quote = null; continue; }
         if (ch === '"') { quote = '"'; continue; }
         if (quotePairs[ch]) { quote = quotePairs[ch]; continue; }
-        if (ch === '>' && !isConditionComparator(text, start, i)) { end = i + 1; break; }
+        if (ch === '(') { depth++; continue; }
+        if (ch === ')' && depth > 0) { depth--; continue; }
+        if (ch === '>' && depth === 0 && !isConditionComparator(text, start, i)) { end = i + 1; break; }
       }
       if (end < 0) {
         var rawTail = text.slice(start);
@@ -150,7 +193,11 @@
     option.unmetBehavior = source.unmetBehavior === 'disable' ? 'disable' : 'hide';
     option.unmetMessage = source.unmetMessage != null && String(source.unmetMessage).trim() !== '' ? String(source.unmetMessage) : null;
     option.effects = Array.isArray(source.effects) ? source.effects.map(function (effect) {
-      return { name: String(effect.name == null ? '' : effect.name).trim(), op: effect.op, val: String(effect.val == null ? '' : effect.val).trim() };
+      return {
+        name: String(effect.name == null ? '' : effect.name).trim(), op: effect.op,
+        val: String(effect.val == null ? '' : effect.val).trim(),
+        condition: effect.condition == null || String(effect.condition).trim() === '' ? null : String(effect.condition).trim()
+      };
     }) : [];
     option.unknownFields = Array.isArray(source.unknownFields) ? source.unknownFields.slice() : [];
     return option;
@@ -167,7 +214,13 @@
     for (var i = 0; i < option.effects.length; i++) {
       var effect = parseEffect(option.effects[i].name + option.effects[i].op + option.effects[i].val);
       if (!effect) return { ok: false, value: null, error: '变量变化格式不正确' };
-      fields.push('变化:' + effect.name + effect.op + effect.val);
+      if (option.effects[i].condition) {
+        var SV = getStoryVars();
+        if (!SV || typeof SV.parseCondition !== 'function' || !SV.parseCondition(option.effects[i].condition)) {
+          return { ok: false, value: null, error: '条件变化格式不正确' };
+        }
+        fields.push('条件变化:(' + option.effects[i].condition + ')=>' + effect.name + effect.op + effect.val);
+      } else fields.push('变化:' + effect.name + effect.op + effect.val);
     }
     for (var j = 0; j < option.unknownFields.length; j++) fields.push(String(option.unknownFields[j]));
     return { ok: true, value: '<选项:' + fields.join(',') + '>', error: null };
@@ -183,8 +236,8 @@
   }
 
   function buildRuntimeSource() {
-    var fns = [splitTopLevelFields, unescapeString, readString, escapeString, isOptional, parseEffect, makeOption, parseOptionTag, isConditionComparator, extractOptionLine, normalizeOption, serializeOption, summarizeOption];
-    var src = '(function(){\n"use strict";\nvar OPTIONAL_PREFIXES=["条件:","不满足:","提示:","变化:"];\nvar SO={};\n';
+    var fns = [splitTopLevelFields, unescapeString, readString, escapeString, isOptional, getStoryVars, parseEffect, parseConditionalEffect, makeOption, parseOptionTag, isConditionComparator, extractOptionLine, normalizeOption, serializeOption, summarizeOption];
+    var src = '(function(){\n"use strict";\nvar OPTIONAL_PREFIXES=["条件:","不满足:","提示:","变化:","条件变化:"];\nvar SO={};\n';
     fns.forEach(function (fn) { src += fn.toString() + '\nSO.' + fn.name + '=' + fn.name + ';\n'; });
     return src + 'window.StoryOptions=SO;\n})();';
   }

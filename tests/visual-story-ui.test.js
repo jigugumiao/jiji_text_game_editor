@@ -60,9 +60,15 @@ assert.match(visualUiSource, /story-visual-chip story-visual-chip-' \+ descripto
   '指令 chip 必须保留分类 class 以应用语义色彩');
 
 const StoryVisualUI = require(path.join(root, 'js', 'story-visual-ui.js'));
-['createController', 'renderDocument', 'describeNode', 'sourceFromTextEditor', 'commitFocusedEditor', 'destroy'].forEach((name) => {
+['createController', 'renderDocument', 'describeNode', 'splitEditableText', 'sourceFromTextEditor', 'commitFocusedEditor', 'destroy'].forEach((name) => {
   assert.equal(typeof StoryVisualUI[name], 'function', `StoryVisualUI 必须导出 ${name}`);
 });
+
+assert.deepEqual(StoryVisualUI.splitEditableText('\r\n\r\n这就是你踏上旅程的地方。\r\n深吸一口气，迈出了第一步。\r\n\r\n'), {
+  leading: '\r\n\r\n', body: '这就是你踏上旅程的地方。\r\n深吸一口气，迈出了第一步。', trailing: '\r\n\r\n'
+}, '连续正文应作为一个编辑段，段首和段尾换行必须留在框外并原样保留');
+assert.deepEqual(StoryVisualUI.splitEditableText('\n\n'), { leading: '\n\n', body: '', trailing: '' },
+  '只有换行的空白节点不应生成可编辑文本框');
 
 const text = (value) => ({ nodeType: 3, nodeValue: value });
 const element = (tagName, children, source) => ({ nodeType: 1, tagName, childNodes: children || [], dataset: source == null ? {} : { source } });

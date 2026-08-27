@@ -171,6 +171,17 @@
     return { kind: 'text', editable: true, parts: parts };
   }
 
+  // Keep source line breaks lossless, but do not make blank lines part of the
+  // editable box.  A command followed by empty lines should read as normal
+  // document spacing, not as an empty outlined editor row.
+  function splitEditableText(raw) {
+    var source = String(raw == null ? '' : raw);
+    var leading = (source.match(/^(?:(?:\r\n)|\r|\n)*/) || [''])[0];
+    var rest = source.slice(leading.length);
+    var trailing = (rest.match(/(?:(?:\r\n)|\r|\n)*$/) || [''])[0];
+    return { leading: leading, body: rest.slice(0, rest.length - trailing.length), trailing: trailing };
+  }
+
   // DOM-free description boundary: Node tests can verify visual language without
   // requiring a browser, and the renderer below only consumes this result.
   function describeNode(node, states) {
@@ -386,16 +397,26 @@
       element.dataset.start = String(node.start);
       element.dataset.end = String(node.end);
       if (node.kind === 'text') {
+        var textParts = splitEditableText(node.raw);
+        if (textParts.leading) surface.appendChild(document.createTextNode(textParts.leading));
+        if (!textParts.body) {
+          if (textParts.trailing) surface.appendChild(document.createTextNode(textParts.trailing));
+          return;
+        }
+        element = document.createElement('div');
+        element.className = 'story-visual-node story-visual-node-text';
+        element.dataset.start = String(node.start);
+        element.dataset.end = String(node.end);
         element.contentEditable = 'true';
         element.spellcheck = false;
-        appendTextParts(element, descriptor);
+        appendTextParts(element, describeText({ raw: textParts.body }, options && options.getStates ? options.getStates() : null));
         element.addEventListener('blur', function () {
-          if (options && options.commitTextNode) options.commitTextNode(node, sourceFromTextEditor(element));
+          if (options && options.commitTextNode) options.commitTextNode(node, textParts.leading + sourceFromTextEditor(element) + textParts.trailing);
         });
         element.addEventListener('keydown', function (event) {
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
             event.preventDefault();
-            if (options && options.commitTextNode) options.commitTextNode(node, sourceFromTextEditor(element));
+            if (options && options.commitTextNode) options.commitTextNode(node, textParts.leading + sourceFromTextEditor(element) + textParts.trailing);
           }
         });
       } else if (node.kind === 'state_change') {
@@ -444,6 +465,7 @@
         });
       }
       surface.appendChild(element);
+      if (node.kind === 'text' && textParts.trailing) surface.appendChild(document.createTextNode(textParts.trailing));
     });
     host.appendChild(surface);
     return doc;
@@ -594,6 +616,7 @@
     renderDocument: renderDocument,
     describeNode: describeNode,
     insertAtVisualSelection: insertAtVisualSelection,
+    splitEditableText: splitEditableText,
     sourceFromTextEditor: sourceFromTextEditor,
     createEmptyOption: createEmptyOption,
     validateOptionDraft: validateOptionDraft,

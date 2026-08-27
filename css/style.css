@@ -400,7 +400,7 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
   font-family: 'Noto Serif SC','Songti SC',serif; font-size: 16px; line-height: 1.95;
 }
 .story-visual-node { color: inherit; }
-.story-visual-node-text { outline: none; }
+.story-visual-node-text { display: block; outline: none; min-height: 1.95em; }
 .story-visual-state-token {
   display: inline; padding: 0 3px; border: 1px solid; border-radius: 3px;
   cursor: text; white-space: pre-wrap;

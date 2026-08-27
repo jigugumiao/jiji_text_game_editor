@@ -94,10 +94,30 @@
     return [];
   }
 
+  function validateConditionDraft(draft, states, prefix) {
+    var types = stateTypes(states), errors = [], label = prefix || '';
+    function checkGroup(group) {
+      if (!group || !Array.isArray(group.rows) || !group.rows.length) { errors.push(label + '条件组不能为空'); return; }
+      group.rows.forEach(function (row) {
+        if (row && row.kind === 'group') { checkGroup(row); return; }
+        var name = String(row && row.name || '').trim();
+        if (!row || row.kind !== 'comparison' || !types[name]) { errors.push(label + '变量「' + name + '」不存在'); return; }
+        var type = types[name];
+        var valid = type === 'number' ? ['>', '<', '>=', '<=', '==', '!=', '=']
+          : type === 'text' ? ['==', '!=', '=', 'contains', 'notcontains'] : ['==', '!=', '='];
+        if (valid.indexOf(row.op) < 0) { errors.push(label + '变量「' + name + '」不能使用此操作'); return; }
+        if (type === 'number' && !/^-?\d+(\.\d+)?$/.test(String(row.value == null ? '' : row.value))) errors.push(label + '变量「' + name + '」的值不正确');
+        if (type === 'boolean' && row.value !== true && row.value !== false && row.value !== 'true' && row.value !== 'false') errors.push(label + '变量「' + name + '」的值不正确');
+      });
+    }
+    if (draft) checkGroup(draft);
+    return errors;
+  }
+
   function effectDraftToOps(draft, states) {
-    var types = stateTypes(states), effects = Array.isArray(draft) ? draft : [];
+    var types = stateTypes(states), effects = Array.isArray(draft) ? draft : [], SV = getStoryVars();
     var ops = [], errors = [], seen = {};
-    effects.forEach(function (effect) {
+    effects.forEach(function (effect, index) {
       var name = String(effect && effect.name || '').trim();
       var op = effect && effect.op;
       var value = effect && (effect.value !== undefined ? effect.value : effect.val);
@@ -107,7 +127,11 @@
       if (allowedOperations(types[name]).indexOf(op) < 0) { errors.push('变量「' + name + '」不能使用此操作'); return; }
       if (types[name] === 'boolean' && value !== true && value !== false && value !== 'true' && value !== 'false') { errors.push('变量「' + name + '」的值不正确'); return; }
       if (types[name] === 'number' && !/^-?\d+(\.\d+)?$/.test(String(value == null ? '' : value))) { errors.push('变量「' + name + '」的值不正确'); return; }
-      ops.push({ name: name, op: op, val: String(value == null ? '' : value) });
+      var conditionErrors = validateConditionDraft(effect && effect.condition, types, '第 ' + (index + 1) + ' 条变量变化的');
+      if (conditionErrors.length) { errors = errors.concat(conditionErrors); return; }
+      var condition = effect && effect.condition ? conditionDraftToAst(effect.condition) : null;
+      var serializedCondition = condition && SV ? SV.serializeCondition(condition).replace(/(contains|notcontains)(?=")/g, ' $1 ') : null;
+      ops.push({ name: name, op: op, val: String(value == null ? '' : value), condition: serializedCondition });
     });
     return { ok: errors.length === 0, ops: ops, errors: errors };
   }
@@ -118,16 +142,7 @@
     if (!String(source.text == null ? '' : source.text).trim()) errors.push('选项文字不能为空');
     if (source.block && names.indexOf(source.block) < 0) errors.push('所选剧情块不存在');
     if (Array.isArray(source.unknownFields) && source.unknownFields.length) errors.push('此选项包含无法识别的高级字段，请在源码模式编辑');
-    function checkGroup(group) {
-      if (!group || !Array.isArray(group.rows) || !group.rows.length) { errors.push('条件组不能为空'); return; }
-      group.rows.forEach(function (row) {
-        if (row && row.kind === 'group') { checkGroup(row); return; }
-        if (!row || !types[row.name]) { errors.push('变量「' + String(row && row.name || '') + '」不存在'); return; }
-        var type = types[row.name], valid = type === 'number' ? ['>', '<', '>=', '<=', '==', '!=', '='] : type === 'text' ? ['==', '!=', '=', 'contains', 'notcontains'] : ['==', '!=', '='];
-        if (valid.indexOf(row.op) < 0) errors.push('变量「' + row.name + '」不能使用此操作');
-      });
-    }
-    if (source.condition) checkGroup(source.condition);
+    errors = errors.concat(validateConditionDraft(source.condition, types, ''));
     var effectCheck = effectDraftToOps(source.effects, types);
     errors = errors.concat(effectCheck.errors);
     return { ok: errors.length === 0, errors: errors, effects: effectCheck.ops, condition: conditionDraftToAst(source.condition) };
@@ -283,7 +298,10 @@
       condition: source.condition && SV ? conditionAstToDraft(SV.parseCondition(source.condition), states) : null,
       unmetBehavior: source.unmetBehavior === 'disable' ? 'disable' : 'hide',
       unmetMessage: source.unmetMessage || '',
-      effects: (source.effects || []).map(function (effect) { return { name: effect.name, op: effect.op, value: effect.val }; }),
+      effects: (source.effects || []).map(function (effect) { return {
+        name: effect.name, op: effect.op, value: effect.val,
+        condition: effect.condition && SV ? conditionAstToDraft(SV.parseCondition(effect.condition), states) : null
+      }; }),
       unknownFields: (source.unknownFields || []).slice()
     };
   }
@@ -375,7 +393,7 @@
       });
       if (!readOnly) {
         var addComparison = document.createElement('button'); addComparison.type = 'button'; addComparison.textContent = '添加条件';
-        addComparison.addEventListener('click', function () { group.rows.push({ kind: 'comparison', name: Object.keys(types)[0] || '', op: '=', value: '' }); rerender(); });
+        addComparison.addEventListener('click', function () { group.rows.push({ kind: 'comparison', name: '', op: '=', value: '' }); rerender(); });
         var addGroup = document.createElement('button'); addGroup.type = 'button'; addGroup.textContent = '添加条件组';
         addGroup.addEventListener('click', function () { group.rows.push({ kind: 'group', mode: 'all', rows: [] }); rerender(); });
         groupEl.append(addComparison, addGroup);
@@ -391,7 +409,7 @@
         summary.textContent = SVForSummary.summarizeCondition(conditionAst, types); conditionArea.appendChild(summary);
       }
     }
-    else if (!readOnly) { var addCondition = document.createElement('button'); addCondition.type = 'button'; addCondition.textContent = '添加条件'; addCondition.addEventListener('click', function () { draft.condition = { mode: 'all', rows: [{ kind: 'comparison', name: Object.keys(types)[0] || '', op: '=', value: '' }] }; context.tipKey = 'first-condition'; rerender(); }); conditionArea.appendChild(addCondition); }
+    else if (!readOnly) { var addCondition = document.createElement('button'); addCondition.type = 'button'; addCondition.textContent = '添加条件'; addCondition.addEventListener('click', function () { draft.condition = { mode: 'all', rows: [{ kind: 'comparison', name: '', op: '=', value: '' }] }; context.tipKey = 'first-condition'; rerender(); }); conditionArea.appendChild(addCondition); }
     effectsArea.appendChild(rowLabel('选中后变量变化'));
     draft.effects.forEach(function (effect, index) {
       var line = document.createElement('div'); line.className = 'story-visual-effect-row';
@@ -408,7 +426,7 @@
       if (!readOnly) { var remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '删除'; remove.addEventListener('click', function () { draft.effects.splice(index, 1); rerender(); }); line.appendChild(remove); }
       effectsArea.appendChild(line);
     });
-    if (!readOnly) { var addEffect = document.createElement('button'); addEffect.type = 'button'; addEffect.textContent = '添加变量变化'; addEffect.addEventListener('click', function () { draft.effects.push({ name: Object.keys(types)[0] || '', op: '=', value: '' }); context.tipKey = 'first-effect'; rerender(); }); effectsArea.appendChild(addEffect); }
+    if (!readOnly) { var addEffect = document.createElement('button'); addEffect.type = 'button'; addEffect.textContent = '添加变量变化'; addEffect.addEventListener('click', function () { draft.effects.push({ name: '', op: '=', value: '', condition: null }); context.tipKey = 'first-effect'; rerender(); }); effectsArea.appendChild(addEffect); }
     var actions = document.createElement('div'); actions.className = 'story-visual-form-actions';
     var cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'story-visual-form-secondary'; cancel.textContent = '取消'; cancel.addEventListener('click', context.close); actions.appendChild(cancel);
     var submit = document.createElement('button'); submit.type = 'submit'; submit.className = 'story-visual-form-primary'; submit.textContent = '完成'; submit.disabled = readOnly; actions.appendChild(submit); form.appendChild(actions);
@@ -710,9 +728,11 @@
     serializeCommandEdit: serializeCommandEdit,
     createEmptyOption: createEmptyOption,
     validateOptionDraft: validateOptionDraft,
+    validateConditionDraft: validateConditionDraft,
     conditionAstToDraft: conditionAstToDraft,
     conditionDraftToAst: conditionDraftToAst,
     effectDraftToOps: effectDraftToOps,
+    optionDraftFromOption: optionDraftFromOption,
     commitFocusedEditor: commitFocusedEditor,
     destroy: destroy
   };

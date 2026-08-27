@@ -25,7 +25,7 @@ vm.runInContext(parseMatch[0] + '\nthis.parseStoryForExport = parseStoryForExpor
 const story = context.parseStoryForExport('<选项:"她说\\"好,走吧\\"",目标,条件:(金币>=10),不满足:禁用,提示:"还差,一点",变化:金币-10,样式:红>');
 assert.deepEqual(JSON.parse(JSON.stringify(story[0].options[0])), {
   text: '她说"好,走吧"', block: '目标', condition: '(金币>=10)', unmetBehavior: 'disable',
-  unmetMessage: '还差,一点', effects: [{ name: '金币', op: '-', val: '10' }], unknownFields: ['样式:红']
+  unmetMessage: '还差,一点', effects: [{ name: '金币', op: '-', val: '10', condition: null }], unknownFields: ['样式:红']
 });
 
 // Runtime behavior: unmet options hide by default, disable only when asked, and effects

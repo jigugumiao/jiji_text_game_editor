@@ -80,7 +80,7 @@ const element = (tagName, children, source) => ({ nodeType: 1, tagName, childNod
 assert.equal(StoryVisualUI.sourceFromTextEditor(element('DIV', [text('第一行'), element('DIV', [text('第二行')]), element('BR'), text('第三行')])), '第一行\n第二行\n第三行',
   '可视化正文按 Enter 生成的 block/BR 必须回写为换行，不能吞掉内容');
 
-['createEmptyOption', 'validateOptionDraft', 'conditionAstToDraft', 'conditionDraftToAst', 'effectDraftToOps'].forEach((name) => {
+['createEmptyOption', 'validateOptionDraft', 'validateConditionDraft', 'conditionAstToDraft', 'conditionDraftToAst', 'effectDraftToOps', 'optionDraftFromOption'].forEach((name) => {
   assert.equal(typeof StoryVisualUI[name], 'function', `StoryVisualUI 必须导出 ${name}`);
 });
 
@@ -109,9 +109,31 @@ assert.deepEqual(StoryVisualUI.effectDraftToOps([
   { name: '金币', op: '+', value: '3' }, { name: '已见面', op: '=', value: 'true' }, { name: '名字', op: '=', value: '阿岚' }
 ], stateMap), {
   ok: true,
-  ops: [{ name: '金币', op: '+', val: '3' }, { name: '已见面', op: '=', val: 'true' }, { name: '名字', op: '=', val: '阿岚' }],
+  ops: [{ name: '金币', op: '+', val: '3', condition: null }, { name: '已见面', op: '=', val: 'true', condition: null }, { name: '名字', op: '=', val: '阿岚', condition: null }],
   errors: []
 }, '变量变化应按顺序转换为选项操作');
+
+assert.deepEqual(StoryVisualUI.effectDraftToOps([
+  { name: '金币', op: '-', value: '10', condition: conditionDraft }
+], stateMap), {
+  ok: true,
+  ops: [{ name: '金币', op: '-', val: '10', condition: '金币>=10 && (已见面==true || 名字 contains "客")' }],
+  errors: []
+}, '变量变化条件应转换并序列化为选项操作条件');
+
+assert.equal(StoryVisualUI.effectDraftToOps([
+  { name: '金币', op: '-', value: '10', condition: { mode: 'all', rows: [] } }
+], stateMap).errors[0], '第 1 条变量变化的条件组不能为空', '空的变量变化条件组必须被拒绝');
+
+assert.deepEqual(StoryVisualUI.optionDraftFromOption({
+  text: '购买', block: null, effects: [
+    { name: '金币', op: '-', val: '10', condition: '金币>=10 && (已见面==true || 名字 contains "客")' },
+    { name: '已见面', op: '=', val: 'true', condition: null }
+  ]
+}, stateMap).effects, [
+  { name: '金币', op: '-', value: '10', condition: conditionDraft },
+  { name: '已见面', op: '=', value: 'true', condition: null }
+], '选项草稿必须把变量变化条件解析为可编辑草稿');
 
 const invalidDraft = { text: '', block: '', condition: { mode: 'all', rows: [] }, effects: [{ name: '金币', op: '=', value: '1' }, { name: '金币', op: '+', value: '1' }, { name: '未知', op: '=', value: '1' }, { name: '已见面', op: '+', value: 'true' }], unknownFields: ['样式:红'] };
 const invalid = StoryVisualUI.validateOptionDraft(invalidDraft, stateMap, ['开场']);

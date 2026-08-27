@@ -7,6 +7,7 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const docs = fs.readFileSync(path.join(root, 'docs.html'), 'utf8');
 const visualUiSource = fs.readFileSync(path.join(root, 'js', 'story-visual-ui.js'), 'utf8');
 const editorSource = fs.readFileSync(path.join(root, 'js', 'editor.js'), 'utf8');
+const storageSource = fs.readFileSync(path.join(root, 'js', 'storage.js'), 'utf8');
 
 assert.match(html, /<button id="editor-mode-visual" type="button">可视化编辑<\/button>/,
   '编辑器必须提供可视化编辑模式切换');
@@ -28,6 +29,8 @@ assert.match(visualUiSource, /first-condition/, '首次添加条件必须触发�
 assert.match(visualUiSource, /first-effect/, '首次添加效果必须触发提示');
 assert.match(editorSource, /getUiPreference/, '提示已读状态必须通过命名空间 UI 偏好读取');
 assert.match(editorSource, /setUiPreference/, '提示已读状态必须通过命名空间 UI 偏好保存');
+assert.match(storageSource, /if \(m === 'game'\) project\.visualEditorVersion = 1;/,
+  '新建剧情游戏必须默认标记为可视化项目，不能进入旧项目转换流程');
 
 const StoryVisualUI = require(path.join(root, 'js', 'story-visual-ui.js'));
 ['createController', 'renderDocument', 'describeNode', 'sourceFromTextEditor', 'commitFocusedEditor', 'destroy'].forEach((name) => {

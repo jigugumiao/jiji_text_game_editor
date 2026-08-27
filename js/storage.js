@@ -149,7 +149,10 @@ function createProject(name, mode) {
   const id = uid('proj');
   const safeName = (name && String(name).trim()) || ('项目 ' + (projects.length + 1));
   const m = mode === 'article' ? 'article' : 'game';
-  projects.push({ id, name: safeName, mode: m, createdAt: Date.now() });
+  // 新建剧情游戏直接使用可视化编辑器；只有历史项目才需要走复制转换。
+  const project = { id, name: safeName, mode: m, createdAt: Date.now() };
+  if (m === 'game') project.visualEditorVersion = 1;
+  projects.push(project);
   _writeProjects(projects);
   return id;
 }

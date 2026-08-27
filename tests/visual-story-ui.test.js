@@ -153,6 +153,7 @@ assert.match(visualUiSource, /禁用时显示的文字/, '禁用提示必须明�
 assert.match(visualUiSource, /删除条件组/, '嵌套条件组必须可以删除');
 assert.match(visualUiSource, /选中后变量变化/, '变量变化必须明确发生在选中选项后');
 assert.match(visualUiSource, /form\.addEventListener\('contextmenu'/, '选项编辑表单必须屏蔽右键浏览器菜单');
+assert.match(visualUiSource, /if \(name\.value\) \{[\s\S]*?line\.append\(op, value\);/, '变量未选中时不得显示无意义的操作和值输入框');
 ['剧情状态', '选项', '背景', '物品', '音乐', '音效', '标题', '停顿', '分割线', '剧情块', '跳回', '随机跳转'].forEach((label) => {
   assert.match(editorSource, new RegExp("label: '" + label), '视觉插入菜单必须提供「' + label + '」');
 });

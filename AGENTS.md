@@ -28,3 +28,10 @@
 入口：素材库 → 变量库 →「修复检查」按钮。扫描主剧情+全部剧情块，问题类型：
 `undeclared_write`（未声明赋值，附错别字改名建议）/ `undeclared_read` / `malformed_tag` / `cond_parse_error` / `type_mismatch` / info 级 `never_written`、`dead_var`。
 校验器 validateStory 只展示 error/warning；info 级只在修复面板显示。「忽略」为会话级。
+
+## 可视化剧情状态编辑器约束（v25.4.69）
+
+- 选项语法的唯一事实源是 `js/story-options.js`；`editor.js` 与 `exporter.js` 只能调用它。导出运行时由 `StoryOptions.buildRuntimeSource()` 注入。
+- 可视化模式必须通过 `StoryVisualDoc` 的原始 span 局部替换；切换模式和未编辑内容不得格式化或丢弃未知字段。
+- 旧项目转换只能复制到临时项目、校验、最后登记；源项目和当前项目指针不得在失败或成功前被改写。新项目写入 `visualEditorVersion:1` 与 `convertedFrom`。
+- 变更选项/可视化 UI/转换逻辑后至少运行对应 focused test、`tests/release-cache-bust.test.js` 与完整 `tests/*.test.js`；改动前端资源必须同步更新 `?v=` 与两个版本展示。

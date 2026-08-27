@@ -94,6 +94,17 @@ assert.deepEqual(
 );
 
 assert.deepEqual(
+  StoryVisualUI.describeNode({ kind: 'command_chip', data: { category: 'music', summary: '召唤音乐：雨' } }, {}),
+  { kind: 'command_chip', category: 'music', summary: '召唤音乐：雨', editable: true },
+  '可识别指令应成为带分类的可编辑芯片'
+);
+assert.equal(typeof StoryVisualUI.insertAtVisualSelection, 'function', '可视化编辑器必须导出插入边界函数');
+assert.equal(StoryVisualUI.insertAtVisualSelection('甲乙', 1, '丙'), '甲丙乙', '插入应保留选中位置两侧源码');
+assert.equal(StoryVisualUI.insertAtVisualSelection('甲乙', -1, '丙'), '丙甲乙', '插入位置不得越过源码开头');
+assert.equal(StoryVisualUI.insertAtVisualSelection('甲乙', 99, '丙'), '甲乙丙', '插入位置不得越过源码结尾');
+assert.match(html, /id="visual-insert-menu"/, '可视化模式必须有插入菜单');
+
+assert.deepEqual(
   StoryVisualUI.describeNode({ kind: 'text', raw: '获得 {金币}，门{拿到钥匙:已打开|仍锁着}，{{金币}}。' }, { 金币: 'number', 拿到钥匙: 'boolean' }),
   {
     kind: 'text',

@@ -177,7 +177,18 @@
     if (!node) return null;
     if (node.kind === 'text') return describeText(node, states);
     if (node.kind === 'state_change') return describeStateChange(node);
+    if (node.kind === 'command_chip') {
+      var command = node.data || {};
+      return { kind: 'command_chip', category: command.category, summary: command.summary, editable: true };
+    }
     return { kind: node.kind, raw: node.raw, editable: false };
+  }
+
+  function insertAtVisualSelection(source, selection, text) {
+    var value = String(source == null ? '' : source);
+    var offset = Number(selection);
+    var at = Number.isFinite(offset) ? Math.max(0, Math.min(offset, value.length)) : value.length;
+    return value.slice(0, at) + String(text == null ? '' : text) + value.slice(at);
   }
 
   function appendTextParts(element, descriptor) {
@@ -397,6 +408,16 @@
         element.addEventListener('click', function () {
           if (options && options.onEditState) options.onEditState(node);
         });
+      } else if (node.kind === 'command_chip') {
+        element = document.createElement('button');
+        element.type = 'button';
+        element.className = 'story-visual-chip story-visual-chip-' + descriptor.category;
+        element.dataset.start = String(node.start);
+        element.dataset.end = String(node.end);
+        element.textContent = descriptor.summary;
+        element.addEventListener('click', function () {
+          if (options && options.onEditCommand) options.onEditCommand(node);
+        });
       } else if (node.kind === 'option_group') {
         element = document.createElement('button');
         element.type = 'button';
@@ -444,6 +465,9 @@
     var isCommitting = false;
     var editingOption = null;
     var sourceBeforeOptionEdit = null;
+    var lastTextOffset = null;
+    var insertMenu = typeof document !== 'undefined' ? document.getElementById('visual-insert-menu') : null;
+    var insertPopover = typeof document !== 'undefined' ? document.getElementById('visual-insert-popover') : null;
 
     function commitTextNode(node, replacement) {
       if (isCommitting || !node || replacement === node.raw) return;
@@ -489,11 +513,15 @@
         }
       });
     }
+    function editCommand(node) {
+      if (typeof options.onEditCommand === 'function') options.onEditCommand(node);
+    }
     var renderOptions = {
       getStates: options.getStates,
       commitTextNode: commitTextNode,
       onEditState: editState,
-      onEditOption: editOption
+      onEditOption: editOption,
+      onEditCommand: editCommand
     };
 
     function refresh() {
@@ -508,6 +536,18 @@
       if (!currentDocument || !sourceTextarea) return;
       var VisualDoc = getVisualDoc();
       lastNode = VisualDoc && VisualDoc.findNodeAtOffset(currentDocument, sourceTextarea.selectionStart);
+      lastTextOffset = lastNode && lastNode.kind === 'text' ? sourceTextarea.selectionStart : null;
+    }
+    function insert(text) {
+      var source = String(getSource() == null ? '' : getSource());
+      var offset = Number(lastTextOffset);
+      var at = Number.isFinite(offset) ? Math.max(0, Math.min(offset, source.length)) : source.length;
+      var value = String(text == null ? '' : text);
+      var next = insertAtVisualSelection(source, at, value);
+      options.setSource(next);
+      lastTextOffset = at + value.length;
+      refresh();
+      return next;
     }
     function showVisual() {
       commitFocusedEditor();
@@ -516,12 +556,18 @@
       mode = 'visual';
       if (sourceWrap) sourceWrap.hidden = true;
       if (visualHost) visualHost.hidden = false;
+      if (insertMenu) insertMenu.hidden = false;
     }
     function showSource() {
       commitFocusedEditor();
       mode = 'source';
       if (visualHost) visualHost.hidden = true;
       if (sourceWrap) sourceWrap.hidden = false;
+      if (insertMenu) insertMenu.hidden = true;
+      if (insertPopover) {
+        insertPopover.hidden = true;
+        insertPopover.classList.add('hidden');
+      }
       if (sourceTextarea) {
         var position = lastNode ? lastNode.start : sourceTextarea.selectionStart;
         position = Math.max(0, Math.min(position, sourceTextarea.value.length));
@@ -533,6 +579,7 @@
       showVisual: showVisual,
       showSource: showSource,
       refresh: refresh,
+      insert: insert,
       commitFocusedEditor: function () {
         var active = typeof document !== 'undefined' && document.activeElement;
         if (active && active.matches && active.matches('.story-visual-node-text[contenteditable="true"]')) active.blur();
@@ -546,6 +593,7 @@
     createController: createController,
     renderDocument: renderDocument,
     describeNode: describeNode,
+    insertAtVisualSelection: insertAtVisualSelection,
     sourceFromTextEditor: sourceFromTextEditor,
     createEmptyOption: createEmptyOption,
     validateOptionDraft: validateOptionDraft,

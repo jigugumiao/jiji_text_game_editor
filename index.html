@@ -119,6 +119,7 @@
             <button id="editor-mode-visual" type="button">可视化编辑</button>
             <button id="editor-mode-source" type="button">源码模式</button>
           </span>
+          <button id="visual-insert-menu" class="mini-btn" type="button" hidden>插入</button>
           <button id="btn-undo" class="icon-btn" title="撤销 (Ctrl+Z)" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-undo"/></svg></button>
           <button id="btn-redo" class="icon-btn" title="重做 (Ctrl+Y)" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-redo"/></svg></button>
         </span>
@@ -594,6 +595,7 @@
 
 <!-- 编辑器列头 🤖 快捷菜单 -->
 <div id="ai-quick-menu" class="ai-quick-menu hidden"></div>
+<div id="visual-insert-popover" class="ai-quick-menu hidden" hidden></div>
 
 <!-- AI 生成结果审阅窗 -->
 <div id="ai-review-modal" class="modal hidden">

@@ -39,6 +39,31 @@
   --cyan: #3f7d8c;
   --cyan-soft: rgba(63,125,140,.12);
   --danger: #c0392b;
+  /* 可视化剧情 chip：低饱和语义色，亮色背景约 10%。 */
+  --visual-chip-read-fg: #4F7B62;
+  --visual-chip-read-bg: rgba(79,123,98,.10);
+  --visual-chip-read-border: rgba(79,123,98,.35);
+  --visual-chip-write-fg: #3F7F7A;
+  --visual-chip-write-bg: rgba(63,127,122,.10);
+  --visual-chip-write-border: rgba(63,127,122,.35);
+  --visual-chip-option-fg: #527A9E;
+  --visual-chip-option-bg: rgba(82,122,158,.10);
+  --visual-chip-option-border: rgba(82,122,158,.35);
+  --visual-chip-background-fg: #8B6F57;
+  --visual-chip-background-bg: rgba(139,111,87,.10);
+  --visual-chip-background-border: rgba(139,111,87,.35);
+  --visual-chip-item-fg: #947348;
+  --visual-chip-item-bg: rgba(148,115,72,.10);
+  --visual-chip-item-border: rgba(148,115,72,.35);
+  --visual-chip-music-fg: #8A5B62;
+  --visual-chip-music-bg: rgba(138,91,98,.10);
+  --visual-chip-music-border: rgba(138,91,98,.35);
+  --visual-chip-sound-fg: #726C88;
+  --visual-chip-sound-bg: rgba(114,108,136,.10);
+  --visual-chip-sound-border: rgba(114,108,136,.35);
+  --visual-chip-flow-fg: #5E5B56;
+  --visual-chip-flow-bg: rgba(154,123,79,.10);
+  --visual-chip-flow-border: rgba(154,123,79,.38);
   /* 审阅卡片用色（保持浅色书卷感，暗色覆盖） */
   --review-card-bg: #ffffff;
   --review-opinion-bg: #fff7f0;
@@ -83,6 +108,31 @@ body.dark {
   --cyan: #6fb4c5;
   --cyan-soft: rgba(111,180,197,.16);
   --danger: #e35a4e;
+  /* 暗色背景加深至约 20%，前景提高亮度以保持可读性。 */
+  --visual-chip-read-fg: #9CC9AD;
+  --visual-chip-read-bg: rgba(79,123,98,.20);
+  --visual-chip-read-border: rgba(156,201,173,.48);
+  --visual-chip-write-fg: #91D0C9;
+  --visual-chip-write-bg: rgba(63,127,122,.20);
+  --visual-chip-write-border: rgba(145,208,201,.48);
+  --visual-chip-option-fg: #9FC4E6;
+  --visual-chip-option-bg: rgba(82,122,158,.20);
+  --visual-chip-option-border: rgba(159,196,230,.48);
+  --visual-chip-background-fg: #D2B59B;
+  --visual-chip-background-bg: rgba(139,111,87,.20);
+  --visual-chip-background-border: rgba(210,181,155,.48);
+  --visual-chip-item-fg: #D5B783;
+  --visual-chip-item-bg: rgba(148,115,72,.20);
+  --visual-chip-item-border: rgba(213,183,131,.48);
+  --visual-chip-music-fg: #D6AAB0;
+  --visual-chip-music-bg: rgba(138,91,98,.20);
+  --visual-chip-music-border: rgba(214,170,176,.48);
+  --visual-chip-sound-fg: #B8B2D1;
+  --visual-chip-sound-bg: rgba(114,108,136,.20);
+  --visual-chip-sound-border: rgba(184,178,209,.48);
+  --visual-chip-flow-fg: #D4CCBD;
+  --visual-chip-flow-bg: rgba(154,123,79,.20);
+  --visual-chip-flow-border: rgba(212,204,189,.48);
   /* 审阅卡片暗色适配 */
   --review-card-bg: var(--bg);
   --review-opinion-bg: rgba(217,105,78,.16);
@@ -363,14 +413,21 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 .story-visual-node { color: inherit; }
 .story-visual-node-text { outline: none; }
 .story-visual-state-token {
-  display: inline; color: inherit; border-bottom: 1px dotted var(--border-strong);
+  display: inline; padding: 0 3px; border: 1px solid; border-radius: 3px;
   cursor: text; white-space: pre-wrap;
 }
-.story-visual-node-option_group { display: block; width: 100%; padding: 0 0 0 12px; border: 0; border-left: 2px solid var(--border); background: transparent; color: inherit; font: inherit; line-height: inherit; text-align: left; cursor: pointer; }
+.story-visual-state-token-read { color: var(--visual-chip-read-fg); background: var(--visual-chip-read-bg); border-color: var(--visual-chip-read-border); }
+.story-visual-node-option_group { display: block; width: 100%; padding: 0 0 0 12px; border: 0; border-left: 2px solid var(--visual-chip-option-border); background: var(--visual-chip-option-bg); color: var(--visual-chip-option-fg); font: inherit; line-height: inherit; text-align: left; cursor: pointer; }
 .story-visual-node-state_change {
-  display: block; padding: 0; border: 0; background: transparent; color: inherit;
+  display: block; padding: 0 6px; border: 1px solid var(--visual-chip-write-border); border-radius: 3px; background: var(--visual-chip-write-bg); color: var(--visual-chip-write-fg);
   font: inherit; line-height: inherit; text-align: left; cursor: pointer;
 }
+.story-visual-chip { display: inline-flex; align-items: center; padding: 0 6px; border: 1px solid; border-radius: 3px; box-shadow: none; font: inherit; line-height: inherit; cursor: pointer; }
+.story-visual-chip-background { color: var(--visual-chip-background-fg); background: var(--visual-chip-background-bg); border-color: var(--visual-chip-background-border); }
+.story-visual-chip-item { color: var(--visual-chip-item-fg); background: var(--visual-chip-item-bg); border-color: var(--visual-chip-item-border); }
+.story-visual-chip-music { color: var(--visual-chip-music-fg); background: var(--visual-chip-music-bg); border-color: var(--visual-chip-music-border); }
+.story-visual-chip-sound { color: var(--visual-chip-sound-fg); background: var(--visual-chip-sound-bg); border-color: var(--visual-chip-sound-border); }
+.story-visual-chip-flow { color: var(--visual-chip-flow-fg); background: var(--visual-chip-flow-bg); border-color: var(--visual-chip-flow-border); }
 .story-visual-node-source_error { color: var(--danger); text-decoration: underline wavy currentColor; text-underline-offset: 3px; }
 .story-visual-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .story-visual-edit-button { opacity: .4; }
@@ -1928,7 +1985,6 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
   <symbol id="ic-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
   <symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9h11a5 5 0 0 1 0 10h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="ic-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 9H9a5 5 0 0 0 0 10h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-  <symbol id="ic-split" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="4" x2="12" y2="20" stroke="currentColor" stroke-width="2"/></symbol>
   <symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
   <symbol id="ic-type" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="9" y1="20" x2="15" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="4" x2="12" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
   <symbol id="ic-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
@@ -1989,7 +2045,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.72-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.73-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -2025,11 +2081,11 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
             <button id="editor-mode-visual" type="button">可视化编辑</button>
             <button id="editor-mode-source" type="button">源码模式</button>
           </span>
+          <button id="visual-insert-menu" class="mini-btn" type="button" hidden>插入</button>
           <button id="btn-undo" class="icon-btn" title="撤销 (Ctrl+Z)" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-undo"/></svg></button>
           <button id="btn-redo" class="icon-btn" title="重做 (Ctrl+Y)" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-redo"/></svg></button>
         </span>
         <span class="col-head-right">
-          <button id="btn-split" class="mini-btn" title="左写右渲分屏预览" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-split"/></svg>分屏</button>
           <button id="btn-bbcode-preview" class="mini-btn" title="切换 BBCode 预览模式" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>预览</button>
           <button id="btn-bbcode-toggle" class="mini-btn" title="显示/隐藏文字工具栏"><svg class="ico" aria-hidden="true"><use href="#ic-type"/></svg>文字工具</button>
           <button id="btn-ai-quick" class="mini-btn" title="AI 编剧：点击展开 AI 菜单（含全文助理、续写、扩写、润色等）" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-sparkles"/></svg>AI</button>
@@ -4225,6 +4281,30 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     return lines;
   }
 
+  function describeCommand(raw) {
+    var text = String(raw == null ? '' : raw);
+    var match = /^<([^:\s<>]+)(?::\s*([\s\S]*?)\s*)?>$/.exec(text);
+    if (!match) return null;
+    var name = match[1], value = match[2] == null ? '' : match[2];
+    var category = null;
+    if (name === '召唤背景' && match[2] != null) category = 'background';
+    else if (((name === '召唤物品' || name === '召唤叠层') && match[2] != null) || name === '清除叠层') category = 'item';
+    else if ((name === '召唤音乐' && match[2] != null) || name === '停止音乐') category = 'music';
+    else if (name === '召唤音效' && match[2] != null) category = 'sound';
+    else if ((name === '标题' && match[2] != null)
+      || name === '停顿' || name === '分割线'
+      || ((name === '剧情块' || name === '对话块') && match[2] != null)
+      || name === '跳回' || name === '跳回重选'
+      || ((name === '随机跳转' || name === '随机句子') && match[2] != null)) category = 'flow';
+    if (!category) return null;
+    return {
+      name: name,
+      value: value,
+      category: category,
+      summary: name + (value ? '：' + value : '')
+    };
+  }
+
   function scan(source) {
     var text = String(source == null ? '' : source);
     var StoryOptions = dependency('StoryOptions', './story-options.js');
@@ -4261,7 +4341,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       while ((match = re.exec(fragment)) !== null) {
         var tagStart = start + match.index, tagEnd = tagStart + match[0].length;
         if (tagStart > cursor) push('text', cursor, tagStart);
-        push('raw_command', tagStart, tagEnd, { command: match[0] });
+        var command = describeCommand(match[0]);
+        push(command ? 'command_chip' : 'raw_command', tagStart, tagEnd, command || { command: match[0] });
         cursor = tagEnd;
       }
       if (cursor < end) push('text', cursor, end);
@@ -4432,6 +4513,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
 
   var VisualDoc = {
     scan: scan,
+    describeCommand: describeCommand,
     serializeUnchanged: serializeUnchanged,
     replaceNode: replaceNode,
     removeNode: removeNode,
@@ -4626,7 +4708,18 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     if (!node) return null;
     if (node.kind === 'text') return describeText(node, states);
     if (node.kind === 'state_change') return describeStateChange(node);
+    if (node.kind === 'command_chip') {
+      var command = node.data || {};
+      return { kind: 'command_chip', category: command.category, summary: command.summary, editable: true };
+    }
     return { kind: node.kind, raw: node.raw, editable: false };
+  }
+
+  function insertAtVisualSelection(source, selection, text) {
+    var value = String(source == null ? '' : source);
+    var offset = Number(selection);
+    var at = Number.isFinite(offset) ? Math.max(0, Math.min(offset, value.length)) : value.length;
+    return value.slice(0, at) + String(text == null ? '' : text) + value.slice(at);
   }
 
   function appendTextParts(element, descriptor) {
@@ -4636,7 +4729,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
         return;
       }
       var token = document.createElement('span');
-      token.className = 'story-visual-state-token';
+      token.className = 'story-visual-state-token story-visual-state-token-read';
       token.contentEditable = 'false';
       token.dataset.source = part.source;
       token.dataset.name = part.name;
@@ -4846,6 +4939,16 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
         element.addEventListener('click', function () {
           if (options && options.onEditState) options.onEditState(node);
         });
+      } else if (node.kind === 'command_chip') {
+        element = document.createElement('button');
+        element.type = 'button';
+        element.className = 'story-visual-chip story-visual-chip-' + descriptor.category;
+        element.dataset.start = String(node.start);
+        element.dataset.end = String(node.end);
+        element.textContent = descriptor.summary;
+        element.addEventListener('click', function () {
+          if (options && options.onEditCommand) options.onEditCommand(node);
+        });
       } else if (node.kind === 'option_group') {
         element = document.createElement('button');
         element.type = 'button';
@@ -4893,6 +4996,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     var isCommitting = false;
     var editingOption = null;
     var sourceBeforeOptionEdit = null;
+    var lastTextOffset = null;
+    var insertMenu = typeof document !== 'undefined' ? document.getElementById('visual-insert-menu') : null;
+    var insertPopover = typeof document !== 'undefined' ? document.getElementById('visual-insert-popover') : null;
 
     function commitTextNode(node, replacement) {
       if (isCommitting || !node || replacement === node.raw) return;
@@ -4938,11 +5044,15 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
         }
       });
     }
+    function editCommand(node) {
+      if (typeof options.onEditCommand === 'function') options.onEditCommand(node);
+    }
     var renderOptions = {
       getStates: options.getStates,
       commitTextNode: commitTextNode,
       onEditState: editState,
-      onEditOption: editOption
+      onEditOption: editOption,
+      onEditCommand: editCommand
     };
 
     function refresh() {
@@ -4957,6 +5067,18 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       if (!currentDocument || !sourceTextarea) return;
       var VisualDoc = getVisualDoc();
       lastNode = VisualDoc && VisualDoc.findNodeAtOffset(currentDocument, sourceTextarea.selectionStart);
+      lastTextOffset = lastNode && lastNode.kind === 'text' ? sourceTextarea.selectionStart : null;
+    }
+    function insert(text) {
+      var source = String(getSource() == null ? '' : getSource());
+      var offset = Number(lastTextOffset);
+      var at = Number.isFinite(offset) ? Math.max(0, Math.min(offset, source.length)) : source.length;
+      var value = String(text == null ? '' : text);
+      var next = insertAtVisualSelection(source, at, value);
+      options.setSource(next);
+      lastTextOffset = at + value.length;
+      refresh();
+      return next;
     }
     function showVisual() {
       commitFocusedEditor();
@@ -4965,12 +5087,18 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       mode = 'visual';
       if (sourceWrap) sourceWrap.hidden = true;
       if (visualHost) visualHost.hidden = false;
+      if (insertMenu) insertMenu.hidden = false;
     }
     function showSource() {
       commitFocusedEditor();
       mode = 'source';
       if (visualHost) visualHost.hidden = true;
       if (sourceWrap) sourceWrap.hidden = false;
+      if (insertMenu) insertMenu.hidden = true;
+      if (insertPopover) {
+        insertPopover.hidden = true;
+        insertPopover.classList.add('hidden');
+      }
       if (sourceTextarea) {
         var position = lastNode ? lastNode.start : sourceTextarea.selectionStart;
         position = Math.max(0, Math.min(position, sourceTextarea.value.length));
@@ -4982,6 +5110,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       showVisual: showVisual,
       showSource: showSource,
       refresh: refresh,
+      insert: insert,
       commitFocusedEditor: function () {
         var active = typeof document !== 'undefined' && document.activeElement;
         if (active && active.matches && active.matches('.story-visual-node-text[contenteditable="true"]')) active.blur();
@@ -4995,6 +5124,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     createController: createController,
     renderDocument: renderDocument,
     describeNode: describeNode,
+    insertAtVisualSelection: insertAtVisualSelection,
     sourceFromTextEditor: sourceFromTextEditor,
     createEmptyOption: createEmptyOption,
     validateOptionDraft: validateOptionDraft,
@@ -9556,6 +9686,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   const editorBody = $('#editor-body') || storyText.parentElement;
   const lnGutter = $('#ln-gutter');
   const editorTextWrap = $('#editor-text-wrap');
+  const storyVisualEditor = $('#story-visual-editor');
   let lnTimer = null, lastLnCount = -1;
   const libPanel = $('#lib-panel');
   // 横竖屏判定（与 CSS body.portrait / @media 对齐）：竖屏=点按添加，横屏=拖动添加。
@@ -9564,7 +9695,6 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   function isPortraitNow() { return window.innerHeight > window.innerWidth; }
   function isLandscapeNow() { return !isPortraitNow(); }
   let previewMode = false;
-  let splitMode = false;
   let visualController = null;
   const EDITOR_MODE_KEY = 'storyeditor:editor-mode';
   let pendingEffectTag = null; // 特效按钮用的临时标签名
@@ -9811,35 +9941,33 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   }
 
   // ============ BBCode 预览 ============
-  // 布局：编辑态 / 全屏预览态 / 分屏态（左写右渲）
-  // previewMode 由「预览」按钮或按住右 Ctrl 控制；splitMode 由「分屏」按钮控制
-  function applyLayout() {
-    const showText = !previewMode || splitMode;
-    const showPreview = previewMode || splitMode;
-    storyText.classList.toggle('hidden', !showText);
-    storyPreview.classList.toggle('hidden', !showPreview);
-    editorBody.classList.toggle('split', splitMode);
-    editorTextWrap.classList.toggle('hidden', !showText);
-    if (showText) buildLineNumbers();
-    if (showPreview) renderPreview();
-    // 仅「全屏预览且无分屏」时锁定编辑按钮
-    const lockEdit = previewMode && !splitMode;
-    $('#btn-undo').disabled = lockEdit;
-    $('#btn-redo').disabled = lockEdit;
+  // 预览独占正文区域；关闭后恢复用户当前的源码/可视化编辑模式。
+  function updatePreviewLayout() {
+    editorTextWrap.hidden = previewMode;
+    storyVisualEditor.hidden = previewMode;
+    storyPreview.hidden = !previewMode;
+    if (!previewMode && visualController) {
+      if (visualController.getMode() === 'visual') visualController.showVisual();
+      else visualController.showSource();
+    }
+    if (!previewMode) buildLineNumbers();
+    if (previewMode) renderPreview();
+    $('#btn-undo').disabled = previewMode;
+    $('#btn-redo').disabled = previewMode;
     const pvBtn = $('#btn-bbcode-preview');
-    if (previewMode && !splitMode) { pvBtn.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg> 编辑'; pvBtn.title = '切换回纯文本编辑模式'; }
+    if (previewMode) { pvBtn.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg> 编辑'; pvBtn.title = '切换回编辑模式'; }
     else { pvBtn.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg> 预览'; pvBtn.title = '切换 BBCode 预览模式'; }
-    if (showText && !splitMode) storyText.focus();
+    if (!previewMode && (!visualController || visualController.getMode() === 'source')) storyText.focus();
   }
   function setPreviewMode(on) {
     on = !!on;
-    if (on === previewMode) { if (on || splitMode) renderPreview(); return; }
+    if (on === previewMode) { if (on) renderPreview(); return; }
     previewMode = on;
-    applyLayout();
+    updatePreviewLayout();
   }
   function togglePreview() { setPreviewMode(!previewMode); }
   function renderPreview() {
-    if (!previewMode && !splitMode) return;
+    if (!previewMode) return;
     // 每次都从 textarea 读取最新内容
     const currentText = storyText.value;
     const lines = currentText.split(/\r?\n/);
@@ -9917,10 +10045,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     // 顺序标注行号（与 textarea 行号 1:1 对应），供「光标行对齐」使用
     const pvLines = storyPreview.querySelectorAll('.pv-line');
     pvLines.forEach((el, i) => el.setAttribute('data-ln', String(i + 1)));
-    // 分屏态 / 全屏预览态（含按住右 Ctrl 预览）：渲染后把预览滚动定位到当前编辑光标所在行
-    if (splitMode || previewMode) withScrollLock(revealPreviewCursorLine);
-    // 点击预览区：仅「全屏预览（非分屏）」时用——跳回编辑并定位到点击的脚本行；
-    // 分屏模式不移动左侧编辑器（右预览左编辑同屏，点击预览不应让左侧跳到不可预料位置）
+    revealPreviewCursorLine();
+    // 点击预览区：跳回编辑并定位到点击的脚本行。
     storyPreview.onclick = function(e) {
       // 取点击的预览行号；pv-line 的 data-ln 已 1:1 对应编辑器行号
       const pvLineEl = e.target.closest ? e.target.closest('.pv-line') : null;
@@ -9934,17 +10060,11 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
         lineNo = Math.floor(y / lineH) + 1;
       }
       if (!lineNo) return;
-      if (splitMode) {
-        // 分屏态：把左侧编辑器光标同步到该行并滚动可见（不切换预览/编辑模式）
-        withScrollLock(() => { gotoLine(lineNo); revealPreviewCursorLine(); });
-      } else {
-        togglePreview();
-        gotoLine(lineNo);
-      }
+      togglePreview();
+      gotoLine(lineNo);
     };
-    // 预览模式下按任意键（非修饰键）回到编辑模式；分屏模式不做（右预览左编辑同屏）
+    // 预览模式下按任意键（非修饰键）回到编辑模式。
     storyPreview.onkeydown = function(e) {
-      if (splitMode) return;
       if (e.key === 'Escape' || (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1)) {
         e.preventDefault();
         togglePreview();
@@ -9953,22 +10073,14 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     };
     storyPreview.setAttribute('tabindex', '0');
   }
-  // ---- 分屏滚动同步：让预览位置跟随编辑器 ----
-  // 三种同步：编辑器拖滚动条→预览按比例跟随；预览拖滚动条→编辑器按比例跟随；
-  //           编辑时光标所在行→预览自动滚动到可见。用锁防止双向触发死循环。
-  let _scrollLock = false;
-  function withScrollLock(fn) {
-    _scrollLock = true;
-    try { fn(); } finally { requestAnimationFrame(() => { _scrollLock = false; }); }
-  }
   function caretLine() {
     const v = storyText.value;
     const pos = storyText.selectionStart;
     return v.slice(0, pos).split('\n').length; // 1-based 行号
   }
-  // 编辑光标所在行 → 在预览区滚动到居中可见，并打上浅浅的行标记（分屏态与全屏预览态都生效）
+  // 编辑光标所在行 → 在预览区滚动到居中可见，并打上浅浅的行标记。
   function revealPreviewCursorLine() {
-    if (!splitMode && !previewMode) return;
+    if (!previewMode) return;
     const ln = caretLine();
     // 先清除所有行标记，再给当前行加（pv-line 在重渲染后会被重建，因此每次重设即可）
     const all = storyPreview.querySelectorAll('.pv-line');
@@ -9981,24 +10093,6 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     const er = el.getBoundingClientRect();
     const desired = cont.scrollTop + (er.top - cr.top) - (cr.height - er.height) / 2;
     cont.scrollTop = Math.max(0, Math.min(desired, cont.scrollHeight - cont.clientHeight));
-  }
-  // 编辑器滚动 → 预览按比例跟随
-  function syncScrollToPreview() {
-    if (_scrollLock || !splitMode) return;
-    const st = storyText, pv = storyPreview;
-    const stMax = st.scrollHeight - st.clientHeight;
-    const pvMax = pv.scrollHeight - pv.clientHeight;
-    if (stMax <= 0 || pvMax <= 0) { withScrollLock(() => { pv.scrollTop = 0; }); return; }
-    withScrollLock(() => { pv.scrollTop = (st.scrollTop / stMax) * pvMax; });
-  }
-  // 预览滚动 → 编辑器按比例跟随
-  function syncScrollToEditor() {
-    if (_scrollLock || !splitMode) return;
-    const st = storyText, pv = storyPreview;
-    const stMax = st.scrollHeight - st.clientHeight;
-    const pvMax = pv.scrollHeight - pv.clientHeight;
-    if (stMax <= 0 || pvMax <= 0) { withScrollLock(() => { st.scrollTop = 0; }); return; }
-    withScrollLock(() => { st.scrollTop = (pv.scrollTop / pvMax) * stMax; });
   }
   // 在 HTML 中渲染 BBCode（b/i/u/s/color/size/center/br）
   function renderBBCode(s) {
@@ -10066,6 +10160,42 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       setUiPreference: (key, value) => window.Storage.setUiPreference(key, value),
       onDiagnostic: () => {}
     });
+    const insertMenu = $('#visual-insert-menu');
+    const insertPopover = $('#visual-insert-popover');
+    const visualInsertItems = [
+      { label: '剧情状态', text: '<变量:变量名=值>' },
+      { label: '选项', text: '<选项:"">' },
+      { label: '背景', text: '<召唤背景:名称>' },
+      { label: '物品', text: '<召唤物品:名称,"">' },
+      { label: '音乐', text: '<召唤音乐:名称>' },
+      { label: '音效', text: '<召唤音效:名称>' },
+      { label: '标题', text: '<标题:标题>' },
+      { label: '停顿', text: '<停顿>' },
+      { label: '分割线', text: '<分割线>' },
+      { label: '剧情块', text: '<剧情块:名称>' },
+      { label: '跳回', text: '<跳回>' },
+      { label: '随机跳转', text: '<随机跳转:块A,块B>' }
+    ];
+    if (insertMenu && insertPopover) {
+      insertMenu.addEventListener('click', function (event) {
+        event.stopPropagation();
+        const opening = insertPopover.hidden;
+        insertPopover.hidden = !opening;
+        insertPopover.classList.toggle('hidden', !opening);
+        if (!opening) return;
+        insertPopover.innerHTML = '';
+        visualInsertItems.forEach(function (item) {
+          const button = document.createElement('button');
+          button.type = 'button'; button.textContent = item.label;
+          button.addEventListener('click', function () {
+            insertVisualOrSource(item.text);
+            insertPopover.hidden = true;
+            insertPopover.classList.add('hidden');
+          });
+          insertPopover.appendChild(button);
+        });
+      });
+    }
     function setMode(next) {
       if (next === 'visual') visualController.showVisual();
       else visualController.showSource();
@@ -10164,7 +10294,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     const ta = storyText;
     if (navigator.clipboard && navigator.clipboard.readText) {
       navigator.clipboard.readText().then(function (text) {
-        if (text) { insertAtCursor(text); toast('已粘贴'); }
+        if (text) { insertVisualOrSource(text); toast('已粘贴'); }
         else toast('剪贴板为空');
       }).catch(function (err) { toast('粘贴失败（浏览器限制了剪贴板读取）：' + (err && err.message ? err.message : err)); });
     } else {
@@ -10222,7 +10352,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     }
     const summonText = function () {
       const wasRO = storyText.readOnly; storyText.readOnly = false;
-      try { const s = summonTextForCard(ds); insertAtCursor(s); toast('已插入：' + s); }
+      try { const s = summonTextForCard(ds); insertVisualOrSource(s); toast('已插入：' + s); }
       finally { storyText.readOnly = wasRO; }
     };
     if (card.classList.contains('stop-music-card')) {
@@ -11198,8 +11328,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       scheduleSave();
       hideCompileBar(); // 用户已动手修改，旧红字条失效
       updateErrorHighlights([]); // 清除错误高亮
-      // 分屏/预览态下实时刷新右栏
-      if (splitMode || previewMode) { clearTimeout(pvTimer); pvTimer = setTimeout(renderPreview, 200); }
+      if (previewMode) { clearTimeout(pvTimer); pvTimer = setTimeout(renderPreview, 200); }
       scheduleOutline(); // 导航栏随注释变化实时刷新
       updateWordCount(); // 右下角字数统计实时刷新
       refreshClueHint(); // 正文变化后检查是否需提示更新线索
@@ -11207,8 +11336,6 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       clearTimeout(histTimer);
       histTimer = setTimeout(pushHistory, 500);
     });
-    // 分屏滚动同步：编辑器滚动/光标移动 → 预览跟随
-    storyText.addEventListener('scroll', syncScrollToPreview);
     // 行号槽：输入（防抖重建行数）+ 滚动同步 + 网页字体加载/窗口尺寸变化后重算行高
     storyText.addEventListener('input', scheduleLineNumbers);
     storyText.addEventListener('scroll', syncGutterScroll);
@@ -11231,9 +11358,6 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       });
     })();
     buildLineNumbers();
-    storyText.addEventListener('click', () => { if (splitMode) withScrollLock(revealPreviewCursorLine); });
-    storyText.addEventListener('keyup', () => { if (splitMode) withScrollLock(revealPreviewCursorLine); });
-    storyPreview.addEventListener('scroll', syncScrollToEditor);
     storyText.addEventListener('keydown', (e) => {
       // 仅「文本框聚焦时」拦截 Tab：在下方插入一行 <停顿>
       if (e.key === 'Tab' && !e.shiftKey) {
@@ -11268,19 +11392,6 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     $('#btn-undo').addEventListener('click', undo);
     $('#btn-redo').addEventListener('click', redo);
         $('#btn-bbcode-preview').addEventListener('click', togglePreview);
-        $('#btn-split').addEventListener('click', () => {
-          splitMode = !splitMode;
-          const btn = $('#btn-split');
-          btn.classList.toggle('active', splitMode);
-          btn.textContent = splitMode ? '▣ 退出分屏' : '▥ 分屏';
-          btn.title = splitMode ? '退出分屏预览' : '左写右渲分屏预览';
-          // 与「审阅」面板互斥：进入分屏时关闭审阅列，避免三重栏挤压正文显示区
-          if (splitMode) {
-            const rc = $('#review-col');
-            if (rc && !rc.classList.contains('hidden')) rc.classList.add('hidden');
-          }
-          applyLayout();
-        });
 
         // 左侧导航：折叠 / 展开（折叠后不占正文编辑器空间）
         const outlineCol = $('#outline-col');
@@ -11423,17 +11534,6 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       const col = $('#review-col');
       if (col) col.classList.toggle('hidden');
       renderReviewPanel();
-      // 与「分屏」互斥：打开审阅列时强制退出分屏，避免三重栏挤压正文显示区
-      if (col && !col.classList.contains('hidden') && splitMode) {
-        splitMode = false;
-        const sb = $('#btn-split');
-        if (sb) {
-          sb.classList.remove('active');
-          sb.textContent = '▥ 分屏';
-          sb.title = '左写右渲分屏预览';
-        }
-        applyLayout();
-      }
     });
 
     // 编译检查红字条按钮
@@ -11959,6 +12059,10 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
 
   // 在光标处插入文本（自动补换行，保持每行为一个单元）
   // caretFromEnd：插入后光标从末尾往前回退的字符数（用于把光标停在某个占位符中间）
+  function insertVisualOrSource(text) {
+    if (visualController && visualController.getMode() === 'visual') return visualController.insert(text);
+    return insertAtCursor(text);
+  }
   function insertAtCursor(str, caretFromEnd) {
     const ta = storyText;
     const st = ta.scrollTop;
@@ -12683,7 +12787,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
         if (!v.name) return;
         const wasRO = storyText.readOnly; storyText.readOnly = false;
         const ph = (v.type === 'boolean') ? '{' + v.name + ':是|否}' : '{' + v.name + '}';
-        insertAtCursor(ph);
+        insertVisualOrSource(ph);
         const pos = storyText.selectionStart;
         const at = pos - ph.length;
         openVarPopover(v.name, v.type, { start: at, end: pos }, isOptionLineAt(at) ? lineCtxAt(at) : null);
@@ -13122,7 +13226,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     if (visualController && visualController.getMode() === 'visual') visualController.refresh();
   }
   // 在光标处插入「进入剧情块」指令
-  function insertBlockJump(name) { insertAtCursor('<剧情块:' + name + '>'); }
+  function insertBlockJump(name) { insertVisualOrSource('<剧情块:' + name + '>'); }
   // 在光标处（或指定字符偏移）插入「选项」指令，并把光标选中占位文字「文字」，方便直接覆盖
   function insertBlockOption(name, offset) {
     const ta = storyText; const st = ta.scrollTop;
@@ -13289,7 +13393,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     stop.draggable = true;
     stop.innerHTML = '<div class="asset-meta"><div class="asset-name"><svg class="ico" aria-hidden="true"><use href="#ic-stop"/></svg> 清除叠层</div>'
       + '<div class="asset-sub">插入 &lt;清除叠层&gt; 指令（移除当前叠层角色，回到纯背景）</div></div>';
-    stop.addEventListener('click', () => insertAtCursor('<清除叠层>'));
+    stop.addEventListener('click', () => insertVisualOrSource('<清除叠层>'));
     stop.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('application/x-asset', JSON.stringify({ kind: 'clearoverlay', name: '__CLEAR__' }));
       e.dataTransfer.effectAllowed = 'copy';
@@ -13667,7 +13771,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       card.draggable = true;
       card.innerHTML = '<div class="asset-meta"><div class="asset-name"><svg class="ico" aria-hidden="true"><use href="#ic-stop"/></svg> 停止音乐</div>'
         + '<div class="asset-sub">插入 &lt;停止音乐&gt; 指令（3 秒内渐出当前音乐）</div></div>';
-      card.addEventListener('click', () => insertAtCursor('<停止音乐>'));
+      card.addEventListener('click', () => insertVisualOrSource('<停止音乐>'));
       card.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('application/x-asset', JSON.stringify({ kind: 'stopmusic', name: '__STOP__' }));
         e.dataTransfer.effectAllowed = 'copy';
@@ -13788,14 +13892,16 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       try {
         if (info.kind === 'item') {
           const str = '<召唤物品:' + info.name + ',"">';
-          if (imeLock && pendingInsertOffset != null) insertAtOffset(str, pendingInsertOffset, 2);
-          else insertAtCursor(str, 2);
+          if (visualController && visualController.getMode() === 'visual') insertVisualOrSource(str);
+          else if (imeLock && pendingInsertOffset != null) insertAtOffset(str, pendingInsertOffset, 2);
+          else insertVisualOrSource(str);
           toast('已插入：<召唤物品:' + info.name + '>');
         } else {
           const cn = KIND_TO_CN[info.kind] || info.kind;
           const str = '<召唤' + cn + ':' + info.name + '>';
-          if (imeLock && pendingInsertOffset != null) insertAtOffset(str, pendingInsertOffset, 0);
-          else insertAtCursor(str);
+          if (visualController && visualController.getMode() === 'visual') insertVisualOrSource(str);
+          else if (imeLock && pendingInsertOffset != null) insertAtOffset(str, pendingInsertOffset, 0);
+          else insertVisualOrSource(str);
           toast('已插入：<召唤' + cn + ':' + info.name + '>');
         }
       } finally {
@@ -15819,7 +15925,7 @@ self.onmessage = function (e) {
       el.title = '跳到第 ' + it.line + ' 行';
       el.addEventListener('click', () => {
         // 纯预览态下先切回编辑态，再定位
-        if (previewMode && !splitMode) setPreviewMode(false);
+        if (previewMode) setPreviewMode(false);
         gotoLine(it.line);
         // 竖屏浮动面板：点选某块后自动缩回
         if (document.body.classList.contains('portrait')) outlineCol.classList.remove('portrait-open');
@@ -15850,7 +15956,7 @@ self.onmessage = function (e) {
         + (hasLine ? '<span class="cissue-jump" aria-hidden="true"><svg class="ico"><use href="#ic-corner-up-left"/></svg></span>' : '');
       if (hasLine) {
         div.addEventListener('click', () => {
-          if (previewMode && !splitMode) setPreviewMode(false); // 确保在纯文本编辑视图里能看到这行
+          if (previewMode) setPreviewMode(false); // 确保在编辑视图里能看到这行
           gotoLine(it.line);
         });
       }
@@ -18146,6 +18252,7 @@ self.onmessage = function (e) {
 
 <!-- 编辑器列头 🤖 快捷菜单 -->
 <div id="ai-quick-menu" class="ai-quick-menu hidden"></div>
+<div id="visual-insert-popover" class="ai-quick-menu hidden" hidden></div>
 
 <!-- AI 生成结果审阅窗 -->
 <div id="ai-review-modal" class="modal hidden">

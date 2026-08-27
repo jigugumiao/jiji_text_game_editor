@@ -4,6 +4,9 @@ const path = require('node:path');
 
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const docs = fs.readFileSync(path.join(root, 'docs.html'), 'utf8');
+const visualUiSource = fs.readFileSync(path.join(root, 'js', 'story-visual-ui.js'), 'utf8');
+const editorSource = fs.readFileSync(path.join(root, 'js', 'editor.js'), 'utf8');
 
 assert.match(html, /<button id="editor-mode-visual" type="button">可视化编辑<\/button>/,
   '编辑器必须提供可视化编辑模式切换');
@@ -13,6 +16,18 @@ assert.match(html, /<div id="story-visual-editor" class="story-visual-editor" hi
   '编辑器必须提供独立的可视化编辑器宿主');
 assert.match(html, /id="project-convert-modal"/, '旧项目转换必须使用共用转换弹窗');
 assert.match(html, /js\/project-converter\.js/, '转换器必须在编辑器前加载');
+
+['五分钟快速入门', '金币与商店', '好感度与分支', '钥匙状态', '玩家姓名', '多条件路线', '高级源码参考', '旧项目转换'].forEach((heading) => {
+  assert.match(docs, new RegExp('<h3[^>]*>[^<]*' + heading), `文档必须提供「${heading}」章节`);
+});
+assert.match(docs, /10 金币买钥匙/, '文档首个剧情状态示例必须展示 10 金币买钥匙');
+assert.doesNotMatch(docs.match(/<h3 id="adv-var"[\s\S]*?<h3 id="adv-clue"/)[0].slice(0, 500), /\{\}|&&/, '剧情状态章节开头不得以源码符号引导');
+assert.match(visualUiSource, /story-visual-context-tip/, '可视化编辑器必须渲染非阻塞上下文提示');
+assert.match(visualUiSource, /first-option/, '首次编辑选项必须触发提示');
+assert.match(visualUiSource, /first-condition/, '首次添加条件必须触发提示');
+assert.match(visualUiSource, /first-effect/, '首次添加效果必须触发提示');
+assert.match(editorSource, /getUiPreference/, '提示已读状态必须通过命名空间 UI 偏好读取');
+assert.match(editorSource, /setUiPreference/, '提示已读状态必须通过命名空间 UI 偏好保存');
 
 const StoryVisualUI = require(path.join(root, 'js', 'story-visual-ui.js'));
 ['createController', 'renderDocument', 'describeNode', 'commitFocusedEditor', 'destroy'].forEach((name) => {

@@ -519,6 +519,8 @@
       setSource: (next) => { storyText.value = next; commitEdit(); },
       getStates: () => window.Storage.getVars(),
       getBlocks: () => window.Storage.listBlockNames(),
+      getUiPreference: (key) => window.Storage.getUiPreference(key),
+      setUiPreference: (key, value) => window.Storage.setUiPreference(key, value),
       onDiagnostic: () => {}
     });
     function setMode(next) {

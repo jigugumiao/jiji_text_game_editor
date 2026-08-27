@@ -227,6 +227,26 @@
     return element;
   }
 
+  function renderContextualTip(form, context) {
+    var key = context && context.tipKey;
+    if (!key || !context.getUiPreference || !context.setUiPreference) return;
+    var preferenceKey = 'visual-story-tip-dismissed:' + key;
+    if (context.getUiPreference(preferenceKey)) return;
+    var messages = {
+      'first-option': '选项决定玩家能去哪里：先写按钮文字和目标剧情块，其他内容可以慢慢补。',
+      'first-condition': '条件决定这个选项何时出现。先从一条简单的「不少于」或「为真」开始。',
+      'first-effect': '剧情状态变化会在玩家点击选项后发生，例如扣金币、拿到钥匙或提高好感度。'
+    };
+    if (!messages[key]) return;
+    var tip = document.createElement('div');
+    tip.className = 'story-visual-context-tip';
+    var text = document.createElement('span'); text.textContent = messages[key];
+    var close = document.createElement('button'); close.type = 'button'; close.className = 'story-visual-context-tip-close'; close.textContent = '知道了';
+    close.addEventListener('click', function () { context.setUiPreference(preferenceKey, '1'); tip.remove(); });
+    tip.append(text, close);
+    form.appendChild(tip);
+  }
+
   function renderOptionEditor(host, node, initialDraft, context) {
     var states = context.getStates ? context.getStates() : [], types = stateTypes(states);
     var blocks = context.getBlocks ? context.getBlocks() : [];
@@ -237,6 +257,7 @@
     form.className = 'story-visual-option-form';
     form.noValidate = true;
     var title = document.createElement('div'); title.className = 'story-visual-form-title'; title.textContent = '编辑选项'; form.appendChild(title);
+    renderContextualTip(form, context);
     var error = document.createElement('div'); error.className = 'story-visual-form-error'; error.hidden = true; form.appendChild(error);
     if (readOnly) { error.textContent = '此选项包含无法识别的高级字段，请在源码模式编辑'; error.hidden = false; }
     function field(label, input) { var line = document.createElement('label'); line.className = 'story-visual-form-field'; line.append(document.createTextNode(label), input); form.appendChild(line); return input; }
@@ -291,7 +312,7 @@
         summary.textContent = SVForSummary.summarizeCondition(conditionAst, types); conditionArea.appendChild(summary);
       }
     }
-    else if (!readOnly) { var addCondition = document.createElement('button'); addCondition.type = 'button'; addCondition.textContent = '添加条件'; addCondition.addEventListener('click', function () { draft.condition = { mode: 'all', rows: [] }; rerender(); }); conditionArea.appendChild(addCondition); }
+    else if (!readOnly) { var addCondition = document.createElement('button'); addCondition.type = 'button'; addCondition.textContent = '添加条件'; addCondition.addEventListener('click', function () { draft.condition = { mode: 'all', rows: [] }; context.tipKey = 'first-condition'; rerender(); }); conditionArea.appendChild(addCondition); }
     effectsArea.appendChild(rowLabel('变量变化'));
     draft.effects.forEach(function (effect, index) {
       var line = document.createElement('div'); line.className = 'story-visual-effect-row';
@@ -304,7 +325,7 @@
       if (!readOnly) { var remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '删除'; remove.addEventListener('click', function () { draft.effects.splice(index, 1); rerender(); }); line.appendChild(remove); }
       effectsArea.appendChild(line);
     });
-    if (!readOnly) { var addEffect = document.createElement('button'); addEffect.type = 'button'; addEffect.textContent = '添加变量变化'; addEffect.addEventListener('click', function () { draft.effects.push({ name: Object.keys(types)[0] || '', op: '=', value: '' }); rerender(); }); effectsArea.appendChild(addEffect); }
+    if (!readOnly) { var addEffect = document.createElement('button'); addEffect.type = 'button'; addEffect.textContent = '添加剧情状态变化'; addEffect.addEventListener('click', function () { draft.effects.push({ name: Object.keys(types)[0] || '', op: '=', value: '' }); context.tipKey = 'first-effect'; rerender(); }); effectsArea.appendChild(addEffect); }
     var actions = document.createElement('div'); actions.className = 'story-visual-form-actions';
     var cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '取消'; cancel.addEventListener('click', context.close); actions.appendChild(cancel);
     var submit = document.createElement('button'); submit.type = 'submit'; submit.textContent = '完成'; submit.disabled = readOnly; actions.appendChild(submit); form.appendChild(actions);
@@ -433,6 +454,9 @@
       renderOptionEditor(visualHost, node, optionDraftFromOption(node.data.option, options.getStates ? options.getStates() : null), {
         getStates: options.getStates,
         getBlocks: options.getBlocks,
+        tipKey: 'first-option',
+        getUiPreference: options.getUiPreference,
+        setUiPreference: options.setUiPreference,
         close: function () { editingOption = null; sourceBeforeOptionEdit = null; refresh(); },
         restore: function () { if (sourceBeforeOptionEdit != null) options.setSource(sourceBeforeOptionEdit); },
         commit: function (replacement) {

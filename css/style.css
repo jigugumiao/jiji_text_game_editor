@@ -369,6 +369,9 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 }
 .story-visual-option-form { max-width: 680px; padding: 20px 26px; font: inherit; line-height: 1.6; }
 .story-visual-form-title, .story-visual-form-label { font-weight: 600; }
+.story-visual-context-tip { display: flex; align-items: baseline; gap: 10px; margin: 7px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); color: var(--text-2); font-size: 13px; }
+.story-visual-context-tip span { flex: 1; }
+.story-visual-context-tip-close { flex: 0 0 auto; padding: 0 !important; border: 0 !important; color: var(--text-2) !important; text-decoration: underline; }
 .story-visual-form-field { display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 10px; align-items: center; margin: 8px 0; }
 .story-visual-form-field input, .story-visual-form-field select { min-width: 0; padding: 4px 6px; font: inherit; }
 .story-visual-condition-area, .story-visual-effects-area { margin: 16px 0; }

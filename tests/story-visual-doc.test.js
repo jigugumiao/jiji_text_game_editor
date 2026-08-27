@@ -47,6 +47,37 @@ const VisualDoc = require('../js/story-visual-doc.js');
   assert.equal(VisualDoc.summarizeDiagnostics(doc).length, 0);
 }
 
+// Complete built-in visual and flow commands become individually editable
+// chips, while unknown angle-bracket text remains an untouched raw command.
+{
+  const source = '<召唤背景:村口><召唤物品:宝箱,"打开宝箱"><召唤叠层:主角><召唤音乐:主题曲><停止音乐><召唤音效:开门><清除叠层><标题:第一章><停顿:2000><分割线:转场><剧情块:战斗><对话块:旧块><跳回><跳回重选><随机跳转:甲=2,乙><随机句子:"是","否"=3><未知:保持原样>';
+  const doc = VisualDoc.scan(source);
+  const chips = doc.nodes.filter(n => n.kind === 'command_chip');
+  assert.equal(chips.length, 16);
+  assert.deepEqual(chips.map(n => n.data.category), [
+    'background', 'item', 'item', 'music', 'music', 'sound', 'item',
+    'flow', 'flow', 'flow', 'flow', 'flow', 'flow', 'flow', 'flow', 'flow'
+  ]);
+  assert.deepEqual(chips.map(n => n.data.name), [
+    '召唤背景', '召唤物品', '召唤叠层', '召唤音乐', '停止音乐', '召唤音效', '清除叠层',
+    '标题', '停顿', '分割线', '剧情块', '对话块', '跳回', '跳回重选', '随机跳转', '随机句子'
+  ]);
+  assert.equal(chips[0].data.value, '村口');
+  assert.equal(chips[1].data.value, '宝箱,"打开宝箱"');
+  assert.equal(chips[8].data.value, '2000');
+  assert.equal(chips[12].data.value, '');
+  assert.equal(chips[0].data.summary, '召唤背景：村口');
+  assert.ok(doc.nodes.some(n => n.kind === 'raw_command' && n.raw === '<未知:保持原样>'));
+  assert.equal(VisualDoc.serializeUnchanged(doc), source);
+}
+
+{
+  assert.deepEqual(VisualDoc.describeCommand('<停止音乐>'), {
+    name: '停止音乐', value: '', category: 'music', summary: '停止音乐'
+  });
+  assert.equal(VisualDoc.describeCommand('<变量:金币+1>'), null);
+}
+
 {
   const source = '<选项:"未闭合\n';
   const doc = VisualDoc.scan(source);

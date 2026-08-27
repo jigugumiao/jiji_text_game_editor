@@ -20,6 +20,30 @@
     return lines;
   }
 
+  function describeCommand(raw) {
+    var text = String(raw == null ? '' : raw);
+    var match = /^<([^:\s<>]+)(?::\s*([\s\S]*?)\s*)?>$/.exec(text);
+    if (!match) return null;
+    var name = match[1], value = match[2] == null ? '' : match[2];
+    var category = null;
+    if (name === '召唤背景' && match[2] != null) category = 'background';
+    else if (((name === '召唤物品' || name === '召唤叠层') && match[2] != null) || name === '清除叠层') category = 'item';
+    else if ((name === '召唤音乐' && match[2] != null) || name === '停止音乐') category = 'music';
+    else if (name === '召唤音效' && match[2] != null) category = 'sound';
+    else if ((name === '标题' && match[2] != null)
+      || name === '停顿' || name === '分割线'
+      || ((name === '剧情块' || name === '对话块') && match[2] != null)
+      || name === '跳回' || name === '跳回重选'
+      || ((name === '随机跳转' || name === '随机句子') && match[2] != null)) category = 'flow';
+    if (!category) return null;
+    return {
+      name: name,
+      value: value,
+      category: category,
+      summary: name + (value ? '：' + value : '')
+    };
+  }
+
   function scan(source) {
     var text = String(source == null ? '' : source);
     var StoryOptions = dependency('StoryOptions', './story-options.js');
@@ -56,7 +80,8 @@
       while ((match = re.exec(fragment)) !== null) {
         var tagStart = start + match.index, tagEnd = tagStart + match[0].length;
         if (tagStart > cursor) push('text', cursor, tagStart);
-        push('raw_command', tagStart, tagEnd, { command: match[0] });
+        var command = describeCommand(match[0]);
+        push(command ? 'command_chip' : 'raw_command', tagStart, tagEnd, command || { command: match[0] });
         cursor = tagEnd;
       }
       if (cursor < end) push('text', cursor, end);
@@ -227,6 +252,7 @@
 
   var VisualDoc = {
     scan: scan,
+    describeCommand: describeCommand,
     serializeUnchanged: serializeUnchanged,
     replaceNode: replaceNode,
     removeNode: removeNode,

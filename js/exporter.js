@@ -461,10 +461,10 @@ const ITEM_VIEWER_WRAP = String.raw`<!DOCTYPE html>
 <div id="viewer"></div>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
-</script>
+${'</scr' + 'ipt>'}
 <script type="module">
 __VIEWER_SCRIPT__
-</script>
+${'</scr' + 'ipt>'}
 </body>
 </html>
 `;
@@ -2495,7 +2495,7 @@ __STORY_DATA__
     scrollToBottom();
   });
 })();
-</script>
+${'</scr' + 'ipt>'}
 </body>
 </html>
 `;

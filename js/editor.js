@@ -1407,6 +1407,9 @@
     refreshReviewToggleBadge();
     refreshBlockReviewLine();
     ftResetSession(); // 全文助理对话按工程隔离：切工程时重置内存态，下次开面板从本工程 key 重新加载
+    // 项目切换时先清理上一个旧项目留下的提示；否则转换成功后打开
+    // 新项目，旧提示仍挂在编辑器顶部，造成“已转换却仍提示”的错觉。
+    document.querySelectorAll('.project-conversion-hint').forEach(function (hint) { hint.remove(); });
     const project = window.Storage.listProjects().find(p => p.id === id);
     if (project && project.mode !== 'article' && !project.visualEditorVersion) showOldProjectConversionHint(project);
   }

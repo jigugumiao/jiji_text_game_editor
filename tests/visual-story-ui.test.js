@@ -30,6 +30,8 @@ assert.match(visualUiSource, /first-condition/, '首次添加条件必须触发�
 assert.match(visualUiSource, /first-effect/, '首次添加效果必须触发提示');
 assert.match(editorSource, /getUiPreference/, '提示已读状态必须通过命名空间 UI 偏好读取');
 assert.match(editorSource, /setUiPreference/, '提示已读状态必须通过命名空间 UI 偏好保存');
+assert.match(editorSource, /document\.querySelectorAll\('\.project-conversion-hint'\)\.forEach/,
+  '切换到转换后的项目时必须清理旧项目遗留的转换提示');
 assert.match(storageSource, /if \(m === 'game'\) project\.visualEditorVersion = 1;/,
   '新建剧情游戏必须默认标记为可视化项目，不能进入旧项目转换流程');
 assert.match(styleSource, /\.editor-text-wrap\[hidden\], \.story-visual-editor\[hidden\] \{ display: none !important; \}/,

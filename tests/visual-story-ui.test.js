@@ -103,6 +103,17 @@ assert.equal(StoryVisualUI.insertAtVisualSelection('甲乙', 1, '丙'), '甲丙�
 assert.equal(StoryVisualUI.insertAtVisualSelection('甲乙', -1, '丙'), '丙甲乙', '插入位置不得越过源码开头');
 assert.equal(StoryVisualUI.insertAtVisualSelection('甲乙', 99, '丙'), '甲乙丙', '插入位置不得越过源码结尾');
 assert.match(html, /id="visual-insert-menu"/, '可视化模式必须有插入菜单');
+assert.doesNotMatch(html, /id="btn-split"/, '工具栏不应再提供分屏按钮');
+assert.doesNotMatch(editorSource, /splitMode/, '编辑器不应保留分屏状态分支');
+assert.match(editorSource, /function insertVisualOrSource\(text\)/, '编辑器必须提供视觉/源码统一插入入口');
+assert.match(editorSource, /visualController\.insert\(text\)/, '视觉模式插入必须委托给可视化控制器');
+assert.match(editorSource, /insertVisualOrSource\('<清除叠层>'\)/, '叠层库功能卡必须走统一插入入口');
+assert.match(editorSource, /insertVisualOrSource\('<停止音乐>'\)/, '音乐库功能卡必须走统一插入入口');
+assert.match(editorSource, /insertVisualOrSource\(ph\)/, '状态库插入正文必须走统一插入入口');
+assert.match(editorSource, /function updatePreviewLayout\(\)[\s\S]*?editorTextWrap\.hidden = previewMode[\s\S]*?storyVisualEditor\.hidden = previewMode[\s\S]*?storyPreview\.hidden = !previewMode/, '预览必须独占编辑器主体并隐藏两种编辑器');
+['剧情状态', '选项', '背景', '物品', '音乐', '音效', '标题', '停顿', '分割线', '剧情块', '跳回', '随机跳转'].forEach((label) => {
+  assert.match(editorSource, new RegExp("label: '" + label), '视觉插入菜单必须提供「' + label + '」');
+});
 
 assert.deepEqual(
   StoryVisualUI.describeNode({ kind: 'text', raw: '获得 {金币}，门{拿到钥匙:已打开|仍锁着}，{{金币}}。' }, { 金币: 'number', 拿到钥匙: 'boolean' }),

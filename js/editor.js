@@ -13,6 +13,7 @@
   const editorBody = $('#editor-body') || storyText.parentElement;
   const lnGutter = $('#ln-gutter');
   const editorTextWrap = $('#editor-text-wrap');
+  const storyVisualEditor = $('#story-visual-editor');
   let lnTimer = null, lastLnCount = -1;
   const libPanel = $('#lib-panel');
   // 横竖屏判定（与 CSS body.portrait / @media 对齐）：竖屏=点按添加，横屏=拖动添加。
@@ -21,7 +22,6 @@
   function isPortraitNow() { return window.innerHeight > window.innerWidth; }
   function isLandscapeNow() { return !isPortraitNow(); }
   let previewMode = false;
-  let splitMode = false;
   let visualController = null;
   const EDITOR_MODE_KEY = 'storyeditor:editor-mode';
   let pendingEffectTag = null; // 特效按钮用的临时标签名
@@ -268,35 +268,33 @@
   }
 
   // ============ BBCode 预览 ============
-  // 布局：编辑态 / 全屏预览态 / 分屏态（左写右渲）
-  // previewMode 由「预览」按钮或按住右 Ctrl 控制；splitMode 由「分屏」按钮控制
-  function applyLayout() {
-    const showText = !previewMode || splitMode;
-    const showPreview = previewMode || splitMode;
-    storyText.classList.toggle('hidden', !showText);
-    storyPreview.classList.toggle('hidden', !showPreview);
-    editorBody.classList.toggle('split', splitMode);
-    editorTextWrap.classList.toggle('hidden', !showText);
-    if (showText) buildLineNumbers();
-    if (showPreview) renderPreview();
-    // 仅「全屏预览且无分屏」时锁定编辑按钮
-    const lockEdit = previewMode && !splitMode;
-    $('#btn-undo').disabled = lockEdit;
-    $('#btn-redo').disabled = lockEdit;
+  // 预览独占正文区域；关闭后恢复用户当前的源码/可视化编辑模式。
+  function updatePreviewLayout() {
+    editorTextWrap.hidden = previewMode;
+    storyVisualEditor.hidden = previewMode;
+    storyPreview.hidden = !previewMode;
+    if (!previewMode && visualController) {
+      if (visualController.getMode() === 'visual') visualController.showVisual();
+      else visualController.showSource();
+    }
+    if (!previewMode) buildLineNumbers();
+    if (previewMode) renderPreview();
+    $('#btn-undo').disabled = previewMode;
+    $('#btn-redo').disabled = previewMode;
     const pvBtn = $('#btn-bbcode-preview');
-    if (previewMode && !splitMode) { pvBtn.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg> 编辑'; pvBtn.title = '切换回纯文本编辑模式'; }
+    if (previewMode) { pvBtn.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg> 编辑'; pvBtn.title = '切换回编辑模式'; }
     else { pvBtn.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg> 预览'; pvBtn.title = '切换 BBCode 预览模式'; }
-    if (showText && !splitMode) storyText.focus();
+    if (!previewMode && (!visualController || visualController.getMode() === 'source')) storyText.focus();
   }
   function setPreviewMode(on) {
     on = !!on;
-    if (on === previewMode) { if (on || splitMode) renderPreview(); return; }
+    if (on === previewMode) { if (on) renderPreview(); return; }
     previewMode = on;
-    applyLayout();
+    updatePreviewLayout();
   }
   function togglePreview() { setPreviewMode(!previewMode); }
   function renderPreview() {
-    if (!previewMode && !splitMode) return;
+    if (!previewMode) return;
     // 每次都从 textarea 读取最新内容
     const currentText = storyText.value;
     const lines = currentText.split(/\r?\n/);
@@ -374,10 +372,8 @@
     // 顺序标注行号（与 textarea 行号 1:1 对应），供「光标行对齐」使用
     const pvLines = storyPreview.querySelectorAll('.pv-line');
     pvLines.forEach((el, i) => el.setAttribute('data-ln', String(i + 1)));
-    // 分屏态 / 全屏预览态（含按住右 Ctrl 预览）：渲染后把预览滚动定位到当前编辑光标所在行
-    if (splitMode || previewMode) withScrollLock(revealPreviewCursorLine);
-    // 点击预览区：仅「全屏预览（非分屏）」时用——跳回编辑并定位到点击的脚本行；
-    // 分屏模式不移动左侧编辑器（右预览左编辑同屏，点击预览不应让左侧跳到不可预料位置）
+    revealPreviewCursorLine();
+    // 点击预览区：跳回编辑并定位到点击的脚本行。
     storyPreview.onclick = function(e) {
       // 取点击的预览行号；pv-line 的 data-ln 已 1:1 对应编辑器行号
       const pvLineEl = e.target.closest ? e.target.closest('.pv-line') : null;
@@ -391,17 +387,11 @@
         lineNo = Math.floor(y / lineH) + 1;
       }
       if (!lineNo) return;
-      if (splitMode) {
-        // 分屏态：把左侧编辑器光标同步到该行并滚动可见（不切换预览/编辑模式）
-        withScrollLock(() => { gotoLine(lineNo); revealPreviewCursorLine(); });
-      } else {
-        togglePreview();
-        gotoLine(lineNo);
-      }
+      togglePreview();
+      gotoLine(lineNo);
     };
-    // 预览模式下按任意键（非修饰键）回到编辑模式；分屏模式不做（右预览左编辑同屏）
+    // 预览模式下按任意键（非修饰键）回到编辑模式。
     storyPreview.onkeydown = function(e) {
-      if (splitMode) return;
       if (e.key === 'Escape' || (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1)) {
         e.preventDefault();
         togglePreview();
@@ -410,22 +400,14 @@
     };
     storyPreview.setAttribute('tabindex', '0');
   }
-  // ---- 分屏滚动同步：让预览位置跟随编辑器 ----
-  // 三种同步：编辑器拖滚动条→预览按比例跟随；预览拖滚动条→编辑器按比例跟随；
-  //           编辑时光标所在行→预览自动滚动到可见。用锁防止双向触发死循环。
-  let _scrollLock = false;
-  function withScrollLock(fn) {
-    _scrollLock = true;
-    try { fn(); } finally { requestAnimationFrame(() => { _scrollLock = false; }); }
-  }
   function caretLine() {
     const v = storyText.value;
     const pos = storyText.selectionStart;
     return v.slice(0, pos).split('\n').length; // 1-based 行号
   }
-  // 编辑光标所在行 → 在预览区滚动到居中可见，并打上浅浅的行标记（分屏态与全屏预览态都生效）
+  // 编辑光标所在行 → 在预览区滚动到居中可见，并打上浅浅的行标记。
   function revealPreviewCursorLine() {
-    if (!splitMode && !previewMode) return;
+    if (!previewMode) return;
     const ln = caretLine();
     // 先清除所有行标记，再给当前行加（pv-line 在重渲染后会被重建，因此每次重设即可）
     const all = storyPreview.querySelectorAll('.pv-line');
@@ -438,24 +420,6 @@
     const er = el.getBoundingClientRect();
     const desired = cont.scrollTop + (er.top - cr.top) - (cr.height - er.height) / 2;
     cont.scrollTop = Math.max(0, Math.min(desired, cont.scrollHeight - cont.clientHeight));
-  }
-  // 编辑器滚动 → 预览按比例跟随
-  function syncScrollToPreview() {
-    if (_scrollLock || !splitMode) return;
-    const st = storyText, pv = storyPreview;
-    const stMax = st.scrollHeight - st.clientHeight;
-    const pvMax = pv.scrollHeight - pv.clientHeight;
-    if (stMax <= 0 || pvMax <= 0) { withScrollLock(() => { pv.scrollTop = 0; }); return; }
-    withScrollLock(() => { pv.scrollTop = (st.scrollTop / stMax) * pvMax; });
-  }
-  // 预览滚动 → 编辑器按比例跟随
-  function syncScrollToEditor() {
-    if (_scrollLock || !splitMode) return;
-    const st = storyText, pv = storyPreview;
-    const stMax = st.scrollHeight - st.clientHeight;
-    const pvMax = pv.scrollHeight - pv.clientHeight;
-    if (stMax <= 0 || pvMax <= 0) { withScrollLock(() => { st.scrollTop = 0; }); return; }
-    withScrollLock(() => { st.scrollTop = (pv.scrollTop / pvMax) * stMax; });
   }
   // 在 HTML 中渲染 BBCode（b/i/u/s/color/size/center/br）
   function renderBBCode(s) {
@@ -523,6 +487,42 @@
       setUiPreference: (key, value) => window.Storage.setUiPreference(key, value),
       onDiagnostic: () => {}
     });
+    const insertMenu = $('#visual-insert-menu');
+    const insertPopover = $('#visual-insert-popover');
+    const visualInsertItems = [
+      { label: '剧情状态', text: '<变量:变量名=值>' },
+      { label: '选项', text: '<选项:"">' },
+      { label: '背景', text: '<召唤背景:名称>' },
+      { label: '物品', text: '<召唤物品:名称,"">' },
+      { label: '音乐', text: '<召唤音乐:名称>' },
+      { label: '音效', text: '<召唤音效:名称>' },
+      { label: '标题', text: '<标题:标题>' },
+      { label: '停顿', text: '<停顿>' },
+      { label: '分割线', text: '<分割线>' },
+      { label: '剧情块', text: '<剧情块:名称>' },
+      { label: '跳回', text: '<跳回>' },
+      { label: '随机跳转', text: '<随机跳转:块A,块B>' }
+    ];
+    if (insertMenu && insertPopover) {
+      insertMenu.addEventListener('click', function (event) {
+        event.stopPropagation();
+        const opening = insertPopover.hidden;
+        insertPopover.hidden = !opening;
+        insertPopover.classList.toggle('hidden', !opening);
+        if (!opening) return;
+        insertPopover.innerHTML = '';
+        visualInsertItems.forEach(function (item) {
+          const button = document.createElement('button');
+          button.type = 'button'; button.textContent = item.label;
+          button.addEventListener('click', function () {
+            insertVisualOrSource(item.text);
+            insertPopover.hidden = true;
+            insertPopover.classList.add('hidden');
+          });
+          insertPopover.appendChild(button);
+        });
+      });
+    }
     function setMode(next) {
       if (next === 'visual') visualController.showVisual();
       else visualController.showSource();
@@ -621,7 +621,7 @@
     const ta = storyText;
     if (navigator.clipboard && navigator.clipboard.readText) {
       navigator.clipboard.readText().then(function (text) {
-        if (text) { insertAtCursor(text); toast('已粘贴'); }
+        if (text) { insertVisualOrSource(text); toast('已粘贴'); }
         else toast('剪贴板为空');
       }).catch(function (err) { toast('粘贴失败（浏览器限制了剪贴板读取）：' + (err && err.message ? err.message : err)); });
     } else {
@@ -679,7 +679,7 @@
     }
     const summonText = function () {
       const wasRO = storyText.readOnly; storyText.readOnly = false;
-      try { const s = summonTextForCard(ds); insertAtCursor(s); toast('已插入：' + s); }
+      try { const s = summonTextForCard(ds); insertVisualOrSource(s); toast('已插入：' + s); }
       finally { storyText.readOnly = wasRO; }
     };
     if (card.classList.contains('stop-music-card')) {
@@ -1655,8 +1655,7 @@
       scheduleSave();
       hideCompileBar(); // 用户已动手修改，旧红字条失效
       updateErrorHighlights([]); // 清除错误高亮
-      // 分屏/预览态下实时刷新右栏
-      if (splitMode || previewMode) { clearTimeout(pvTimer); pvTimer = setTimeout(renderPreview, 200); }
+      if (previewMode) { clearTimeout(pvTimer); pvTimer = setTimeout(renderPreview, 200); }
       scheduleOutline(); // 导航栏随注释变化实时刷新
       updateWordCount(); // 右下角字数统计实时刷新
       refreshClueHint(); // 正文变化后检查是否需提示更新线索
@@ -1664,8 +1663,6 @@
       clearTimeout(histTimer);
       histTimer = setTimeout(pushHistory, 500);
     });
-    // 分屏滚动同步：编辑器滚动/光标移动 → 预览跟随
-    storyText.addEventListener('scroll', syncScrollToPreview);
     // 行号槽：输入（防抖重建行数）+ 滚动同步 + 网页字体加载/窗口尺寸变化后重算行高
     storyText.addEventListener('input', scheduleLineNumbers);
     storyText.addEventListener('scroll', syncGutterScroll);
@@ -1688,9 +1685,6 @@
       });
     })();
     buildLineNumbers();
-    storyText.addEventListener('click', () => { if (splitMode) withScrollLock(revealPreviewCursorLine); });
-    storyText.addEventListener('keyup', () => { if (splitMode) withScrollLock(revealPreviewCursorLine); });
-    storyPreview.addEventListener('scroll', syncScrollToEditor);
     storyText.addEventListener('keydown', (e) => {
       // 仅「文本框聚焦时」拦截 Tab：在下方插入一行 <停顿>
       if (e.key === 'Tab' && !e.shiftKey) {
@@ -1725,19 +1719,6 @@
     $('#btn-undo').addEventListener('click', undo);
     $('#btn-redo').addEventListener('click', redo);
         $('#btn-bbcode-preview').addEventListener('click', togglePreview);
-        $('#btn-split').addEventListener('click', () => {
-          splitMode = !splitMode;
-          const btn = $('#btn-split');
-          btn.classList.toggle('active', splitMode);
-          btn.textContent = splitMode ? '▣ 退出分屏' : '▥ 分屏';
-          btn.title = splitMode ? '退出分屏预览' : '左写右渲分屏预览';
-          // 与「审阅」面板互斥：进入分屏时关闭审阅列，避免三重栏挤压正文显示区
-          if (splitMode) {
-            const rc = $('#review-col');
-            if (rc && !rc.classList.contains('hidden')) rc.classList.add('hidden');
-          }
-          applyLayout();
-        });
 
         // 左侧导航：折叠 / 展开（折叠后不占正文编辑器空间）
         const outlineCol = $('#outline-col');
@@ -1880,17 +1861,6 @@
       const col = $('#review-col');
       if (col) col.classList.toggle('hidden');
       renderReviewPanel();
-      // 与「分屏」互斥：打开审阅列时强制退出分屏，避免三重栏挤压正文显示区
-      if (col && !col.classList.contains('hidden') && splitMode) {
-        splitMode = false;
-        const sb = $('#btn-split');
-        if (sb) {
-          sb.classList.remove('active');
-          sb.textContent = '▥ 分屏';
-          sb.title = '左写右渲分屏预览';
-        }
-        applyLayout();
-      }
     });
 
     // 编译检查红字条按钮
@@ -2416,6 +2386,10 @@
 
   // 在光标处插入文本（自动补换行，保持每行为一个单元）
   // caretFromEnd：插入后光标从末尾往前回退的字符数（用于把光标停在某个占位符中间）
+  function insertVisualOrSource(text) {
+    if (visualController && visualController.getMode() === 'visual') return visualController.insert(text);
+    return insertAtCursor(text);
+  }
   function insertAtCursor(str, caretFromEnd) {
     const ta = storyText;
     const st = ta.scrollTop;
@@ -3140,7 +3114,7 @@
         if (!v.name) return;
         const wasRO = storyText.readOnly; storyText.readOnly = false;
         const ph = (v.type === 'boolean') ? '{' + v.name + ':是|否}' : '{' + v.name + '}';
-        insertAtCursor(ph);
+        insertVisualOrSource(ph);
         const pos = storyText.selectionStart;
         const at = pos - ph.length;
         openVarPopover(v.name, v.type, { start: at, end: pos }, isOptionLineAt(at) ? lineCtxAt(at) : null);
@@ -3579,7 +3553,7 @@
     if (visualController && visualController.getMode() === 'visual') visualController.refresh();
   }
   // 在光标处插入「进入剧情块」指令
-  function insertBlockJump(name) { insertAtCursor('<剧情块:' + name + '>'); }
+  function insertBlockJump(name) { insertVisualOrSource('<剧情块:' + name + '>'); }
   // 在光标处（或指定字符偏移）插入「选项」指令，并把光标选中占位文字「文字」，方便直接覆盖
   function insertBlockOption(name, offset) {
     const ta = storyText; const st = ta.scrollTop;
@@ -3746,7 +3720,7 @@
     stop.draggable = true;
     stop.innerHTML = '<div class="asset-meta"><div class="asset-name"><svg class="ico" aria-hidden="true"><use href="#ic-stop"/></svg> 清除叠层</div>'
       + '<div class="asset-sub">插入 &lt;清除叠层&gt; 指令（移除当前叠层角色，回到纯背景）</div></div>';
-    stop.addEventListener('click', () => insertAtCursor('<清除叠层>'));
+    stop.addEventListener('click', () => insertVisualOrSource('<清除叠层>'));
     stop.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('application/x-asset', JSON.stringify({ kind: 'clearoverlay', name: '__CLEAR__' }));
       e.dataTransfer.effectAllowed = 'copy';
@@ -4124,7 +4098,7 @@
       card.draggable = true;
       card.innerHTML = '<div class="asset-meta"><div class="asset-name"><svg class="ico" aria-hidden="true"><use href="#ic-stop"/></svg> 停止音乐</div>'
         + '<div class="asset-sub">插入 &lt;停止音乐&gt; 指令（3 秒内渐出当前音乐）</div></div>';
-      card.addEventListener('click', () => insertAtCursor('<停止音乐>'));
+      card.addEventListener('click', () => insertVisualOrSource('<停止音乐>'));
       card.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('application/x-asset', JSON.stringify({ kind: 'stopmusic', name: '__STOP__' }));
         e.dataTransfer.effectAllowed = 'copy';
@@ -4245,14 +4219,16 @@
       try {
         if (info.kind === 'item') {
           const str = '<召唤物品:' + info.name + ',"">';
-          if (imeLock && pendingInsertOffset != null) insertAtOffset(str, pendingInsertOffset, 2);
-          else insertAtCursor(str, 2);
+          if (visualController && visualController.getMode() === 'visual') insertVisualOrSource(str);
+          else if (imeLock && pendingInsertOffset != null) insertAtOffset(str, pendingInsertOffset, 2);
+          else insertVisualOrSource(str);
           toast('已插入：<召唤物品:' + info.name + '>');
         } else {
           const cn = KIND_TO_CN[info.kind] || info.kind;
           const str = '<召唤' + cn + ':' + info.name + '>';
-          if (imeLock && pendingInsertOffset != null) insertAtOffset(str, pendingInsertOffset, 0);
-          else insertAtCursor(str);
+          if (visualController && visualController.getMode() === 'visual') insertVisualOrSource(str);
+          else if (imeLock && pendingInsertOffset != null) insertAtOffset(str, pendingInsertOffset, 0);
+          else insertVisualOrSource(str);
           toast('已插入：<召唤' + cn + ':' + info.name + '>');
         }
       } finally {
@@ -6276,7 +6252,7 @@ self.onmessage = function (e) {
       el.title = '跳到第 ' + it.line + ' 行';
       el.addEventListener('click', () => {
         // 纯预览态下先切回编辑态，再定位
-        if (previewMode && !splitMode) setPreviewMode(false);
+        if (previewMode) setPreviewMode(false);
         gotoLine(it.line);
         // 竖屏浮动面板：点选某块后自动缩回
         if (document.body.classList.contains('portrait')) outlineCol.classList.remove('portrait-open');
@@ -6307,7 +6283,7 @@ self.onmessage = function (e) {
         + (hasLine ? '<span class="cissue-jump" aria-hidden="true"><svg class="ico"><use href="#ic-corner-up-left"/></svg></span>' : '');
       if (hasLine) {
         div.addEventListener('click', () => {
-          if (previewMode && !splitMode) setPreviewMode(false); // 确保在纯文本编辑视图里能看到这行
+          if (previewMode) setPreviewMode(false); // 确保在编辑视图里能看到这行
           gotoLine(it.line);
         });
       }

@@ -23,6 +23,8 @@ assert.match(html, /js\/project-converter\.js/, '转换器必须在编辑器前�
   assert.match(docs, new RegExp('<h3[^>]*>[^<]*' + heading), `文档必须提供「${heading}」章节`);
 });
 assert.match(docs, /10 金币买钥匙/, '文档首个剧情状态示例必须展示 10 金币买钥匙');
+assert.match(docs, /条件变化:/, '文档必须说明选项的条件变量变化语法');
+assert.match(docs, /点击选项前的变量状态/, '文档必须说明条件变量变化使用点击前状态判断');
 assert.doesNotMatch(docs.match(/<h3 id="adv-var"[\s\S]*?<h3 id="adv-clue"/)[0].slice(0, 500), /\{\}|&&/, '剧情状态章节开头不得以源码符号引导');
 assert.match(visualUiSource, /story-visual-context-tip/, '可视化编辑器必须渲染非阻塞上下文提示');
 assert.match(visualUiSource, /first-option/, '首次编辑选项必须触发提示');

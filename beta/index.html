@@ -2119,7 +2119,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.86-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.87-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -3420,6 +3420,15 @@ function saveVars(arr) {
   try { localStorage.setItem(_varsKey(), JSON.stringify(arr || [])); } catch (e) { console.error('保存变量失败', e); }
 }
 function getVars() { return loadVars(); }
+// Always derive a library mutation from the latest persisted array. Variable
+// row handlers can outlive earlier edits, so writing their render-time snapshot
+// would silently restore values changed by another row.
+function updateVars(updater) {
+  const current = loadVars();
+  const next = updater(current);
+  saveVars(Array.isArray(next) ? next : current);
+  return Array.isArray(next) ? next : current;
+}
 function getVarNames() {
   return new Set(loadVars().map(v => (v.name || '').trim()).filter(Boolean));
 }
@@ -3430,7 +3439,7 @@ const Storage = {
   importSceneBundle, importSceneBundleFile, saveStory, loadStory, saveStoryText, loadStoryText,
   saveMeta, loadMeta, uid,
   // 变量库
-  loadVars, saveVars, getVars, getVarNames,
+  loadVars, saveVars, getVars, updateVars, getVarNames,
   // 剧情块 API
   MAIN_BLOCK, loadBlocks, saveBlocks, getBlockText, setBlockText, addBlock, renameBlock, deleteBlock, listBlockNames, hasBlocksData,
   // 项目 API
@@ -13467,7 +13476,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       });
       const name = document.createElement('input'); name.className = 'var-name'; name.value = v.name; name.placeholder = '变量名';
       name.onchange = () => {
-        const oldName = vars[idx].name;
+        const currentVars = window.Storage.getVars();
+        const oldName = currentVars[idx].name;
         const nm = name.value.trim();
         clearStateRowError(row);
         if (!nm) {
@@ -13483,12 +13493,12 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
         }
         if (nm === oldName) return; // 没改
         // 同名冲突：变量名全局唯一，重名会把引用指错
-        if (window.Storage.getVars().some((v2, i2) => i2 !== idx && v2.name === nm)) {
+        if (currentVars.some((v2, i2) => i2 !== idx && v2.name === nm)) {
           showStateRowError(row, '已存在同名变量「' + nm + '」。');
           name.focus();
           return;
         }
-        const nextVars = vars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { name: nm } : {}));
+        const nextVars = currentVars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { name: nm } : {}));
         const result = renameVarEverywhere(oldName, nm, nextVars);
         if (!result.ok) {
           showStateRowError(row, result.error);
@@ -13506,14 +13516,16 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       type.onchange = () => {
         clearStateRowError(row);
         const nextType = type.value;
-        const index = window.StoryVisualDoc.buildStateReferenceIndex(collectStateBlockMap(), vars);
-        const conflicts = window.StoryVisualDoc.findIncompatibleStateReferences(index, v.name, nextType);
+        const currentVars = window.Storage.getVars();
+        const currentVar = currentVars[idx];
+        const index = window.StoryVisualDoc.buildStateReferenceIndex(collectStateBlockMap(), currentVars);
+        const conflicts = window.StoryVisualDoc.findIncompatibleStateReferences(index, currentVar.name, nextType);
         if (conflicts.length) {
           type.value = v.type;
           showStateRowError(row, '不能改为「' + ({ number: '数字', boolean: '是 / 否', text: '文字' }[nextType]) + '」：' + formatStateReferences(conflicts));
           return;
         }
-        const nextVars = vars.map((item, itemIdx) => {
+        const nextVars = currentVars.map((item, itemIdx) => {
           if (itemIdx !== idx) return Object.assign({}, item);
           const next = Object.assign({}, item, { type: type.value });
           if (next.type === 'boolean') next.value = (next.value === true || next.value === 'true');
@@ -13532,8 +13544,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
             const o = document.createElement('option'); o.value = val; o.textContent = lab; if (String(v.value) === val) o.selected = true; s.appendChild(o);
           });
           s.onchange = () => {
-            const nextVars = vars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { value: s.value === 'true' } : {}));
-            window.Storage.saveVars(nextVars); refreshTodo();
+            window.Storage.updateVars(current => current.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { value: s.value === 'true' } : {})));
+            refreshTodo();
           };
           valWrap.appendChild(s);
         } else {
@@ -13548,8 +13560,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
               return;
             }
             const value = v.type === 'number' ? Number(inp.value) : inp.value;
-            const nextVars = vars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { value: value } : {}));
-            window.Storage.saveVars(nextVars); refreshTodo();
+            window.Storage.updateVars(current => current.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { value: value } : {})));
+            refreshTodo();
           };
           valWrap.appendChild(inp);
         }
@@ -13559,14 +13571,16 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       del.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-trash"/></svg>';
       del.onclick = () => {
         clearStateRowError(row);
-        const index = window.StoryVisualDoc.buildStateReferenceIndex(collectStateBlockMap(), vars);
-        const refs = index.byName[v.name] || [];
+        const currentVars = window.Storage.getVars();
+        const currentVar = currentVars[idx];
+        const index = window.StoryVisualDoc.buildStateReferenceIndex(collectStateBlockMap(), currentVars);
+        const refs = index.byName[currentVar.name] || [];
         if (refs.length) {
           showStateRowError(row, '变量正在被引用，不能删除：' + formatStateReferences(refs));
           return;
         }
-        const nextVars = vars.filter((_, itemIdx) => itemIdx !== idx);
-        window.Storage.saveVars(nextVars); renderVariableList(list); refreshTodo();
+        window.Storage.updateVars(current => current.filter((_, itemIdx) => itemIdx !== idx));
+        renderVariableList(list); refreshTodo();
       };
       row.appendChild(handle); row.appendChild(name); row.appendChild(type); row.appendChild(valWrap); row.appendChild(del);
       list.appendChild(row);
@@ -19149,7 +19163,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.86</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.87</span></div>
         </div>
       </div>
     </div>

@@ -250,6 +250,27 @@
     return refs.filter(function (ref) { return ref.requiredType && ref.requiredType !== nextType; });
   }
 
+  // A row edit may repair only one of several pre-existing project errors.
+  // Return the errors introduced by this edit so unrelated legacy errors do
+  // not deadlock independent state rows while they are being declared.
+  function findIntroducedStateIssues(beforeIssues, afterIssues) {
+    function key(issue) {
+      issue = issue || {};
+      return [issue.kind, issue.severity, issue.block, issue.line, issue.name, issue.raw, issue.message]
+        .map(function (part) { return part == null ? '' : String(part); }).join('\u001f');
+    }
+    var remaining = {};
+    (beforeIssues || []).forEach(function (issue) {
+      var issueKey = key(issue);
+      remaining[issueKey] = (remaining[issueKey] || 0) + 1;
+    });
+    return (afterIssues || []).filter(function (issue) {
+      var issueKey = key(issue);
+      if (remaining[issueKey]) { remaining[issueKey]--; return false; }
+      return true;
+    });
+  }
+
   var VisualDoc = {
     scan: scan,
     describeCommand: describeCommand,
@@ -259,7 +280,8 @@
     findNodeAtOffset: findNodeAtOffset,
     summarizeDiagnostics: summarizeDiagnostics,
     buildStateReferenceIndex: buildStateReferenceIndex,
-    findIncompatibleStateReferences: findIncompatibleStateReferences
+    findIncompatibleStateReferences: findIncompatibleStateReferences,
+    findIntroducedStateIssues: findIntroducedStateIssues
   };
   if (typeof window !== 'undefined') window.StoryVisualDoc = VisualDoc;
   if (typeof module !== 'undefined' && module.exports) module.exports = VisualDoc;

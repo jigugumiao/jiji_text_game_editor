@@ -3009,10 +3009,12 @@
     const reVarOp = new RegExp('<变量:\\s*(' + escOld + ')(?=\\s*[=+\\-])', 'g'); // <变量:旧名=值> 等
     const reInput = new RegExp('<玩家输入变量:\\s*(' + escOld + ')(?=\\s*,)', 'g'); // <玩家输入变量:旧名,"…">
     const reCond = new RegExp('(^|[^A-Za-z0-9_\\u4e00-\\u9fa5])(' + escOld + ')(?=[^A-Za-z0-9_\\u4e00-\u9fa5]|$)', 'g'); // 条件表达式里的变量名（整词）
+    const original = {};
     const rewritten = {};
     let changed = 0;
     names.forEach((nm) => {
       const text = nm === activeBlock ? storyText.value : (window.Storage.getBlockText(nm) || '');
+      original[nm] = text;
       let nt = text
         .replace(reInterp, function () { return '{' + newName; })
         .replace(reVarOp, function () { return '<变量:' + newName; })
@@ -3028,9 +3030,11 @@
       rewritten[nm] = nt;
       if (nt !== text) changed++;
     });
-    const validation = window.StoryVars.analyze(rewritten, nextVars || window.Storage.getVars());
-    const errors = validation.issues.filter((issue) => issue.severity === 'error');
-    if (errors.length) return { ok: false, changed: 0, error: stateValidationMessage(errors) };
+    const currentVars = window.Storage.getVars();
+    const beforeErrors = window.StoryVars.analyze(original, currentVars).issues.filter((issue) => issue.severity === 'error');
+    const afterErrors = window.StoryVars.analyze(rewritten, nextVars || currentVars).issues.filter((issue) => issue.severity === 'error');
+    const introducedErrors = window.StoryVisualDoc.findIntroducedStateIssues(beforeErrors, afterErrors);
+    if (introducedErrors.length) return { ok: false, changed: 0, error: stateValidationMessage(introducedErrors) };
     saveStateBlockMap(rewritten);
     if (rewritten[activeBlock] !== storyText.value) {
       storyText.value = rewritten[activeBlock];

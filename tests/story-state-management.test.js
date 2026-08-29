@@ -65,4 +65,25 @@ const VisualDoc = require('../js/story-visual-doc.js');
     .map(ref => ref.requiredType), ['text']);
 }
 
+// Saving one newly declared state must not be blocked by an unrelated
+// undeclared state that already existed before this row was edited. Otherwise
+// two new rows referenced by the story deadlock: each row waits for the other.
+{
+  const before = [
+    { kind: 'undeclared_write', severity: 'error', block: '__MAIN__', line: 1, name: '头发', message: '变量「头发」未定义' },
+    { kind: 'undeclared_write', severity: 'error', block: '__MAIN__', line: 2, name: '工作', message: '玩家输入变量「工作」未定义' },
+  ];
+  const afterSavingWork = [before[0]];
+  assert.deepEqual(VisualDoc.findIntroducedStateIssues(before, afterSavingWork), []);
+
+  const newlyBroken = [
+    ...before,
+    { kind: 'type_mismatch', severity: 'error', block: '__MAIN__', line: 3, name: '金币', message: '金币类型不匹配' },
+  ];
+  assert.deepEqual(
+    VisualDoc.findIntroducedStateIssues(before, newlyBroken).map(issue => issue.name),
+    ['金币']
+  );
+}
+
 console.log('story-state-management.test.js passed');

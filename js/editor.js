@@ -934,13 +934,14 @@
     } else {
       items.forEach(function (it) {
         if (it.separator) { const s = document.createElement('div'); s.className = 'ctx-sep'; menu.appendChild(s); return; }
-        const row = document.createElement('div'); row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '');
+        const row = document.createElement('div'); row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '') + (it.disabled ? ' disabled' : '');
         const ico = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         ico.setAttribute('class', 'ctx-ico'); ico.setAttribute('aria-hidden', 'true');
         const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
         use.setAttribute('href', '#' + (it.icon || 'ic-circle-dot')); ico.appendChild(use);
         const lbl = document.createElement('span'); lbl.textContent = it.label;
         row.appendChild(ico); row.appendChild(lbl);
+        if (it.disabled) { menu.appendChild(row); return; }
         if (it.submenu) { row.addEventListener('mouseenter', function () { openCtxSub(row, it.submenu); }); }
         row.addEventListener('click', function (ev) { ev.stopPropagation(); if (it.submenu) return; hideContextMenu(); try { if (it.action) it.action(); } catch (e) { console.error(e); } });
         menu.appendChild(row);
@@ -1067,6 +1068,7 @@
   }
   function buildInsertAssetMenu() {
     const cats = [
+      { kind: 'variable', label: '变量', icon: 'ic-key' },
       { kind: 'background', label: '背景', icon: 'ic-image' },
       { kind: 'overlay', label: '叠层', icon: 'ic-layers' },
       { kind: 'item', label: '3D', icon: 'ic-box' },
@@ -1077,6 +1079,9 @@
       { kind: 'randtext', label: '随机句子', icon: 'ic-type' },
     ];
     return cats.map(function (c) {
+      if (c.kind === 'variable') {
+        return { label: c.label, icon: c.icon, submenu: function () { return buildVariableSubmenu(); } };
+      }
       if (c.kind === 'block') {
         return { label: c.label, icon: c.icon, submenu: function () { return buildBlockOptionSubmenu(); }, action: function () { insertOptionEmpty(); } };
       }
@@ -1087,6 +1092,44 @@
         return { label: c.label, icon: c.icon, action: function () { insertRandTextTemplate(); } };
       }
       return { label: c.label, icon: c.icon, submenu: function () { return buildAssetSubmenu(c.kind); }, action: function () { insertSummonTemplate(c.kind); } };
+    });
+  }
+  function stateTypeLabel(type) {
+    return ({ number: '数字', text: '文字', boolean: '是 / 否' })[type] || '文字';
+  }
+  function buildVariableSubmenu() {
+    const vars = (window.Storage.getVars() || []).filter(function (state) {
+      return state && String(state.name == null ? '' : state.name).trim();
+    });
+    if (!vars.length) {
+      return [
+        { label: '变量库为空', disabled: true },
+        { separator: true },
+        { label: '前往变量库', icon: 'ic-key', action: function () { switchLib('variable'); } }
+      ];
+    }
+    const range = ctxInsertRange();
+    const includeCondition = isOptionLineAt(range.s);
+    return vars.map(function (state) {
+      return {
+        label: state.name + '（' + stateTypeLabel(state.type) + '）',
+        icon: 'ic-key',
+        submenu: function () { return buildVariableActionSubmenu(state, includeCondition); }
+      };
+    });
+  }
+  function buildVariableActionSubmenu(state, includeCondition) {
+    return window.StoryVars.getInsertActions(state, includeCondition).map(function (item) {
+      return {
+        label: item.label,
+        icon: 'ic-key',
+        action: function () {
+          const contextRange = ctxInsertRange();
+          const range = { start: contextRange.s, end: contextRange.e };
+          const optionContext = item.act === 'cond' && isOptionLineAt(range.start) ? lineCtxAt(range.start) : null;
+          applyVarChoice(item.act, state.name, state.type, range, optionContext);
+        }
+      };
     });
   }
   // 右键「插入 → 随机句子」：插入占位模板 <随机句子:"文本1","文本2">，光标落在第一个引号内等待输入
@@ -1157,7 +1200,7 @@
     items.forEach(function (it) {
       if (it.separator) { const s = document.createElement('div'); s.className = 'ctx-sep'; panel.appendChild(s); return; }
       const row = document.createElement('div');
-      row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '') + (it.checkable ? ' ctx-checkable' : '') + (it.confirm ? ' ctx-confirm' : '');
+      row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '') + (it.checkable ? ' ctx-checkable' : '') + (it.confirm ? ' ctx-confirm' : '') + (it.disabled ? ' disabled' : '');
       if (it.name) row.setAttribute('data-name', it.name);
       const ico = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       ico.setAttribute('class', 'ctx-ico'); ico.setAttribute('aria-hidden', 'true');
@@ -1165,6 +1208,7 @@
       use.setAttribute('href', '#' + (it.icon || 'ic-circle-dot')); ico.appendChild(use);
       const lbl = document.createElement('span'); lbl.textContent = it.label;
       row.appendChild(ico); row.appendChild(lbl);
+      if (it.disabled) { panel.appendChild(row); return; }
       if (it.submenu) {
         row.addEventListener('mouseenter', function () {
           const myToken = ++ctxSubToken;
@@ -2536,7 +2580,8 @@
     const v = storyText.value;
     const ls = v.lastIndexOf('\n', off - 1) + 1;
     let le = v.indexOf('\n', off); if (le === -1) le = v.length;
-    return v.slice(ls, le).indexOf('<选项:') >= 0;
+    const line = v.slice(ls, le);
+    return window.StoryOptions.extractOptionLine(line).some(function (option) { return option.ok; });
   }
   function lineCtxAt(off) {
     const v = storyText.value;
@@ -2581,40 +2626,24 @@
     if (_varPopEsc) { document.removeEventListener('keydown', _varPopEsc); _varPopEsc = null; }
   }
   function escapeHtml(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function replaceVarChoiceRange(choice, range) {
+    const ta = storyText;
+    const scrollTop = ta.scrollTop;
+    const result = window.StoryVars.applyInsertChoice(ta.value, range.start, range.end, choice);
+    ta.value = result.source;
+    try { ta.setSelectionRange(result.caret, result.caret); } catch (_) {}
+    ta.scrollTop = scrollTop;
+    commitEdit();
+  }
   function applyVarChoice(act, name, type, range, optCtx) {
-    const ta = storyText, v = ta.value;
-    const setVal = function (s, caretFromStart) {
-      ta.value = v.slice(0, range.start) + s + v.slice(range.end);
-      const pos = (caretFromStart != null) ? range.start + caretFromStart : (range.start + s.length);
-      try { ta.setSelectionRange(pos, pos); } catch (e) {}
-      if (document.activeElement === ta) ta.blur();
-      commitEdit();
-    };
-    if (act === 'read') { setVal((type === 'boolean') ? '{' + name + ':是|否}' : '{' + name + '}'); }
-    else if (act === 'assign') { setVal('<变量:' + name + '=>', ('<变量:' + name + '=').length); }
-    else if (act === 'inc') { setVal('<变量:' + name + '+1>'); }
-    else if (act === 'dec') { setVal('<变量:' + name + '-1>'); }
-    else if (act === 'input') {
-      const open = '<玩家输入变量:' + name + ',"';
-      const close = '">';
-      const before = v.slice(0, range.start);
-      const after = v.slice(range.end);
-      const lineStart = before.lastIndexOf('\n') + 1;
-      const afterNl = after.indexOf('\n');
-      const lineEnd = afterNl === -1 ? v.length : range.end + afterNl;
-      const lineText = v.slice(lineStart, lineEnd).trim();
-      const placeholder = v.slice(range.start, range.end).trim();
-      let pre = '', post = '';
-      // 当前行只有占位符/空白 → 整行替换为指令；否则把指令放到独立新行，避免混入正文
-      if (lineText !== '' && lineText !== placeholder) { pre = '\n'; post = '\n'; }
-      ta.value = before + pre + open + close + post + after;
-      const caret = (before + pre + open).length; // 落在两个引号之间，方便直接输入引导文字
-      try { ta.setSelectionRange(caret, caret); } catch (e) {}
-      if (document.activeElement === ta) ta.blur();
-      commitEdit();
+    const ta = storyText;
+    if (act !== 'cond') {
+      const choice = window.StoryVars.buildInsertChoice(act, name, type);
+      replaceVarChoiceRange(choice, range);
       return;
     }
-    else if (act === 'cond') {
+    if (act === 'cond') {
+      const v = ta.value;
       let nv = v.slice(0, range.start) + v.slice(range.end);
       const ls = optCtx.lineStart;
       const le = optCtx.lineEnd - (range.end - range.start);

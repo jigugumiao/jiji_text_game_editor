@@ -1496,6 +1496,12 @@ body.dark .ctx-menu .ctx-sep { background: rgba(255,255,255,0.12); }
 .ctx-sub .ctx-item:hover { background: rgba(58,134,255,0.12); }
 .ctx-sub .ctx-item.danger { color: #d8392b; }
 .ctx-sub .ctx-item.danger:hover { background: rgba(216,57,43,0.12); }
+.ctx-menu .ctx-item.disabled,
+.ctx-sub .ctx-item.disabled {
+  opacity: .55;
+  cursor: default;
+  pointer-events: none;
+}
 .ctx-sub .ctx-ico { width: 16px; height: 16px; flex: 0 0 auto; opacity: .85; }
 .ctx-sub .ctx-sep { height: 1px; background: rgba(0,0,0,0.08); margin: 5px 4px; }
 .ctx-sub .ctx-empty { padding: 10px; color: #98a0b0; font-style: italic; text-align: center; }

@@ -4,8 +4,8 @@ const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 
-assert.match(html, /id="app-version">v25\.4\.85</, '界面版本必须标记右键变量插入功能');
-assert.match(html, /id="about-version">v25\.4\.85</, '关于窗口版本必须标记右键变量插入功能');
+assert.match(html, /id="app-version">v25\.4\.86</, '界面版本必须标记右键变量插入功能');
+assert.match(html, /id="about-version">v25\.4\.86</, '关于窗口版本必须标记右键变量插入功能');
 assert.match(html, /js\/story-vars\.js\?v=20260829-01/, '右键变量插入功能必须刷新变量系统模块缓存标识');
 assert.match(html, /js\/story-options\.js\?v=20260827-03/, '新增选项语法共享模块必须带缓存标识');
 assert.match(html, /js\/story-visual-doc\.js\?v=20260829-01/, '状态保存校验修复必须刷新可视化文档模块缓存标识');

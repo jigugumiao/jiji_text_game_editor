@@ -1958,10 +1958,10 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 .gal-slice-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-content: start; }
 .gal-slice-inputs label { font-size: 12px; color: var(--text-2); }
 .gal-slice-inputs input { width: 100%; min-height: 40px; box-sizing: border-box; margin-top: 3px; padding: 6px; color: var(--text); background: var(--bg); border: 1px solid var(--border-strong); border-radius: 6px; }
-.gal-preview-pair { display: grid; grid-template-columns: 1fr 180px; gap: 12px; margin: 0 0 14px; }
+.gal-preview-pair { display: block; margin: 0 0 14px; }
+.gal-preview-pair > div { min-width: 0; }
 .gal-preview-pair small { display: block; margin-bottom: 5px; color: var(--text-2); }
-.gal-stretch-preview { min-height: 74px; box-sizing: border-box; padding: 25px 30px; color: #f4f7ff; background: rgba(0,0,0,.55); border-style: solid; border-width: 22px 28px; }
-.gal-stretch-mobile { min-height: 120px; padding: 35px 22px; }
+.gal-stretch-preview { width: 100%; box-sizing: border-box; aspect-ratio: 16 / 3; min-height: 0; padding: 25px 30px; overflow: hidden; display: flex; align-items: center; color: #f4f7ff; background: rgba(0,0,0,.55); border-style: solid; border-width: 22px 28px; }
 .gal-preset-hint { margin: 12px 0 0; color: var(--text-3); font-size: 12px; line-height: 1.5; }
 .ap-galpanel-field { align-items: center; flex-wrap: wrap; }
 .ap-galpanel-field > label { width: auto; color: var(--text); }
@@ -1975,7 +1975,6 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
   .gal-preset-scope { flex: 0 0 auto; min-width: 130px; margin: 0; }
   .gal-preset-editor { padding: 12px; }
   .gal-image-editor { grid-template-columns: 1fr; }
-  .gal-preview-pair { grid-template-columns: 1fr; }
   .gal-slice-inputs input { min-height: 40px; }
 }
 @media (max-width: 640px) {
@@ -4703,27 +4702,6 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     return refs.filter(function (ref) { return ref.requiredType && ref.requiredType !== nextType; });
   }
 
-  // A row edit may repair only one of several pre-existing project errors.
-  // Return the errors introduced by this edit so unrelated legacy errors do
-  // not deadlock independent state rows while they are being declared.
-  function findIntroducedStateIssues(beforeIssues, afterIssues) {
-    function key(issue) {
-      issue = issue || {};
-      return [issue.kind, issue.severity, issue.block, issue.line, issue.name, issue.raw, issue.message]
-        .map(function (part) { return part == null ? '' : String(part); }).join('\u001f');
-    }
-    var remaining = {};
-    (beforeIssues || []).forEach(function (issue) {
-      var issueKey = key(issue);
-      remaining[issueKey] = (remaining[issueKey] || 0) + 1;
-    });
-    return (afterIssues || []).filter(function (issue) {
-      var issueKey = key(issue);
-      if (remaining[issueKey]) { remaining[issueKey]--; return false; }
-      return true;
-    });
-  }
-
   var VisualDoc = {
     scan: scan,
     describeCommand: describeCommand,
@@ -4733,8 +4711,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     findNodeAtOffset: findNodeAtOffset,
     summarizeDiagnostics: summarizeDiagnostics,
     buildStateReferenceIndex: buildStateReferenceIndex,
-    findIncompatibleStateReferences: findIncompatibleStateReferences,
-    findIntroducedStateIssues: findIntroducedStateIssues
+    findIncompatibleStateReferences: findIncompatibleStateReferences
   };
   if (typeof window !== 'undefined') window.StoryVisualDoc = VisualDoc;
   if (typeof module !== 'undefined' && module.exports) module.exports = VisualDoc;
@@ -13245,12 +13222,10 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     const reVarOp = new RegExp('<变量:\\s*(' + escOld + ')(?=\\s*[=+\\-])', 'g'); // <变量:旧名=值> 等
     const reInput = new RegExp('<玩家输入变量:\\s*(' + escOld + ')(?=\\s*,)', 'g'); // <玩家输入变量:旧名,"…">
     const reCond = new RegExp('(^|[^A-Za-z0-9_\\u4e00-\\u9fa5])(' + escOld + ')(?=[^A-Za-z0-9_\\u4e00-\u9fa5]|$)', 'g'); // 条件表达式里的变量名（整词）
-    const original = {};
     const rewritten = {};
     let changed = 0;
     names.forEach((nm) => {
       const text = nm === activeBlock ? storyText.value : (window.Storage.getBlockText(nm) || '');
-      original[nm] = text;
       let nt = text
         .replace(reInterp, function () { return '{' + newName; })
         .replace(reVarOp, function () { return '<变量:' + newName; })
@@ -13266,11 +13241,9 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       rewritten[nm] = nt;
       if (nt !== text) changed++;
     });
-    const currentVars = window.Storage.getVars();
-    const beforeErrors = window.StoryVars.analyze(original, currentVars).issues.filter((issue) => issue.severity === 'error');
-    const afterErrors = window.StoryVars.analyze(rewritten, nextVars || currentVars).issues.filter((issue) => issue.severity === 'error');
-    const introducedErrors = window.StoryVisualDoc.findIntroducedStateIssues(beforeErrors, afterErrors);
-    if (introducedErrors.length) return { ok: false, changed: 0, error: stateValidationMessage(introducedErrors) };
+    const validation = window.StoryVars.analyze(rewritten, nextVars || window.Storage.getVars());
+    const errors = validation.issues.filter((issue) => issue.severity === 'error');
+    if (errors.length) return { ok: false, changed: 0, error: stateValidationMessage(errors) };
     saveStateBlockMap(rewritten);
     if (rewritten[activeBlock] !== storyText.value) {
       storyText.value = rewritten[activeBlock];
@@ -14156,6 +14129,25 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     const s = panel.slices;
     return 'url("' + panel.imageSrc.replace(/"/g, '%22') + '") ' + s.top + ' ' + s.right + ' ' + s.bottom + ' ' + s.left + ' fill / 1 / 0 stretch';
   }
+  function fitGalPreviewBorders(el, slices) {
+    const fitted = ['top', 'right', 'bottom', 'left'].reduce(function(result, side) {
+      result[side] = Math.max(0, Number(slices[side]) || 0);
+      return result;
+    }, {});
+    if (!el || !el.classList.contains('gal-stretch-preview')) return fitted;
+    const width = el.getBoundingClientRect().width;
+    if (!(width > 0)) return fitted;
+    const ratio = 16 / 3;
+    const height = width / ratio;
+    const style = getComputedStyle(el);
+    const horizontalSpace = Math.max(0, width - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0) - 24);
+    const verticalSpace = Math.max(0, height - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0) - 24);
+    const scaleX = Math.min(1, horizontalSpace / Math.max(1, fitted.left + fitted.right));
+    const scaleY = Math.min(1, verticalSpace / Math.max(1, fitted.top + fitted.bottom));
+    fitted.left *= scaleX; fitted.right *= scaleX;
+    fitted.top *= scaleY; fitted.bottom *= scaleY;
+    return fitted;
+  }
   function closeGalPresetManager() {
     if (galPresetDragCleanup) galPresetDragCleanup();
     galPresetSession++;
@@ -14169,7 +14161,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       el.style.borderImage = galPanelBorder(panel);
       el.style.borderStyle = 'solid';
       const s = panel.slices;
-      el.style.borderWidth = s.top + 'px ' + s.right + 'px ' + s.bottom + 'px ' + s.left + 'px';
+      const previewSlices = fitGalPreviewBorders(el, s);
+      el.style.borderWidth = previewSlices.top + 'px ' + previewSlices.right + 'px ' + previewSlices.bottom + 'px ' + previewSlices.left + 'px';
     } else {
       el.style.borderImage = '';
       el.style.borderStyle = '';
@@ -14219,7 +14212,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
         '<div class="gal-preset-toolbar"><input id="gal-preset-name" value="' + safeName(draft && draft.name) + '" aria-label="预设名称"><button class="btn" type="button" id="gal-copy-personal">复制为个人预设</button><button class="btn" type="button" id="gal-save-personal">保存个人预设</button><button class="btn" type="button" id="gal-rename-personal">重命名</button><button class="btn btn-ghost" type="button" id="gal-delete-personal">删除</button></div>' +
         '<div class="gal-image-editor"><div class="gal-image-stage" id="gal-image-stage"><div class="gal-image-canvas" id="gal-image-canvas"><img id="gal-draft-image" src="' + escapeHtml(draftSrc) + '" alt="对话框图片切片编辑预览"></div></div><div class="gal-slice-inputs">' +
           ['top','right','bottom','left'].map(function(side) { return '<label>' + side + '<input id="gal-slice-' + side + '" type="number" min="0" value="' + (draft ? draft.slices[side] : 0) + '"></label>'; }).join('') +
-        '</div></div><div class="gal-preview-pair"><div><small>桌面预览</small><div id="gal-preview-desktop" class="gal-stretch-preview gal-stretch-desktop">示例对话文字</div></div><div><small>手机预览</small><div id="gal-preview-mobile" class="gal-stretch-preview gal-stretch-mobile">示例对话文字</div></div></div>' +
+        '</div></div><div class="gal-preview-pair"><div><small>预览</small><div id="gal-preview-desktop" class="gal-stretch-preview gal-stretch-desktop">示例对话文字</div></div></div>' +
         '<div class="gal-preset-actions"><label class="btn">上传图片<input id="gal-upload-image" type="file" accept="image/png,image/jpeg,image/webp" hidden></label><label class="btn">导入 .jgpreset<input id="gal-import-preset" type="file" accept=".jgpreset,application/json" hidden></label><button class="btn" type="button" id="gal-export-preset">导出 .jgpreset</button><button class="btn btn-primary" type="button" id="gal-apply-preset">应用到本项目</button></div>' +
         '<p class="gal-preset-hint">拖动图片上的四条线，或输入像素数调整九宫格切片。内置和个人预设只会成为草稿；应用后，项目保存独立快照。</p></main></div>';
       bind(); updateDraftUI();
@@ -14232,7 +14225,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       if (!draft) return;
       const name = $('#gal-preset-name'); if (name && document.activeElement !== name) name.value = draft.name || '';
       ['top','right','bottom','left'].forEach(function(side) { const input = $('#gal-slice-' + side); if (input) input.value = draft.slices[side]; });
-      ['#gal-preview-desktop', '#gal-preview-mobile'].forEach(function(sel) { const el = $(sel); if (el) applyGalPanelPreview(el, draft, 'rgba(0,0,0,.55)', true); });
+      const el = $('#gal-preview-desktop');
+      if (el) applyGalPanelPreview(el, draft, 'rgba(0,0,0,.55)', true);
       const stage = $('#gal-image-stage'); const canvas = $('#gal-image-canvas'); const image = $('#gal-draft-image');
       if (!stage || !canvas || !image) return;
       canvas.querySelectorAll('.gal-slice-guide').forEach(function(el) { el.remove(); });
@@ -19026,7 +19020,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.85</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.81</span></div>
         </div>
       </div>
     </div>

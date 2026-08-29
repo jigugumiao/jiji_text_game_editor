@@ -1947,7 +1947,8 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 .gal-preset-toolbar .btn, .gal-preset-actions .btn { width: auto; margin: 0; }
 .gal-image-editor { display: grid; grid-template-columns: minmax(0, 1fr) 128px; gap: 14px; margin: 14px 0; }
 .gal-image-stage { position: relative; display: flex; align-items: center; justify-content: center; min-height: 200px; overflow: hidden; background: #111722; border: 1px solid var(--border); border-radius: 9px; }
-.gal-image-stage img { display: block; max-width: 100%; max-height: 300px; object-fit: contain; }
+.gal-image-canvas { position: relative; display: inline-block; flex: 0 1 auto; max-width: 100%; line-height: 0; }
+.gal-image-canvas img { display: block; max-width: 100%; max-height: 300px; object-fit: contain; }
 .gal-slice-guide { position: absolute; z-index: 2; padding: 0; background: transparent; border: 0; outline: 0; touch-action: none; cursor: grab; }
 .gal-slice-guide::after { content: ''; position: absolute; background: #79a8ff; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
 .gal-slice-top, .gal-slice-bottom { left: 0; width: 100%; height: 24px; transform: translateY(-50%); }
@@ -2113,7 +2114,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.82-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.83-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -14190,7 +14191,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       body.innerHTML = '<div class="gal-preset-layout"><aside class="gal-preset-rail">' + items('built-in', builtins) + items('personal', personal) + items('project', project) +
         '<button class="btn" type="button" id="gal-new-personal">新建个人预设</button></aside><main class="gal-preset-editor">' +
         '<div class="gal-preset-toolbar"><input id="gal-preset-name" value="' + safeName(draft && draft.name) + '" aria-label="预设名称"><button class="btn" type="button" id="gal-copy-personal">复制为个人预设</button><button class="btn" type="button" id="gal-save-personal">保存个人预设</button><button class="btn" type="button" id="gal-rename-personal">重命名</button><button class="btn btn-ghost" type="button" id="gal-delete-personal">删除</button></div>' +
-        '<div class="gal-image-editor"><div class="gal-image-stage" id="gal-image-stage"><img id="gal-draft-image" src="' + escapeHtml(draftSrc) + '" alt="对话框图片切片编辑预览"></div><div class="gal-slice-inputs">' +
+        '<div class="gal-image-editor"><div class="gal-image-stage" id="gal-image-stage"><div class="gal-image-canvas" id="gal-image-canvas"><img id="gal-draft-image" src="' + escapeHtml(draftSrc) + '" alt="对话框图片切片编辑预览"></div></div><div class="gal-slice-inputs">' +
           ['top','right','bottom','left'].map(function(side) { return '<label>' + side + '<input id="gal-slice-' + side + '" type="number" min="0" value="' + (draft ? draft.slices[side] : 0) + '"></label>'; }).join('') +
         '</div></div><div class="gal-preview-pair"><div><small>桌面预览</small><div id="gal-preview-desktop" class="gal-stretch-preview gal-stretch-desktop">示例对话文字</div></div><div><small>手机预览</small><div id="gal-preview-mobile" class="gal-stretch-preview gal-stretch-mobile">示例对话文字</div></div></div>' +
         '<div class="gal-preset-actions"><label class="btn">上传图片<input id="gal-upload-image" type="file" accept="image/png,image/jpeg,image/webp" hidden></label><label class="btn">导入 .jgpreset<input id="gal-import-preset" type="file" accept=".jgpreset,application/json" hidden></label><button class="btn" type="button" id="gal-export-preset">导出 .jgpreset</button><button class="btn btn-primary" type="button" id="gal-apply-preset">应用到本项目</button></div>' +
@@ -14206,15 +14207,15 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       const name = $('#gal-preset-name'); if (name && document.activeElement !== name) name.value = draft.name || '';
       ['top','right','bottom','left'].forEach(function(side) { const input = $('#gal-slice-' + side); if (input) input.value = draft.slices[side]; });
       ['#gal-preview-desktop', '#gal-preview-mobile'].forEach(function(sel) { const el = $(sel); if (el) applyGalPanelPreview(el, draft, 'rgba(0,0,0,.55)', true); });
-      const stage = $('#gal-image-stage'); const image = $('#gal-draft-image');
-      if (!stage || !image) return;
-      stage.querySelectorAll('.gal-slice-guide').forEach(function(el) { el.remove(); });
+      const stage = $('#gal-image-stage'); const canvas = $('#gal-image-canvas'); const image = $('#gal-draft-image');
+      if (!stage || !canvas || !image) return;
+      canvas.querySelectorAll('.gal-slice-guide').forEach(function(el) { el.remove(); });
       if (!image.complete || !image.naturalWidth) return;
       const rect = image.getBoundingClientRect(), sx = rect.width / draft.imageWidth, sy = rect.height / draft.imageHeight;
       [['top', draft.slices.top * sy, 'y'], ['bottom', rect.height - draft.slices.bottom * sy, 'y'], ['left', draft.slices.left * sx, 'x'], ['right', rect.width - draft.slices.right * sx, 'x']].forEach(function(info) {
         const guide = document.createElement('button'); guide.type = 'button'; guide.className = 'gal-slice-guide gal-slice-' + info[0]; guide.dataset.side = info[0];
-        if (info[2] === 'y') guide.style.top = info[1] + 'px'; else guide.style.left = info[1] + 'px';
-        stage.appendChild(guide);
+        if (info[2] === 'y') guide.style.top = (info[1] / rect.height * 100) + '%'; else guide.style.left = (info[1] / rect.width * 100) + '%';
+        canvas.appendChild(guide);
       });
       stage.querySelectorAll('.gal-slice-guide').forEach(function(guide) { guide.addEventListener('pointerdown', startDrag); });
     }

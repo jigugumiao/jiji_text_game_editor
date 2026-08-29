@@ -1507,6 +1507,12 @@ body.dark .ctx-menu .ctx-sep { background: rgba(255,255,255,0.12); }
 .ctx-sub .ctx-item:hover { background: rgba(58,134,255,0.12); }
 .ctx-sub .ctx-item.danger { color: #d8392b; }
 .ctx-sub .ctx-item.danger:hover { background: rgba(216,57,43,0.12); }
+.ctx-menu .ctx-item.disabled,
+.ctx-sub .ctx-item.disabled {
+  opacity: .55;
+  cursor: default;
+  pointer-events: none;
+}
 .ctx-sub .ctx-ico { width: 16px; height: 16px; flex: 0 0 auto; opacity: .85; }
 .ctx-sub .ctx-sep { height: 1px; background: rgba(0,0,0,0.08); margin: 5px 4px; }
 .ctx-sub .ctx-empty { padding: 10px; color: #98a0b0; font-style: italic; text-align: center; }
@@ -2113,7 +2119,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.85-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.86-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -4144,6 +4150,71 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     return t === 'number' ? '数字' : t === 'boolean' ? '布尔' : '文本';
   }
 
+  // ---------- 编辑器变量插入模型（不进入导出运行时） ----------
+
+  // 构造变量插入内容及光标位置。状态指令必须独占一行，读取则保持行内。
+  function buildInsertChoice(act, name, type) {
+    var text = '';
+    var caretOffset = null;
+    var standalone = false;
+    if (act === 'read') text = type === 'boolean' ? '{' + name + ':是|否}' : '{' + name + '}';
+    else if (act === 'assign') {
+      text = '<变量:' + name + '=>';
+      caretOffset = ('<变量:' + name + '=').length;
+      standalone = true;
+    } else if (act === 'inc') { text = '<变量:' + name + '+1>'; standalone = true; }
+    else if (act === 'dec') { text = '<变量:' + name + '-1>'; standalone = true; }
+    else if (act === 'input') {
+      var open = '<玩家输入变量:' + name + ',"';
+      text = open + '">';
+      caretOffset = open.length;
+      standalone = true;
+    }
+    if (caretOffset == null) caretOffset = text.length;
+    return { text: text, caretOffset: caretOffset, standalone: standalone };
+  }
+
+  // 按变量类型返回编辑器可展示的插入操作；条件项仅用于有有效变量名的上下文。
+  function getInsertActions(state, includeCondition) {
+    var name = state && String(state.name == null ? '' : state.name).trim();
+    var type = state && state.type || 'text';
+    if (!name) return [];
+    var actions = [
+      { label: '读取', act: 'read', choice: buildInsertChoice('read', name, type) },
+      { label: '赋值', act: 'assign', choice: buildInsertChoice('assign', name, type) }
+    ];
+    if (type === 'number') {
+      actions.push({ label: '+1', act: 'inc', choice: buildInsertChoice('inc', name, type) });
+      actions.push({ label: '-1', act: 'dec', choice: buildInsertChoice('dec', name, type) });
+    }
+    if (type === 'text') actions.push({ label: '玩家输入', act: 'input', choice: buildInsertChoice('input', name, type) });
+    if (includeCondition) actions.push({ label: '作为条件', act: 'cond', choice: null });
+    return actions;
+  }
+
+  // 以 choice 替换选区；状态指令在相邻行存在内容时补足独立行。
+  function applyInsertChoice(source, start, end, choice) {
+    source = String(source == null ? '' : source);
+    start = Math.max(0, Math.min(Number(start) || 0, source.length));
+    end = Math.max(start, Math.min(Number(end) || start, source.length));
+    var before = source.slice(0, start);
+    var after = source.slice(end);
+    var prefix = '';
+    var suffix = '';
+    if (choice.standalone) {
+      var lineBefore = before.slice(before.lastIndexOf('\n') + 1);
+      var nextNewline = after.indexOf('\n');
+      var lineAfter = nextNewline === -1 ? after : after.slice(0, nextNewline);
+      if (lineBefore.trim()) prefix = '\n';
+      if (lineAfter.trim()) suffix = '\n';
+    }
+    var insertStart = before.length + prefix.length;
+    return {
+      source: before + prefix + choice.text + suffix + after,
+      caret: insertStart + choice.caretOffset
+    };
+  }
+
   var StoryVars = {
     parseVarLine: parseVarLine,
     serializeVarOps: serializeVarOps,
@@ -4164,6 +4235,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     suggestRename: suggestRename,
     editDistance: editDistance,
     analyze: analyze,
+    getInsertActions: getInsertActions,
+    buildInsertChoice: buildInsertChoice,
+    applyInsertChoice: applyInsertChoice,
     buildRuntimeSource: buildRuntimeSource,
     RUNTIME_FNS: RUNTIME_FNS,
   };
@@ -4702,6 +4776,27 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     return refs.filter(function (ref) { return ref.requiredType && ref.requiredType !== nextType; });
   }
 
+  // A row edit may repair only one of several pre-existing project errors.
+  // Return the errors introduced by this edit so unrelated legacy errors do
+  // not deadlock independent state rows while they are being declared.
+  function findIntroducedStateIssues(beforeIssues, afterIssues) {
+    function key(issue) {
+      issue = issue || {};
+      return [issue.kind, issue.severity, issue.block, issue.line, issue.name, issue.raw, issue.message]
+        .map(function (part) { return part == null ? '' : String(part); }).join('\u001f');
+    }
+    var remaining = {};
+    (beforeIssues || []).forEach(function (issue) {
+      var issueKey = key(issue);
+      remaining[issueKey] = (remaining[issueKey] || 0) + 1;
+    });
+    return (afterIssues || []).filter(function (issue) {
+      var issueKey = key(issue);
+      if (remaining[issueKey]) { remaining[issueKey]--; return false; }
+      return true;
+    });
+  }
+
   var VisualDoc = {
     scan: scan,
     describeCommand: describeCommand,
@@ -4711,7 +4806,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     findNodeAtOffset: findNodeAtOffset,
     summarizeDiagnostics: summarizeDiagnostics,
     buildStateReferenceIndex: buildStateReferenceIndex,
-    findIncompatibleStateReferences: findIncompatibleStateReferences
+    findIncompatibleStateReferences: findIncompatibleStateReferences,
+    findIntroducedStateIssues: findIntroducedStateIssues
   };
   if (typeof window !== 'undefined') window.StoryVisualDoc = VisualDoc;
   if (typeof module !== 'undefined' && module.exports) module.exports = VisualDoc;
@@ -11147,13 +11243,14 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     } else {
       items.forEach(function (it) {
         if (it.separator) { const s = document.createElement('div'); s.className = 'ctx-sep'; menu.appendChild(s); return; }
-        const row = document.createElement('div'); row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '');
+        const row = document.createElement('div'); row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '') + (it.disabled ? ' disabled' : '');
         const ico = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         ico.setAttribute('class', 'ctx-ico'); ico.setAttribute('aria-hidden', 'true');
         const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
         use.setAttribute('href', '#' + (it.icon || 'ic-circle-dot')); ico.appendChild(use);
         const lbl = document.createElement('span'); lbl.textContent = it.label;
         row.appendChild(ico); row.appendChild(lbl);
+        if (it.disabled) { menu.appendChild(row); return; }
         if (it.submenu) { row.addEventListener('mouseenter', function () { openCtxSub(row, it.submenu); }); }
         row.addEventListener('click', function (ev) { ev.stopPropagation(); if (it.submenu) return; hideContextMenu(); try { if (it.action) it.action(); } catch (e) { console.error(e); } });
         menu.appendChild(row);
@@ -11280,6 +11377,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   }
   function buildInsertAssetMenu() {
     const cats = [
+      { kind: 'variable', label: '变量', icon: 'ic-key' },
       { kind: 'background', label: '背景', icon: 'ic-image' },
       { kind: 'overlay', label: '叠层', icon: 'ic-layers' },
       { kind: 'item', label: '3D', icon: 'ic-box' },
@@ -11290,6 +11388,9 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       { kind: 'randtext', label: '随机句子', icon: 'ic-type' },
     ];
     return cats.map(function (c) {
+      if (c.kind === 'variable') {
+        return { label: c.label, icon: c.icon, submenu: function () { return buildVariableSubmenu(); } };
+      }
       if (c.kind === 'block') {
         return { label: c.label, icon: c.icon, submenu: function () { return buildBlockOptionSubmenu(); }, action: function () { insertOptionEmpty(); } };
       }
@@ -11300,6 +11401,44 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
         return { label: c.label, icon: c.icon, action: function () { insertRandTextTemplate(); } };
       }
       return { label: c.label, icon: c.icon, submenu: function () { return buildAssetSubmenu(c.kind); }, action: function () { insertSummonTemplate(c.kind); } };
+    });
+  }
+  function stateTypeLabel(type) {
+    return ({ number: '数字', text: '文字', boolean: '是 / 否' })[type] || '文字';
+  }
+  function buildVariableSubmenu() {
+    const vars = (window.Storage.getVars() || []).filter(function (state) {
+      return state && String(state.name == null ? '' : state.name).trim();
+    });
+    if (!vars.length) {
+      return [
+        { label: '变量库为空', disabled: true },
+        { separator: true },
+        { label: '前往变量库', icon: 'ic-key', action: function () { switchLib('variable'); } }
+      ];
+    }
+    const range = ctxInsertRange();
+    const includeCondition = isOptionLineAt(range.s);
+    return vars.map(function (state) {
+      return {
+        label: state.name + '（' + stateTypeLabel(state.type) + '）',
+        icon: 'ic-key',
+        submenu: function () { return buildVariableActionSubmenu(state, includeCondition); }
+      };
+    });
+  }
+  function buildVariableActionSubmenu(state, includeCondition) {
+    return window.StoryVars.getInsertActions(state, includeCondition).map(function (item) {
+      return {
+        label: item.label,
+        icon: 'ic-key',
+        action: function () {
+          const contextRange = ctxInsertRange();
+          const range = { start: contextRange.s, end: contextRange.e };
+          const optionContext = item.act === 'cond' && isOptionLineAt(range.start) ? lineCtxAt(range.start) : null;
+          applyVarChoice(item.act, state.name, state.type, range, optionContext);
+        }
+      };
     });
   }
   // 右键「插入 → 随机句子」：插入占位模板 <随机句子:"文本1","文本2">，光标落在第一个引号内等待输入
@@ -11370,7 +11509,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     items.forEach(function (it) {
       if (it.separator) { const s = document.createElement('div'); s.className = 'ctx-sep'; panel.appendChild(s); return; }
       const row = document.createElement('div');
-      row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '') + (it.checkable ? ' ctx-checkable' : '') + (it.confirm ? ' ctx-confirm' : '');
+      row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '') + (it.checkable ? ' ctx-checkable' : '') + (it.confirm ? ' ctx-confirm' : '') + (it.disabled ? ' disabled' : '');
       if (it.name) row.setAttribute('data-name', it.name);
       const ico = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       ico.setAttribute('class', 'ctx-ico'); ico.setAttribute('aria-hidden', 'true');
@@ -11378,6 +11517,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       use.setAttribute('href', '#' + (it.icon || 'ic-circle-dot')); ico.appendChild(use);
       const lbl = document.createElement('span'); lbl.textContent = it.label;
       row.appendChild(ico); row.appendChild(lbl);
+      if (it.disabled) { panel.appendChild(row); return; }
       if (it.submenu) {
         row.addEventListener('mouseenter', function () {
           const myToken = ++ctxSubToken;
@@ -12749,7 +12889,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     const v = storyText.value;
     const ls = v.lastIndexOf('\n', off - 1) + 1;
     let le = v.indexOf('\n', off); if (le === -1) le = v.length;
-    return v.slice(ls, le).indexOf('<选项:') >= 0;
+    const line = v.slice(ls, le);
+    return window.StoryOptions.extractOptionLine(line).some(function (option) { return option.ok; });
   }
   function lineCtxAt(off) {
     const v = storyText.value;
@@ -12794,40 +12935,24 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     if (_varPopEsc) { document.removeEventListener('keydown', _varPopEsc); _varPopEsc = null; }
   }
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function replaceVarChoiceRange(choice, range) {
+    const ta = storyText;
+    const scrollTop = ta.scrollTop;
+    const result = window.StoryVars.applyInsertChoice(ta.value, range.start, range.end, choice);
+    ta.value = result.source;
+    try { ta.setSelectionRange(result.caret, result.caret); } catch (_) {}
+    ta.scrollTop = scrollTop;
+    commitEdit();
+  }
   function applyVarChoice(act, name, type, range, optCtx) {
-    const ta = storyText, v = ta.value;
-    const setVal = function (s, caretFromStart) {
-      ta.value = v.slice(0, range.start) + s + v.slice(range.end);
-      const pos = (caretFromStart != null) ? range.start + caretFromStart : (range.start + s.length);
-      try { ta.setSelectionRange(pos, pos); } catch (e) {}
-      if (document.activeElement === ta) ta.blur();
-      commitEdit();
-    };
-    if (act === 'read') { setVal((type === 'boolean') ? '{' + name + ':是|否}' : '{' + name + '}'); }
-    else if (act === 'assign') { setVal('<变量:' + name + '=>', ('<变量:' + name + '=').length); }
-    else if (act === 'inc') { setVal('<变量:' + name + '+1>'); }
-    else if (act === 'dec') { setVal('<变量:' + name + '-1>'); }
-    else if (act === 'input') {
-      const open = '<玩家输入变量:' + name + ',"';
-      const close = '">';
-      const before = v.slice(0, range.start);
-      const after = v.slice(range.end);
-      const lineStart = before.lastIndexOf('\n') + 1;
-      const afterNl = after.indexOf('\n');
-      const lineEnd = afterNl === -1 ? v.length : range.end + afterNl;
-      const lineText = v.slice(lineStart, lineEnd).trim();
-      const placeholder = v.slice(range.start, range.end).trim();
-      let pre = '', post = '';
-      // 当前行只有占位符/空白 → 整行替换为指令；否则把指令放到独立新行，避免混入正文
-      if (lineText !== '' && lineText !== placeholder) { pre = '\n'; post = '\n'; }
-      ta.value = before + pre + open + close + post + after;
-      const caret = (before + pre + open).length; // 落在两个引号之间，方便直接输入引导文字
-      try { ta.setSelectionRange(caret, caret); } catch (e) {}
-      if (document.activeElement === ta) ta.blur();
-      commitEdit();
+    const ta = storyText;
+    if (act !== 'cond') {
+      const choice = window.StoryVars.buildInsertChoice(act, name, type);
+      replaceVarChoiceRange(choice, range);
       return;
     }
-    else if (act === 'cond') {
+    if (act === 'cond') {
+      const v = ta.value;
       let nv = v.slice(0, range.start) + v.slice(range.end);
       const ls = optCtx.lineStart;
       const le = optCtx.lineEnd - (range.end - range.start);
@@ -13222,10 +13347,12 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     const reVarOp = new RegExp('<变量:\\s*(' + escOld + ')(?=\\s*[=+\\-])', 'g'); // <变量:旧名=值> 等
     const reInput = new RegExp('<玩家输入变量:\\s*(' + escOld + ')(?=\\s*,)', 'g'); // <玩家输入变量:旧名,"…">
     const reCond = new RegExp('(^|[^A-Za-z0-9_\\u4e00-\\u9fa5])(' + escOld + ')(?=[^A-Za-z0-9_\\u4e00-\u9fa5]|$)', 'g'); // 条件表达式里的变量名（整词）
+    const original = {};
     const rewritten = {};
     let changed = 0;
     names.forEach((nm) => {
       const text = nm === activeBlock ? storyText.value : (window.Storage.getBlockText(nm) || '');
+      original[nm] = text;
       let nt = text
         .replace(reInterp, function () { return '{' + newName; })
         .replace(reVarOp, function () { return '<变量:' + newName; })
@@ -13241,9 +13368,11 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       rewritten[nm] = nt;
       if (nt !== text) changed++;
     });
-    const validation = window.StoryVars.analyze(rewritten, nextVars || window.Storage.getVars());
-    const errors = validation.issues.filter((issue) => issue.severity === 'error');
-    if (errors.length) return { ok: false, changed: 0, error: stateValidationMessage(errors) };
+    const currentVars = window.Storage.getVars();
+    const beforeErrors = window.StoryVars.analyze(original, currentVars).issues.filter((issue) => issue.severity === 'error');
+    const afterErrors = window.StoryVars.analyze(rewritten, nextVars || currentVars).issues.filter((issue) => issue.severity === 'error');
+    const introducedErrors = window.StoryVisualDoc.findIntroducedStateIssues(beforeErrors, afterErrors);
+    if (introducedErrors.length) return { ok: false, changed: 0, error: stateValidationMessage(introducedErrors) };
     saveStateBlockMap(rewritten);
     if (rewritten[activeBlock] !== storyText.value) {
       storyText.value = rewritten[activeBlock];
@@ -19020,7 +19149,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.81</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.86</span></div>
         </div>
       </div>
     </div>

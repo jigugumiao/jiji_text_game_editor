@@ -141,7 +141,9 @@
     fullText: null,         // () => 全文
     settings: null,         // () => 创作设定文本
     getVars: null, saveVars: null,
-    // ...结构/素材组后续加
+    blocksDoc: null,       // () => {块名: 文本}（块对象视图，结构组 rename/delete 同步引用用）
+    saveBlocks: null,      // ({块名: 文本}) => void（结构组落盘）
+    // ...素材组后续加
   };
 
   // 文本操作核心（纯函数）：findAnchor（行号/文本锚定，精确优先、模糊回退）+ applyInsert + computeImpact
@@ -222,6 +224,19 @@
   }
   function getVarsArr() {
     return Agent.toolsDeps.getVars ? Agent.toolsDeps.getVars() : [];
+  }
+
+  // 结构组辅助：获取块对象视图 {块名: 文本}。
+  // 优先用 toolsDeps.blocksDoc；缺省时回退 listBlocks+getBlockText 重建（结构组工具都经此拿当前块全量）。
+  function blocksDocObj() {
+    if (Agent.toolsDeps.blocksDoc) return Agent.toolsDeps.blocksDoc();
+    var out = {};
+    var names = Agent.toolsDeps.listBlocks ? Agent.toolsDeps.listBlocks() : [];
+    for (var i = 0; i < names.length; i++) {
+      var t = Agent.toolsDeps.getBlockText ? Agent.toolsDeps.getBlockText(names[i]) : '';
+      out[names[i]] = t == null ? '' : t;
+    }
+    return out;
   }
 
   var tools = {
@@ -377,6 +392,70 @@
       if (!Agent.toolsDeps.saveVars) return { error: '编辑器未就绪' };
       Agent.toolsDeps.saveVars(arr);
       return { ok: true, name: v.name, value: v.value };
+    },
+    // ===== Task 10: 结构组工具（create/rename/delete 剧情块） =====
+    // 块名规则同 storage.js:288（只允许 中文/字母/数字/下划线）——
+    // 该字符集不含正则元字符，块名插值进 RegExp 是安全的，无需转义。
+    // 删除语义（按计划）：delete_block 只报告引用 + 标记 destructive，
+    // 真正的删块由 runLoop（Task 13）在用户确认后执行，本工具不落盘。
+    create_block: function (a) {
+      var name = String(a && a.blockName || '').trim();
+      if (!/^[A-Za-z0-9_\u4e00-\u9fa5]+$/.test(name)) return { error: '块名只允许 中文/字母/数字/下划线' };
+      if (typeof Agent.toolsDeps.saveBlocks !== 'function') return { error: '编辑器未就绪' };
+      var doc = blocksDocObj();
+      if (name in doc) return { error: '已存在同名剧情块「' + name + '」' };
+      var next = {};
+      for (var k in doc) {
+        if (Object.prototype.hasOwnProperty.call(doc, k)) next[k] = doc[k];
+      }
+      next[name] = '';
+      Agent.toolsDeps.saveBlocks(next);
+      return { ok: true, blockName: name };
+    },
+    rename_block: function (a) {
+      var oldN = String(a && a.oldName || '').trim();
+      var newN = String(a && a.newName || '').trim();
+      if (typeof Agent.toolsDeps.saveBlocks !== 'function') return { error: '编辑器未就绪' };
+      var doc = blocksDocObj();
+      if (!(oldN in doc)) return { error: '未找到剧情块「' + oldN + '」' };
+      if (newN in doc) return { error: '已存在同名剧情块「' + newN + '」' };
+      // 同步两类引用：<<剧情块:旧名>> 分块标记，与 <选项:"…",旧名…> 跳转目标（含条件行 <选项:"…",旧名,条件:…>）
+      // 块名无正则元字符（storage.js:288），插值安全
+      var reTag = new RegExp('<<剧情块:' + oldN + '>>', 'g');
+      var reOpt = new RegExp('(<选项:"[^"]*",\\s*)' + oldN + '(?=\\s*(,|>))', 'g');
+      var next = {};
+      for (var k in doc) {
+        if (Object.prototype.hasOwnProperty.call(doc, k)) next[k] = doc[k];
+      }
+      next[newN] = next[oldN];
+      delete next[oldN];
+      // 遍历全部块（含改名块自身：其自引用旧名也会悬空，须一并同步），计数实际变更的块
+      var changed = 0;
+      for (var b in next) {
+        if (!Object.prototype.hasOwnProperty.call(next, b)) continue;
+        var t = String(next[b] == null ? '' : next[b]);
+        var t2 = t.replace(reTag, '<<剧情块:' + newN + '>>').replace(reOpt, '$1' + newN);
+        if (t2 !== t) { next[b] = t2; changed++; }
+      }
+      Agent.toolsDeps.saveBlocks(next);
+      return { ok: true, oldName: oldN, newName: newN, blocksUpdated: changed };
+    },
+    delete_block: function (a) {
+      var name = String(a && a.blockName || '').trim();
+      var doc = blocksDocObj();
+      if (!(name in doc)) return { error: '未找到剧情块「' + name + '」' };
+      // 只扫其他块的跳转引用；无 g 标志 → .test() 无 lastIndex 陷阱
+      var re = new RegExp('<选项:"[^"]*",\\s*' + name + '(?=\\s*(,|>))');
+      var refs = [];
+      for (var k in doc) {
+        if (!Object.prototype.hasOwnProperty.call(doc, k)) continue;
+        if (k === name) continue;
+        var lines = String(doc[k] == null ? '' : doc[k]).split('\n');
+        for (var i = 0; i < lines.length; i++) {
+          if (re.test(lines[i])) refs.push({ block: k, lineNo: i + 1, snippet: lines[i].slice(0, 60) });
+        }
+      }
+      return { ok: true, blockName: name, destructive: true, references: refs };
     },
   };
   Agent.tools = tools;

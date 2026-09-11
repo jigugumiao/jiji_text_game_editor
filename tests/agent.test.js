@@ -313,4 +313,59 @@ function mockVars(initial) {
   const r = ctx.Agent.tools.set_var({ name: '金币', value: 2 });
   assert.ok(r.error, 'saveVars 未接线时写入必须报错而非静默 ok');
 }
+// ===== Task 10: 结构组工具（create/rename/delete 剧情块） =====
+// 块对象视图 {块名: 文本} 经 toolsDeps.blocksDoc 注入；blocks 是测试 realm 普通对象，
+// `in`/indexOf 跨 realm 安全；references 数组来自 vm 沙箱 realm，用 JSON.stringify 转 primitive 比较。
+function mockBlocks() {
+  const blocks = { '第一章': '正文一', '第二章': '甲\n<选项:"去第一章",第一章>' };
+  ctx.Agent.toolsDeps = {
+    listBlocks: () => Object.keys(blocks),
+    getBlockText: (n) => (n in blocks ? blocks[n] : null),
+    saveBlocks: (obj) => { for (const k in obj) blocks[k] = obj[k]; for (const k of Object.keys(blocks)) if (!(k in obj)) delete blocks[k]; },
+    blocksDoc: () => blocks,
+  };
+  return () => blocks;
+}
+{
+  const get = mockBlocks();
+  const r = ctx.Agent.tools.create_block({ blockName: '番外' });
+  assert.ok(r.ok);
+  assert.ok('番外' in get(), 'create_block 应新增空剧情块');
+  assert.equal(get()['番外'], '', '新块初始文本为空串');
+  assert.ok(ctx.Agent.tools.create_block({ blockName: '番外' }).error, '重名拒绝');
+}
+{
+  const get = mockBlocks();
+  const r = ctx.Agent.tools.rename_block({ oldName: '第一章', newName: '序章' });
+  assert.ok(r.ok);
+  assert.ok('序章' in get() && !('第一章' in get()), '改名后旧键删除、新键存在');
+  assert.equal(get()['序章'], '正文一', '内容随改名迁移');
+  assert.ok(get()['第二章'].indexOf('序章>') >= 0, '选项跳转引用应同步为新块名');
+  assert.ok(get()['第二章'].indexOf('第一章>') < 0, '旧跳转目标应被替换');
+}
+{
+  const get = mockBlocks();
+  const r = ctx.Agent.tools.delete_block({ blockName: '第一章' });
+  assert.ok(r.destructive, '删除块必须标记 destructive');
+  assert.ok(Array.isArray(r.references) && r.references.length >= 1, '必须报告其他块的跳转引用');
+  assert.equal(r.references[0].block, '第二章');
+  assert.ok('第一章' in get(), 'delete_block 只报告引用，不得真的删块（runLoop 确认后才删）');
+}
+// Task 10 边界：非法/空块名 / 缺旧块 / 新名已存在 / 无引用删除 / 缺 saveBlocks 守卫
+{
+  const get = mockBlocks();
+  assert.ok(ctx.Agent.tools.create_block({ blockName: 'bad name' }).error, '含空格块名拒绝');
+  assert.ok(ctx.Agent.tools.create_block({ blockName: '' }).error, '空块名拒绝');
+  assert.ok(ctx.Agent.tools.rename_block({ oldName: '不存在', newName: 'X' }).error, '旧块不存在报错');
+  assert.ok(ctx.Agent.tools.rename_block({ oldName: '第一章', newName: '第二章' }).error, '新名已存在报错');
+  const d = ctx.Agent.tools.delete_block({ blockName: '第二章' });
+  assert.equal(JSON.stringify(d.references), '[]', '无其他块引用时返回空数组');
+  assert.ok(ctx.Agent.tools.delete_block({ blockName: '没有' }).error, '删除不存在的块报错');
+}
+{
+  const get = mockBlocks();
+  ctx.Agent.toolsDeps = { blocksDoc: () => get() };
+  assert.ok(ctx.Agent.tools.create_block({ blockName: 'X' }).error, '缺 saveBlocks 时 create 必须报错而非静默 ok');
+  assert.ok(ctx.Agent.tools.rename_block({ oldName: '第一章', newName: 'X' }).error, '缺 saveBlocks 时 rename 必须报错');
+}
 console.log('agent.test.js OK');

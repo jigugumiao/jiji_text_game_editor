@@ -1368,7 +1368,10 @@ runLoop: async function (opts, deps) {
         var impl = Agent.tools[name];
         var result;
         if (!impl) result = { error: '未知工具：' + name };
-        else result = impl(args);
+        // ⚠️ 必须 await：素材组工具是 async（接线层 deps 走 IndexedDB，storage.js:331/372/377/613）；
+        // 同步工具（文档/变量/结构组）的返回值 await 也无害。不 await 会把 Promise 当结果，
+        // JSON.stringify(Promise) = '{}'，模型会拿到空对象。
+        else result = await impl(args);
         if (result && result.resultText) {
           var rec = Agent.applyAgentWrite({ block: result.block, before: args.__before, resultText: result.resultText, impact: result.impact }, deps, null);
           cb.onWrite && cb.onWrite(rec);
@@ -1506,8 +1509,38 @@ git commit -m "feat(ui): agent-assistant modal skeleton + entry"
         commitAgentWrite(block, curText.endsWith('\n') ? curText + text : curText + '\n' + text);
         return { ok: true };
       },
-      getAllAssets: () => window.Storage.getAllAssets(), renameAsset: (o, n) => window.Storage.renameAsset(o, n),
-      deleteAsset: (n) => window.Storage.deleteAsset(n), exportProject: () => window.Storage.exportProject(),
+      // ⚠️ seam 修正（Task 12 spec review 折叠项）：window.Storage 素材方法是 async + lib/id/pid 签名
+      // （getAllAssets(lib) storage.js:331、deleteAsset(lib,id) :372、renameAsset(lib,id,newName) :377、
+      // exportProject(pid) :613），而工具契约是同步无参 getAllAssets()/renameAsset(name,newName)/
+      // deleteAsset(name)/exportProject()。必须写 adapter：await + 合并全部 lib（background/item/overlay/
+      // music/sound，editor.js:2728-2753）+ name→{lib,id} 映射（素材记录 name 与 id 是两个字段）。
+      // 素材工具本体已 async（Task 12 修复 1e4d555），deps 返回 Promise 会被 await。
+      // lib 合并：AGENT_ASSET_LIBS = ['background','item','overlay','music','sound'];
+      // name→{lib,id}：从 (await Storage.getAllAssets(lib)) 里找 rec.name===name。
+      getAllAssets: async () => {
+        const out = [];
+        for (const lib of ['background', 'item', 'overlay', 'music', 'sound']) {
+          try { out.push.apply(out, await window.Storage.getAllAssets(lib)); } catch (e) { /* 跳过该库 */ }
+        }
+        return out;
+      },
+      renameAsset: async (name, newName) => {
+        for (const lib of ['background', 'item', 'overlay', 'music', 'sound']) {
+          const recs = await window.Storage.getAllAssets(lib).catch(() => []);
+          const rec = recs.find(r => r.name === name);
+          if (rec) { await window.Storage.renameAsset(lib, rec.id, newName); return { ok: true }; }
+        }
+        return { error: '素材不存在' };
+      },
+      deleteAsset: async (name) => {
+        for (const lib of ['background', 'item', 'overlay', 'music', 'sound']) {
+          const recs = await window.Storage.getAllAssets(lib).catch(() => []);
+          const rec = recs.find(r => r.name === name);
+          if (rec) { await window.Storage.deleteAsset(lib, rec.id); return { ok: true }; }
+        }
+        return { error: '素材不存在' };
+      },
+      exportProject: async () => await window.Storage.exportProject(window.Storage.getCurrentProjectId()),
     };
   }
   ```

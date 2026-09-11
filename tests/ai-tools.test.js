@@ -1,6 +1,8 @@
 // tests/ai-tools.test.js
 // callDeepseek tools 扩展：请求体带 tools / 流式 tool_calls 增量拼接 / 非流式 toolCalls 透出
 const assert = require('node:assert/strict');
+// 显式引入（Node 18+ 全局也有，require 保证在任何环境可用）
+const { ReadableStream } = require('node:stream/web');
 
 // ai.js 顶层若引用 window，先给 stub（ai.js 是 IIFE，module.exports 供 Node 测试）
 global.window = global.window || { StoryEditorApi: {}, Storage: { getAllAssets: () => [] } };
@@ -90,9 +92,46 @@ async function testStreamToolCalls() {
   assert.equal(toolCallsOut[0].function.arguments, '{"blockName":"第一章"}', 'arguments 必须跨 chunk 增量拼接');
 }
 
+async function testEmptyToolsGuard() {
+  const calls = mockFetchOnce({ choices: [{ message: { role: 'assistant', content: 'hi' }, finish_reason: 'stop' }] });
+  await AI.callDeepseek([{ role: 'user', content: 'hi' }], { tools: [], stream: false });
+  const body = JSON.parse(calls[0].opts.body);
+  assert.equal(body.tools, undefined, '空数组 tools 不得进请求体（部分 OpenAI 兼容服务端会 400）');
+}
+
+async function testStreamToolCallsNoCallback() {
+  // 流式 + tools 但漏传 onToolCalls：必须随返回值透出 {content, toolCalls}，防静默丢弃工具调用
+  mockFetchStream([
+    JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'read_block', arguments: '{}' } }] }, finish_reason: null }] }),
+    JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }),
+  ]);
+  const out = await AI.callDeepseek([{ role: 'user', content: 'hi' }], { tools: [{}], stream: true });
+  assert.ok(out && out.toolCalls && out.toolCalls.length === 1, '无 onToolCalls 时流式也要透出 toolCalls（防静默丢失）');
+  assert.equal(out.toolCalls[0].function.name, 'read_block');
+}
+
+async function testStreamMultiIndexInterleaved() {
+  // 多工具调用、index 乱序（1 先于 0）：都要拼齐并按 index 排序
+  mockFetchStream([
+    JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 1, id: 'call_2', type: 'function', function: { name: 'read_block', arguments: '' } }] }, finish_reason: null }] }),
+    JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'list_blocks', arguments: '' } }] }, finish_reason: null }] }),
+    JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: '{"blockName":"甲"}' } }] }, finish_reason: null }] }),
+    JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }),
+  ]);
+  let out = null;
+  await AI.callDeepseek([{ role: 'user', content: 'hi' }], { tools: [{}, {}], stream: true, onToolCalls: (tc) => { out = tc; } });
+  assert.equal(out.length, 2, '两个 tool_calls 都要拼齐');
+  assert.equal(out[0].function.name, 'list_blocks', '按 index 排序，index 0 在前');
+  assert.equal(out[1].function.name, 'read_block');
+  assert.equal(out[1].function.arguments, '{"blockName":"甲"}');
+}
+
 (async () => {
   await testNonStreamTools();
   await testNoToolsBackwardCompat();
   await testStreamToolCalls();
+  await testEmptyToolsGuard();
+  await testStreamToolCallsNoCallback();
+  await testStreamMultiIndexInterleaved();
   console.log('ai-tools.test.js OK');
 })().catch(e => { console.error(e); process.exit(1); });

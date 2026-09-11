@@ -17,7 +17,7 @@
 | 文件 | 责任 |
 |---|---|
 | `js/agent.js`（新建） | 核心模块：`AGENT_SCENARIOS` 场景表、`intentParse`、`buildMessages`、`classifyWrite`、`tools` 纯函数表、`applyAgentWrite`、`runLoop`、`loadHistory/saveHistory/resetSession`。IIFE 导出 `window.Agent` + `module.exports` |
-| `js/ai.js`（修改 :777 `callDeepseek`） | 增加 `opts.tools` / `opts.tool_choice`，流式拼接 `delta.tool_calls`，非流式返回完整 `message` 对象 |
+| `js/ai.js`（修改 :777 `callDeepseek`） | 增加 `opts.tools` / `opts.tool_choice`，流式拼接 `delta.tool_calls`（回调 `onToolCalls`），非流式/流式均透出 `{content, toolCalls}`（无 tools 时行为不变） |
 | `index.html`（修改） | 新增 `#agent-assistant` modal + 入口按钮 + AI 菜单项 `special='openAgent'` + 引入 `js/agent.js` + `?v=` 更新 |
 | `js/editor.js`（修改） | `openAgent()`、按钮绑定、切工程钩子 `agentResetSession`、`applyHideAllAI` 联动、`agent-history:<pid>` 持久化接线 |
 | `tests/agent.test.js`（新建） | Agent 全部单元测试（vm 提取源码纯函数 + mock deps） |

@@ -809,7 +809,8 @@
       body.thinking = { type: 'disabled' };
     }
     // Agent 工具调用（OpenAI function calling 兼容）：tools = functions 数组，tool_choice 可选 'auto'/'none'/'required' 或指定函数对象
-    if (opts.tools) body.tools = opts.tools;
+    // 空数组不进请求体（部分 OpenAI 兼容服务端收到 tools:[] 会 400）
+    if (opts.tools && opts.tools.length) body.tools = opts.tools;
     if (opts.tool_choice) body.tool_choice = opts.tool_choice;
     // 瞬时错误（服务端过载 5xx / 限流 429 / 网络抖动）自动重试：503 这类 “Server Overloaded” 多数重试一次即成功
     const MAX_RETRY = 2;
@@ -906,11 +907,16 @@
         } catch (e) { /* 忽略不完整片段 */ }
       }
     }
-    // 流式结束：有 tool_calls 且调用方给了 onToolCalls 回调时，回传拼好的完整数组（剥离内部 index，与非流式 message.tool_calls 形状一致）
-    if (toolCallSlots.length && opts.onToolCalls) {
+    // 流式结束：有 tool_calls 时回传拼好的完整数组（剥离内部 index，与非流式 message.tool_calls 形状一致）。
+    // 调用方传了 onToolCalls 则回调；否则随返回值透出 {content, toolCalls}，避免工具调用被静默丢弃
+    if (toolCallSlots.length) {
       const calls = toolCallSlots.filter(Boolean).sort((a, b) => a.index - b.index)
         .map(s => ({ id: s.id, type: s.type, function: s.function }));
-      opts.onToolCalls(calls);
+      if (opts.onToolCalls) opts.onToolCalls(calls);
+      else {
+        console.warn('[AI] 流式响应含 tool_calls 但未传 opts.onToolCalls，已随返回值透出（Agent 工具循环请用 onToolCalls 回调或读取返回值）');
+        return { content: full, toolCalls: calls };
+      }
     }
       return full;
     } // end retry loop

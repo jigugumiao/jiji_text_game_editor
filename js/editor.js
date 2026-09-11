@@ -7650,6 +7650,7 @@ self.onmessage = function (e) {
   let agentUsageAgg = { reqs: 0, prompt: 0, cacheHit: 0, cacheMiss: 0, completion: 0 };
   let agentCtxFullHash = null; // 会话级：上次 runLoop 的全文指纹
   let agentCtxStatus = '';     // 会话级：本次上下文的全文状态（首次上下文/全文未变/全文已更新）
+  let agentCaretRef = null;    // 会话级：用户发送消息那一刻的光标/选区快照（Agent「这里/这段」指代定位 + replace_selection 原文来源）
   function agentUsageReset() {
     agentUsageAgg = { reqs: 0, prompt: 0, cacheHit: 0, cacheMiss: 0, completion: 0 };
   }
@@ -7782,6 +7783,7 @@ self.onmessage = function (e) {
     agentBusy = false;
     agentCtxFullHash = null; // 跨工程重置：全文指纹/用量统计不得串工程
     agentCtxStatus = '';
+    agentCaretRef = null;    // 光标/选区快照不得串工程
     agentUsageReset();
     // 清空跨工程遗留的会话写入记录（sessionWrites 是 Agent 模块级，切工程必须重置，否则撤销/忽略会污染新工程）
     if (window.Agent && window.Agent.sessionWrites) window.Agent.sessionWrites.length = 0;
@@ -7863,6 +7865,7 @@ self.onmessage = function (e) {
     agentCtxWarnDismissed = false; // 切换/新对话重置提醒关闭态
     agentCtxFullHash = null;       // 全文指纹/用量统计不跨对话
     agentCtxStatus = '';
+    agentCaretRef = null;          // 光标/选区快照不跨对话
     agentUsageReset();
     if (window.Agent && window.Agent.sessionWrites) window.Agent.sessionWrites.length = 0; // 会话写入记录不跨对话
     const box = $('#agent-messages');
@@ -8017,6 +8020,7 @@ self.onmessage = function (e) {
     if (!userText) return;
     ta.value = '';
     agentAppendBubble('user', userText);
+    agentCaretRef = captureAgentCaret(); // 用户说话那一刻的光标/选区快照（Agent「这里/这段」指代 + replace_selection）
     const hist = await agentMaybeCompressHistory(agentLoadHistory()); // §14：超阈值先压缩早期对话（存档原文+摘要前置）
     hist.push({ role: 'user', content: userText });
     agentSaveHistory(hist);
@@ -8198,7 +8202,31 @@ self.onmessage = function (e) {
       outline: c.outline || '',
       currentBlock: { name: blkName, text: (storyText ? storyText.value : '') },
       vars: vars,
+      caret: agentCaretRef, // 用户发送消息时的光标/选区快照（agentSend 开头捕获），buildMessages 拼进用户消息末尾
     };
+  }
+  // 捕获「用户说话那一刻」的光标/选区快照：Agent 工具轮期间用户可能已移动光标/改文，
+  // 快照保证「给这里做什么」与 replace_selection 定位到用户发消息时的目标（语义：用户所指=说话时选中的）。
+  // 选区解析复用 getRange（实时光标选区优先，其次 lastTextSel 快照，移动端失焦也可靠）。
+  function captureAgentCaret() {
+    try {
+      const text = storyText ? storyText.value : '';
+      const r = getRange(storyText);
+      const selStart = r.start | 0, selEnd = r.end | 0;
+      const hasSel = selEnd > selStart;
+      const lines = text.split('\n');
+      const caretLine = text.slice(0, selStart).split('\n').length; // 1-based（光标所在行）
+      return {
+        blockName: (typeof activeBlock !== 'undefined' && activeBlock) ? activeBlock : '主剧情',
+        blockText: text,
+        start: selStart,
+        end: selEnd,
+        hasSel: hasSel,
+        selText: hasSel ? text.slice(selStart, selEnd) : '',
+        caretLine: caretLine,
+        lineText: lines[caretLine - 1] != null ? lines[caretLine - 1] : '',
+      };
+    } catch (e) { return null; }
   }
   // 创作设定拼接（大纲/简介/世界观/文风/线索），供 toolsDeps.settings 与 buildCtx.settings 共用
   function agentSettingsText() {
@@ -8284,9 +8312,16 @@ self.onmessage = function (e) {
       extractClues: async (o) => {
         try {
           const opts = {};
-          if (o && o.blockName) { const t = StoryEditorApi.getBlockText ? StoryEditorApi.getBlockText(o.blockName) : null; if (t != null) opts.body = t; }
+          if (o && o.blockName) {
+            const t = StoryEditorApi.getBlockText ? StoryEditorApi.getBlockText(o.blockName) : null;
+            if (t != null) opts.body = t;
+          } else {
+            opts.body = ftaCollectFullText(); // 缺省全文（与 fullText deps 同源，editor.js:6645）
+          }
+          opts.incremental = !!(o && o.incremental);
+          try { const c = loadCreation(); opts.existing = (c && c.clues) || ''; } catch (e) { opts.existing = ''; }
           const r = await window.AI.extractClues(opts);
-          return { ok: true, clues: (r && (r.clues || r.text)) || '' };
+          return { ok: true, clues: (r && (r.clues || r.text)) || '', summary: (r && r.summary) || '' };
         } catch (e) { return { error: (e && e.message) || '提取失败' }; }
       },
       applyGeneratedBlocks: (options) => {
@@ -8330,6 +8365,96 @@ self.onmessage = function (e) {
         return out;
       },
       exportProject: async () => await window.Storage.exportProject(window.Storage.getCurrentProjectId()),
+      getCaretRef: () => agentCaretRef, // 用户发送消息时的光标/选区快照（replace_selection 原文来源；agentSend 开头捕获）
+      applyReviewMarker: (o) => {
+        // 审阅标记写入（agent.js apply_review_marker 接线，Task 15 落地）：复用审阅管线
+        // （findAnchored/getReviewMarkers/maxReviewN/storeAiSuggestion/storeUnanchoredSuggestion，
+        // 同 ftDoWraps 语义），支持任意块——当前编辑块走 storyText.value+commitEdit，
+        // 其他块按持久化态读改写回（仅变更目标块，其余键原样，不碰 storyText 草稿）。
+        const block = (o && o.blockName) || activeBlock;
+        const current = o && o.current;
+        const suggestion = o && o.suggestion;
+        if (typeof current !== 'string' || !current.trim()) return { error: 'current（当前原文片段）不能为空' };
+        let txt;
+        if (block === activeBlock) txt = storyText.value;
+        else txt = StoryEditorApi.getBlockText ? StoryEditorApi.getBlockText(block) : null;
+        if (txt == null) return { error: '未找到剧情块「' + block + '」' };
+        const markers = getReviewMarkers(txt);
+        let idx = findAnchored(txt, current);
+        let n = -1;
+        while (idx >= 0) {
+          const inside = markers.some(function (mk) { return idx >= mk.start && idx < mk.end; });
+          const cross = markers.some(function (mk) { return idx < mk.end && idx + current.length > mk.start; });
+          if (!inside && !cross) { n = maxReviewN(txt) + 1; break; }
+          const next = txt.indexOf(current, idx + current.length);
+          idx = next >= 0 ? next : -1;
+        }
+        if (n < 0) {
+          // 锚定不上不丢弃：存为未锚定建议，由用户人工定位
+          storeUnanchoredSuggestion(block, current, suggestion || '');
+          return { ok: true, wrapped: 0, unanchored: true, note: '未在《' + block + '》中找到可锚定的原文片段，已存为未锚定建议，请人工定位' };
+        }
+        const tag = '<审阅:' + n + '>';
+        const len = current.length;
+        const nextTxt = txt.slice(0, idx) + tag + current + '</审阅>' + txt.slice(idx + len);
+        if (block === activeBlock) {
+          storyText.value = nextTxt; commitEdit();
+        } else {
+          // 非当前块：经扁平 {块名:文本} 契约写回（saveBlocks 适配与 blocksDoc 同源）
+          const doc = (window.Storage.loadBlocks ? window.Storage.loadBlocks() : null) || { main: '', blocks: {} };
+          const flat = {};
+          flat[MAIN_BLOCK] = doc.main || '';
+          const bs = doc.blocks || {};
+          for (const k in bs) { if (Object.prototype.hasOwnProperty.call(bs, k)) flat[k] = bs[k]; }
+          flat[block] = nextTxt;
+          if (window.Agent && window.Agent.toolsDeps && typeof window.Agent.toolsDeps.saveBlocks === 'function') {
+            window.Agent.toolsDeps.saveBlocks(flat);
+          } else {
+            const nxt = { main: '', blocks: {} };
+            for (const k in flat) {
+              if (!Object.prototype.hasOwnProperty.call(flat, k)) continue;
+              if (k === MAIN_BLOCK) nxt.main = flat[k] == null ? '' : String(flat[k]);
+              else nxt.blocks[k] = flat[k] == null ? '' : String(flat[k]);
+            }
+            window.Storage.saveBlocks(nxt);
+          }
+        }
+        storeAiSuggestion(block, n, suggestion || '');
+        return { ok: true, n: n, block: block, wrapped: 1 };
+      },
+      getGlobalSettings: () => {
+        // 全局设置可写字段快照（icon/fontName 只读透出：icon 兼容旧版 dataURL，font 是二进制上传，均不适合 Agent 写）
+        const g = globalSettings;
+        return {
+          gameName: g.gameName || '', subtitle: g.subtitle || '', authorId: g.authorId || '',
+          playMode: g.playMode || 'longform', textContrast: g.textContrast || 'auto',
+          openingBg: g.openingBg || '', openingMusic: g.openingMusic || '',
+          watermark: Object.assign({ text: '', pos: '右下', opacity: 40 }, g.watermark || {}),
+          icon: g.icon || '', fontName: (g.font && g.font.name) || '',
+        };
+      },
+      saveGlobalSettings: async (patch) => {
+        // 白名单与取值校验在 agent.js 工具侧完成；这里只做素材存在性校验 + 合并落盘
+        for (const k in patch) {
+          if (!Object.prototype.hasOwnProperty.call(patch, k)) continue;
+          if (k === 'openingBg' || k === 'openingMusic') {
+            const val = patch[k] == null ? '' : String(patch[k]);
+            if (val) {
+              const lib = k === 'openingBg' ? 'background' : 'music';
+              const recs = await window.Storage.getAllAssets(lib).catch(() => []);
+              const hit = recs.some(function (r) { return r.name === val; });
+              if (!hit) return { error: (k === 'openingBg' ? '背景' : '音乐') + '素材不存在：' + val + '（可先用 list_assets 查看可用素材）' };
+            }
+            globalSettings[k] = val;
+          } else if (k === 'watermark') {
+            globalSettings.watermark = Object.assign({}, globalSettings.watermark || {}, patch[k]);
+          } else {
+            globalSettings[k] = patch[k];
+          }
+        }
+        await saveGlobal();
+        return { ok: true };
+      },
     };
   }
 

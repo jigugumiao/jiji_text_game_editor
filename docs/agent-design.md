@@ -92,17 +92,29 @@
 | `vars` 变量/逻辑操作 | 加变量、变量逻辑 | 变量库 + 当前块 | 白名单含变量读写工具；禁止改动正文结构 |
 | `general` 通用 fallback | 无法归类/其他 | 大纲 + 当前块 | 工具按需读取兜底；行为规则最宽松 |
 
+> **正文美化知识注入（v25.4.103）**：`polish`/`rewrite`/`general` 三个会产出正文的场景，`systemPrompt` 末尾拼接精简格式手册 `FORMAT_GUIDE_BRIEF`（BBCode 行内美化 + 结构指令 + 素材召唤 + 跳转/分支 + 分块/变量速查 + 铁律「只能用真实语法、禁止自创标签」），保证模型写正文时使用真实存在的美化语法；`design`/`vars` 不加（保持聚焦，vars 已自带变量语法清单）。完整权威手册 `FORMAT_GUIDE_FULL` 由只读工具 `read_formatting_guide` 按需返回（§5.7），避免把长手册常驻每个请求。两常量以 `\n` 拼接，位于 agent.js IIFE 内、`AGENT_SCENARIOS` 之前；场景提示词是固定文本，追加不影响 §4.3 前缀缓存纪律。
+
 ### 4.3 消息前缀构造（缓存纪律，贯穿全程）
 ```
 [system: 场景 system 提示词]        ← 场景内固定 → 跨消息命中
+[system: 可靠性铁律]                ← 固定 system（禁止编造/虚报）
+[system: 回复风格]                  ← 固定 system（克制信息供给）
+[system: 编辑器光标/选区定位]        ← 固定 system（「这里/这段」指代解析规则，v25.4.107 新增）
 [system: 创作设定/世界观/文风/线索]  ← 同工程固定 → 同工程命中
 [user: 预载上下文（大纲/当前块/变量）] ← 同工程固定（可变内容放此处之后）
-[user: 用户最新消息]
+[user: 用户最新消息（可变；末尾可附加【编辑器当前状态】）]
 [assistant/tool 消息…]              ← 工具循环只 append，不重排 → 跨轮命中
 ```
 - **绝对禁止**把全文/可变内容插进 messages 中段（会截断前缀、杀死缓存）
 - 工具定义（functions 数组）保持**逐场景稳定**，视为前缀一部分
 - 监控：从响应 usage 提取命中率，可在设置面板加只读统计（后续迭代）
+
+#### 4.3.1 光标/选区上下文（用户需求：Agent 知道用户要改哪里，v25.4.107）
+- **快照时机**：`agentSend` 开头捕获一次（editor.js `captureAgentCaret()`），语义 = 用户说话那一刻的光标/选区就是用户所指的「这里/这段」；工具轮期间用户移动光标不影响快照
+- **进提示词方式**：`buildMessages` 在**用户消息末尾**同一条消息内拼 `【编辑器当前状态】`（当前块/光标行/选中文字），**绝不进固定 preload**——选区一动整个前缀就失效，违反 §4.3 缓存纪律；拼进 userText 同条消息（而非独立消息）保证 runLoop 的「历史插入到最后一条 user 之前」插入点不变
+- **刻意精简**：不附前/后文——预载上下文已含当前块全文（current_block）或全文（full_text），前后文冗余，行号 + 选中文字足够定位
+- **场景规则**：固定 system 消息 `AGENT_CARET_RULES` 声明字段语义 +「这里/这段/光标处」= 选中文字（未选中=光标行）+ replace_selection 用法；位置固定 → 不影响前缀缓存
+- **新增工具 `replace_selection`**（§5.2）：模型不用抄写原文——原文由编辑器从快照读取（根治抄错）；定位策略：块当前文本 === 快照 blockText → 用快照偏移（最精确）；已被改动 → `findAnchor(selText)` 精确优先、模糊回退，找不到报错（不静默改错位置）；无选区报错并指引改用 `insert_at`；blockName 与快照块不一致拒绝（防止改错块）
 
 ### 4.4 误判兜底
 - 路由到 `general` 场景 = 大纲+当前块（比全喂便宜，且工具可按需读全文）
@@ -129,7 +141,8 @@
 |---|---|---|
 | `append_to_block` | `{blockName, text}` | 块尾追加 |
 | `insert_at` | `{blockName, anchor, text, mode:'before'\|'after'\|'replace', anchorType:'line'\|'text'}` | 按行号或原文锚定插入/替换；锚定复用审阅标记的「精确优先、模糊回退」定位辅助（editor.js:7133） |
-| `apply_review_marker` | `{blockName, current, suggestion}` | 可选用：写 `<审阅:N>` 标记 + 进审阅面板（复用现有管线 ftApplyReviewOps） |
+| `replace_selection` | `{text, blockName?}` | **替换用户说话时选中的文字**（§4.3.1，v25.4.107）：原文由 `getCaretRef` 快照提供，模型只传新文字不抄原文；块文本与快照一致用偏移、否则按选中文字锚定；无选区/跨块/锚不到一律报错；`blockName` 可省略（缺省=选区所在块）。polish 白名单已加入 |
+| `apply_review_marker` | `{blockName, current, suggestion}` | 写 `<审阅:N>` 标记 + 进审阅面板（复用现有管线 ftApplyReviewOps）。**v25.4.104 真接线**：支持任意块（当前块走 `storyText.value`+commitEdit，其他块持久化读改写回），锚定不上存未锚定建议；不返回 `resultText`（标记写入是「提议」非「改稿」，不触发 preview 弹窗）。大段改写优先用它逐条提建议，用户经审阅面板应用
 
 ### 5.3 结构组（建/删/改名剧情块）
 | 工具 | 参数 | 说明 |
@@ -141,7 +154,7 @@
 ### 5.4 创作辅助组（复用现有 AI 管线）
 | 工具 | 参数 | 说明 |
 |---|---|---|
-| `extract_clues` | `{blockName?}` | 复用 `ai.js:1126 extractClues()` + `parseCluesOutput()`（non-stream，自身一次 AI 调用，async 返回 `{clues,summary}`）；接线需适配（await + 补 `ok`，blockName→该块全文作 body）；结果回显给用户，不自动改文档 |
+| `extract_clues` | `{blockName?, incremental?}` | 复用 `ai.js:1126 extractClues()` + `parseCluesOutput()`（non-stream，自身一次 AI 调用，async 返回 `{clues,summary}`）。**v25.4.106 增强**：缺省全文（`ftaCollectFullText`）、自动带当前线索作 `existing`（增量比对基础）、返回 `summary` 变更说明；修复原实现未 `await` deps（接线 async → r 是 Promise、ok 恒 undefined、恒「提取失败」）。**线索自维护**：三写作场景提示词引导 Agent 改正文后主动调用核对线索是否变动/产生新线索，有变动用 `update_creation_setting(field='clues')` 写入；polish 白名单为此加入 `extract_clues`/`update_creation_setting` |
 | `generate_options` | `{text}` | 模型产出 `<选项:"文字",块名,条件:表达式>` 文本；校验镜像引擎同行拼接规则（editor.js:125 `extractOptionLine`，Task 11 已实现 2c79a09）；接线时写入当前编辑块末尾（走撤销管线，绝不接 editor.js:7985 覆盖 MAIN_BLOCK 的 applyGeneratedBlocks） |
 
 ### 5.5 素材组（元数据管理；模型读不了图片/音频二进制内容）
@@ -164,6 +177,17 @@
 
 - 写变量只走 `Storage.getVars()/saveVars()` 适配层（agent 不直接碰 localStorage），story-vars 合并后只改适配层
 
+### 5.7 知识组（正文格式手册，v25.4.103）
+| 工具 | 参数 | 说明 |
+|---|---|---|
+| `read_formatting_guide` | — | 返回 `{ok:true, guide}`，guide 为权威完整版正文美化手册 `FORMAT_GUIDE_FULL`（BBCode 全标签与特效、结构指令、素材召唤、跳转/分支、分块/变量语法、注意事项铁律，含示例）。纯函数无写入副作用，返回对象**不含 `resultText`**（runLoop §8 据此判定写操作，缺失即不触发 applyAgentWrite）。`polish` 白名单已加；`rewrite`/`vars`/`general` 走全量自动包含 |
+
+### 5.8 全局设置组（游戏元信息 + 游玩设置，v25.4.105）
+| 工具 | 参数 | 说明 |
+|---|---|---|
+| `read_global_settings` | — | 返回当前全局游戏设置：游戏名/副标题/作者ID/游玩模式 `playMode`（longform\|galgame）/文字对比度保护 `textContrast`（auto\|off）/开场背景/开场音乐/水印 `watermark`（{text,pos,opacity}）/图标/自定义字体名。只读。`icon` 兼容旧版 dataURL、`font` 是二进制上传，两者只读不给写 |
+| `update_global_setting` | `{patch}` | 合并写入白名单字段（gameName/subtitle/authorId/playMode/textContrast/watermark/openingBg/openingMusic）。取值校验在 agent.js 工具侧（enum/watermark 子字段/opacity 10-100）；`openingBg`/`openingMusic` 在 editor.js `saveGlobalSettings` 侧校验素材真实存在于对应素材库（背景/音乐），防写入无效引用；落盘走 `saveGlobal()`（meta + storage）。**async 工具**（runLoop `await impl(args)` 支持）。立即生效覆盖试玩与导出成品 |
+
 ---
 
 ## 6. 写操作分级确认（Q2 + Q6 扩展）
@@ -177,6 +201,10 @@
 > **`impact.chars` 语义 = 本次写操作的「变更量」**（`|编辑后总长 − 编辑前总长|`），不是编辑后的块总长。
 > 理由：若按块总长判定，任何 ≥500 字的剧情块编辑都会强制进预览，「小改自动落盘」对正常篇幅的块失效。
 > 大段替换（diff 展示的旧片段≠新片段）由 `wholeBlock` 或较大 delta 天然覆盖。
+>
+> **v25.4.104**：大段改写**优先走 `apply_review_marker` 进审阅面板**（用户逐条检查应用），而非 diff 预览弹窗——polish/rewrite/general 三场景提示词与工具描述已引导；`insert_at` 整块/大改的 preview 弹窗保留作兜底。
+>
+> **v25.4.106 线索自维护**：全文线索（`creation.clues`）不只是给用户看，也是 AI 写作提示。三写作场景（polish/rewrite/general）提示词追加引导——修改正文后主动用 `extract_clues` 核对线索是否变动/产生新线索（缺省全文、自动带当前线索比对、返回 `summary` 变更说明），确认有变动则用 `update_creation_setting(field='clues')` 更新关键线索（整字段替换走 preview 确认，用户可检查）。`read_settings` 本就含【关键线索】→ 模型可先读再比。polish 白名单为此扩至 9 工具。
 
 - 落盘统一走 `applyAgentWrite(blockName, newText)`：`pushHistory()` + 写入（目标块为当前编辑块 → 走 `storyText.value` setter 自动保存；否则 `window.Storage.setBlockText`）+ toast
 - 每个已应用写操作在会话内可单独「撤销」（记录 `{block, before}`，一键还原 = `pushHistory() + setBlockText(before)`），与全局 Ctrl+Z 撤销栈并存不冲突
@@ -228,8 +256,8 @@ UI（modal）元素：消息流（含工具活动卡片：🔧 工具名+参数�
 ## 10. 测试计划（tests/agent.test.js，Node 直跑无依赖）
 
 1. `intentParse`：正常 JSON / 带 markdown 包裹 / 噪音文本 → 兜底 general
-2. `buildMessages`：前缀顺序断言（system→setting→user 预载→user 消息），同场景两次构建**前缀逐字符相同**（缓存纪律）
-3. 工具纯函数：append/insert/replace 文本操作正确性（mock 文档对象）；锚定「精确优先、模糊回退」；`impact` 计算（chars/lines/wholeBlock）
+2. `buildMessages`：前缀顺序断言（system×4→setting→user 预载→user 消息），同场景两次构建**前缀逐字符相同**（缓存纪律）；`ctx.caret` 存在时拼【编辑器当前状态】到用户消息末尾、无 caret 时用户消息原样、前缀不变（光标不破坏缓存）
+3. 工具纯函数：append/insert/replace 文本操作正确性（mock 文档对象）；锚定「精确优先、模糊回退」；`impact` 计算（chars/lines/wholeBlock）；`replace_selection`（快照偏移 / 文本改动后锚点回退 / 无选区报错 / 跨块拒绝 / 整块 wholeBlock / 锚不到报错）
 4. `classifyWrite`：500 边界、wholeBlock 强制 preview
 5. 变量工具：create_var 命名校验/重名拒绝、set_var 类型校验、update_var 加减、delete_var
 6. 结构组：create_block 重名拒绝、rename_block 引用同步（正文标记 + 选项跳转）、delete_block 引用检查

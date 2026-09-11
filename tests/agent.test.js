@@ -64,7 +64,7 @@ assert.ok(scen.rewrite.preload.includes('full_text'), 'rewrite 应预载全文')
   assert.equal(ctx.Agent.intentParse('{"scenario":"__proto__"}').scenario, 'general', '原型链键不算合法场景');
   assert.equal(ctx.Agent.intentParse('{"scenario":"constructor"}').scenario, 'general', '原型链键不算合法场景');
 }
-// buildMessages：前缀构造（§4.3 缓存纪律）— 场景 system → 可靠性 system → 回复风格 system → settings system → 预载 user → 用户 user
+// buildMessages：前缀构造（§4.3 缓存纪律）— 场景 system → 可靠性 system → 回复风格 system → 光标/选区规则 system → settings system → 预载 user → 用户 user
 // 注意：本地上下文变量命名为 sctx，避免遮蔽外层 vm 沙箱 ctx（ctx.Agent 是模块句柄）
 {
   const sctx = { outline: '大纲A', settings: '世界观：魔都', currentBlock: { name: '第一章', text: '正文…' }, fullText: '全文…', vars: [{ name: '金币', type: 'number', value: 10 }] };
@@ -76,19 +76,45 @@ assert.ok(scen.rewrite.preload.includes('full_text'), 'rewrite 应预载全文')
   assert.equal(msgs[2].role, 'system');
   assert.ok(msgs[2].content.indexOf('回复风格') >= 0, '第三条=回复风格 system 消息（不倾倒清单/能力菜单）');
   assert.equal(msgs[3].role, 'system');
-  assert.ok(msgs[3].content.indexOf('世界观：魔都') >= 0, '第四条=创作设定（settings）');
-  assert.ok(msgs[4].role === 'user' && msgs[4].content.indexOf('大纲A') >= 0, '预载上下文在第五条 user');
-  assert.ok(msgs[4].content.indexOf('当前编辑块《第一章》') >= 0, '预载按场景顺序含大纲+当前块');
-  assert.equal(msgs[5].role, 'user');
-  assert.equal(msgs[5].content, '润色第二段', '用户消息必须在最后');
+  assert.ok(msgs[3].content.indexOf('编辑器光标/选区定位') >= 0, '第四条=光标/选区规则 system 消息（「这里/这段」指代解析）');
+  assert.equal(msgs[4].role, 'system');
+  assert.ok(msgs[4].content.indexOf('世界观：魔都') >= 0, '第五条=创作设定（settings）');
+  assert.ok(msgs[5].role === 'user' && msgs[5].content.indexOf('大纲A') >= 0, '预载上下文在第六条 user');
+  assert.ok(msgs[5].content.indexOf('当前编辑块《第一章》') >= 0, '预载按场景顺序含大纲+当前块');
+  assert.equal(msgs[6].role, 'user');
+  assert.equal(msgs[6].content, '润色第二段', '用户消息必须在最后');
 }
 {
   // 缓存纪律：同场景同工程两次构建，前缀逐字符相同（稳定前缀在可变内容之前）
   const sctx = { outline: '大纲A', settings: '世界观：魔都', currentBlock: { name: '第一章', text: '正文…' }, fullText: '全文…' };
   const a = ctx.Agent.buildMessages('general', sctx, '第一个问题');
   const b = ctx.Agent.buildMessages('general', sctx, '第二个问题');
-  const prefixLen = Math.min(a[4].content.length, b[4].content.length);
-  assert.equal(a[4].content.slice(0, prefixLen), b[4].content.slice(0, prefixLen), '预载 user 消息是稳定前缀');
+  const prefixLen = Math.min(a[5].content.length, b[5].content.length);
+  assert.equal(a[5].content.slice(0, prefixLen), b[5].content.slice(0, prefixLen), '预载 user 消息是稳定前缀');
+}
+{
+  // 光标/选区上下文（用户需求：Agent 知道用户要改哪里）：ctx.caret 存在时拼进用户消息末尾，
+  // 含当前块/选中文字/光标行；无 caret 时用户消息原样（不破坏历史插入点与缓存纪律）。
+  const caret = { blockName: '第一章', blockText: '第一行\n第二句要被改\n第三行', start: 4, end: 10, hasSel: true, selText: '第二句', caretLine: 2, lineText: '第二句要被改' };
+  const m1 = ctx.Agent.buildMessages('general', { outline: '大纲A', currentBlock: { name: '第一章', text: '正文…' }, caret: caret }, '把这句改成：改完啦');
+  const last1 = m1[m1.length - 1];
+  assert.ok(last1.content.indexOf('把这句改成：改完啦') === 0, '用户原文在最前');
+  assert.ok(last1.content.indexOf('【编辑器当前状态') >= 0, 'caret 存在时拼【编辑器当前状态】');
+  assert.ok(last1.content.indexOf('选中文字：\n第二句') >= 0, '含选中文字');
+  assert.ok(last1.content.indexOf('光标行（第 2 行）') >= 0, '含光标行号');
+  assert.ok(last1.content.indexOf('当前编辑块：《第一章》') >= 0, '含当前块名');
+  // 无 caret：用户消息必须原样（向后兼容 + 历史插入点 msgs[length-1] 仍指向纯用户消息）
+  const baseCtx = { outline: '大纲A', currentBlock: { name: '第一章', text: '正文…' } };
+  const m2 = ctx.Agent.buildMessages('general', baseCtx, '继续写');
+  assert.equal(m2[m2.length - 1].content, '继续写', '无 caret 时用户消息原样');
+  // 有/无 caret 时前缀（system + settings + 预载 user）逐字符相同 → caret 不破坏缓存纪律
+  const p1 = m1.slice(0, m1.length - 1).map(x => x.content).join('|');
+  const p2 = m2.slice(0, m2.length - 1).map(x => x.content).join('|');
+  assert.equal(p1, p2, 'caret 只影响最后一条 user 消息，前缀保持恒定');
+  // 有 caret 时历史插入位置：runLoop 把历史插到「最后一条 user（含 caret 状态）之前」——顺序为 preload…history…caret 消息
+  const m3 = ctx.Agent.buildMessages('general', { outline: '大纲A', caret: caret }, '把这段改了');
+  assert.equal(m3[m3.length - 1].role, 'user');
+  assert.ok(m3[m3.length - 1].content.indexOf('【编辑器当前状态') >= 0, 'caret 消息必须是最后一条 user');
 }
 // buildMessages 健壮性：settings 不重复 + 未知场景/原型链键兜底 + 缺省 ctx/userText
 {
@@ -110,10 +136,11 @@ assert.ok(scen.rewrite.preload.includes('full_text'), 'rewrite 应预载全文')
 }
 {
   const r = ctx.Agent.buildMessages('general', undefined, undefined);
-  assert.equal(r.length, 4, 'ctx/userText 缺省：场景 system + 可靠性 system + 回复风格 system + 空 user 四条');
+  assert.equal(r.length, 5, 'ctx/userText 缺省：场景 system + 可靠性 system + 回复风格 system + 光标/选区规则 system + 空 user 五条');
   assert.ok(String(r[1].content).indexOf('可靠性铁律') >= 0, '第 2 条=可靠性铁律 system 消息（禁止假设性提醒/编造/虚报）');
   assert.ok(String(r[2].content).indexOf('回复风格') >= 0, '第 3 条=回复风格 system 消息（克制信息供给）');
-  assert.equal(r[3].content, '', 'userText 缺省为空串');
+  assert.ok(String(r[3].content).indexOf('编辑器光标/选区定位') >= 0, '第 4 条=光标/选区规则 system 消息（固定位置，前缀稳定）');
+  assert.equal(r[4].content, '', 'userText 缺省为空串');
 }
 // classifyWrite：写操作分级判定（设计 §6）
 // destructive:true → 'destructive'；chars ≤ 500 且 !wholeBlock → 'auto'；否则 'preview'
@@ -182,6 +209,58 @@ function callTool(name, args) {
   // 模糊回退：空白差异也能定位
   const r = callTool('insert_at', { blockName: '第一章', anchor: '第二行 ', text: 'Y', mode: 'after', anchorType: 'text' });
   assert.equal(r.resultText, '第一行\n第二行\nY\n第三行', '去空白模糊匹配');
+}
+
+// ===== 光标/选区感知（用户需求：Agent 知道用户要改哪里）：replace_selection 工具 =====
+// 原文由 getCaretRef 快照提供（用户说话时的选区），模型无需抄写原文；定位策略：块文本===快照 → 偏移，否则 findAnchor(selText)
+{
+  // 1) 块文本与快照一致 → 直接用快照偏移精确替换
+  const caret = { blockName: '第一章', blockText: '第一行\n第二句要被改\n第三行', start: 4, end: 7, hasSel: true, selText: '第二句', caretLine: 2, lineText: '第二句要被改' };
+  ctx.Agent.toolsDeps = { getCaretRef: () => caret, getBlockText: (n) => n === '第一章' ? caret.blockText : null };
+  const r = ctx.Agent.tools.replace_selection({ text: '改完了' });
+  assert.ok(r.ok);
+  assert.equal(r.block, '第一章');
+  assert.equal(r.resultText, '第一行\n改完了要被改\n第三行', '快照偏移精确替换');
+  assert.equal(r.impact.wholeBlock, false);
+  assert.equal(r.impact.chars, 0, '等长替换变更量为 0（chars=长度差）');
+  assert.equal(r.before, caret.blockText, '返回 before 供撤销/分级');
+}
+{
+  // 2) 块已被改动（文本与快照不同）但选中文字仍存在 → findAnchor 定位
+  ctx.Agent.toolsDeps = {
+    getCaretRef: () => ({ blockName: '第一章', blockText: '旧快照文本', start: 0, end: 5, hasSel: true, selText: '第二句要被改', caretLine: 2, lineText: 'x' }),
+    getBlockText: (n) => n === '第一章' ? '第一行\n第二句要被改\n第三行（改动过）' : null,
+  };
+  const r = ctx.Agent.tools.replace_selection({ text: '新句子' });
+  assert.equal(r.resultText, '第一行\n新句子\n第三行（改动过）', '文本变动后按选中文字锚点定位替换');
+}
+{
+  // 3) 无选区（hasSel=false 或无快照）→ 明确报错，指引改用 insert_at
+  ctx.Agent.toolsDeps = { getCaretRef: () => ({ blockName: '第一章', hasSel: false }), getBlockText: () => 'x' };
+  assert.ok(String(ctx.Agent.tools.replace_selection({ text: 'x' }).error).indexOf('没有选中文字') >= 0, '无选区报错');
+  ctx.Agent.toolsDeps = {};
+  assert.ok(String(ctx.Agent.tools.replace_selection({ text: 'x' }).error).indexOf('没有选中文字') >= 0, '未接线报错');
+}
+{
+  // 4) 缺 text 报错；blockName 与快照块不一致报错（防止改错块）
+  ctx.Agent.toolsDeps = { getCaretRef: () => ({ blockName: '第一章', hasSel: true, selText: 's' }), getBlockText: () => 'x' };
+  assert.ok(ctx.Agent.tools.replace_selection({}).error, '缺 text 报错');
+  assert.ok(String(ctx.Agent.tools.replace_selection({ text: 'x', blockName: '第二章' }).error).indexOf('不能替换') >= 0, '跨块替换拒绝');
+}
+{
+  // 5) 选中整块 → wholeBlock=true 走预览确认；块被改动且锚点找不到 → 报错
+  ctx.Agent.toolsDeps = {
+    getCaretRef: () => ({ blockName: '第一章', blockText: '整块内容', start: 0, end: 4, hasSel: true, selText: '整块内容', caretLine: 1, lineText: '整块内容' }),
+    getBlockText: () => '整块内容',
+  };
+  const r = ctx.Agent.tools.replace_selection({ text: '新的整块' });
+  assert.equal(r.resultText, '新的整块');
+  assert.equal(r.impact.wholeBlock, true, '整块替换须标记 wholeBlock（预览确认）');
+  ctx.Agent.toolsDeps = {
+    getCaretRef: () => ({ blockName: '第一章', blockText: '旧文本', start: 0, end: 2, hasSel: true, selText: '旧文本', caretLine: 1, lineText: '旧文本' }),
+    getBlockText: () => '完全不同的新文本',
+  };
+  assert.ok(String(ctx.Agent.tools.replace_selection({ text: 'x' }).error).indexOf('找不到选中文字') >= 0, '锚点找不到报错，不静默改错位置');
 }
 
 // ===== Task 7 审查修复：模糊回退假起点 / 整块替换 / chars=变更量 / 防护 =====
@@ -410,23 +489,7 @@ function mockBlocks() {
 // 工具只调 toolsDeps + 校验结果/语法，不直接碰 AI 或文档（UI 接线：extractClues→window.AI.extractClues，
 // applyGeneratedBlocks→window.StoryEditorApi.applyGeneratedBlocks）。deps 按 Task 7 惯例直接赋值 toolsDeps；
 // 跨 realm 对象不可 deepEqual → calls[0]/applied[0] 是沙箱对象/数组，只断言 primitive 字段或 join 转 primitive。
-{
-  const calls = [];
-  ctx.Agent.toolsDeps = { extractClues: (opts) => { calls.push(opts); return { ok: true, clues: '线索A' }; } };
-  const r = ctx.Agent.tools.extract_clues({ blockName: '第一章' });
-  assert.ok(r.ok && r.clues === '线索A', 'extract_clues 返回 deps 的 {ok, clues}');
-  assert.equal(calls.length, 1, '恰好调用一次 deps');
-  assert.equal(calls[0].blockName, '第一章', 'blockName 原样透传');
-}
-{
-  // 未接线 / deps 失败 / deps 抛异常 → 一律返回 error，不抛异常
-  ctx.Agent.toolsDeps = {};
-  assert.ok(ctx.Agent.tools.extract_clues({}).error, '未接线时报错');
-  ctx.Agent.toolsDeps = { extractClues: () => ({ ok: false, error: '管线超时' }) };
-  assert.ok(String(ctx.Agent.tools.extract_clues({}).error).indexOf('管线超时') >= 0, 'deps 失败透传 error');
-  ctx.Agent.toolsDeps = { extractClues: () => { throw new Error('boom'); } };
-  assert.ok(String(ctx.Agent.tools.extract_clues({}).error).indexOf('boom') >= 0, 'deps 抛异常转 error');
-}
+// extract_clues 是 async（deps 接线 async），断言块见文件末尾独立 async IIFE（放最后执行，避免交错覆盖共享 toolsDeps）。
 {
   // 两行都合法（条件段可含 >，如 金币>5）→ count=2，合法行原样交给 applyGeneratedBlocks
   const applied = [];
@@ -675,16 +738,22 @@ function mockBlocks() {
     assert.equal(res.rounds, 2, '工具轮 + 答复轮');
   }
   {
-    // buildToolDefs 语义（§4.4）：polish 白名单 6 个；空白名单（general/vars）= 全量 25（含 §14 search_history）；__proto__ 兜底 general
+    // buildToolDefs 语义（§4.4）：polish 白名单 10 个（含线索自维护 extract_clues/update_creation_setting + replace_selection）；空白名单（general/vars）= 全量 32；__proto__ 兜底 general
     const polish = ctx.Agent.buildToolDefs('polish');
-    assert.equal(polish.length, 6, 'polish 白名单 6 个工具');
-    assert.equal(ctx.Agent.buildToolDefs('general').length, 28, 'general 空列表 = 全部工具');
-    assert.equal(ctx.Agent.buildToolDefs('vars').length, 28, 'vars 空列表 = 全部工具');
-    assert.equal(ctx.Agent.buildToolDefs('__proto__').length, 28, '原型链键兜底 general 全量');
+    assert.equal(polish.length, 10, 'polish 白名单 10 个工具');
+    assert.ok(polish.some(d => d.function.name === 'extract_clues'), 'polish 白名单含 extract_clues（线索自维护）');
+    assert.ok(polish.some(d => d.function.name === 'update_creation_setting'), 'polish 白名单含 update_creation_setting（线索写入）');
+    assert.ok(polish.some(d => d.function.name === 'replace_selection'), 'polish 白名单含 replace_selection（替换用户选中文字）');
+    assert.equal(ctx.Agent.buildToolDefs('general').length, 32, 'general 空列表 = 全部工具');
+    assert.equal(ctx.Agent.buildToolDefs('vars').length, 32, 'vars 空列表 = 全部工具');
+    assert.equal(ctx.Agent.buildToolDefs('__proto__').length, 32, '原型链键兜底 general 全量');
     assert.ok(ctx.Agent.buildToolDefs('general').some(d => d.function.name === 'search_history'), 'search_history 在全量工具中');
     assert.ok(ctx.Agent.buildToolDefs('general').some(d => d.function.name === 'update_creation_setting'), 'update_creation_setting 在全量工具中');
     assert.ok(ctx.Agent.buildToolDefs('general').some(d => d.function.name === 'update_appearance'), 'update_appearance 在全量工具中');
     assert.ok(ctx.Agent.buildToolDefs('general').some(d => d.function.name === 'read_appearance'), 'read_appearance 在全量工具中');
+    assert.ok(ctx.Agent.buildToolDefs('general').some(d => d.function.name === 'read_formatting_guide'), 'read_formatting_guide 在全量工具中');
+    assert.ok(ctx.Agent.buildToolDefs('general').some(d => d.function.name === 'read_global_settings'), 'read_global_settings 在全量工具中');
+    assert.ok(ctx.Agent.buildToolDefs('general').some(d => d.function.name === 'update_global_setting'), 'update_global_setting 在全量工具中');
     for (const d of polish) {
       assert.equal(d.type, 'function');
       assert.ok(typeof d.function.name === 'string' && d.function.name.length > 0, 'def 有 name');
@@ -694,6 +763,56 @@ function mockBlocks() {
     const toolNames = Object.keys(ctx.Agent.tools).sort().join(',');
     const defNames = ctx.Agent.buildToolDefs('general').map((d) => d.function.name).sort().join(',');
     assert.equal(defNames, toolNames, 'TOOL_DEFS 键与 Agent.tools 完全一致');
+  }
+  {
+    // 正文美化知识（格式手册注入）：polish/rewrite/general 提示词含精简版 BBCode/跳转语法；
+    // vars/design 保持聚焦不含；read_formatting_guide 返回完整权威手册且无 resultText（不触发写登记）
+    const brief = ctx.Agent.buildMessages('polish', { currentBlock: { name: '第一章', text: '正文' } }, '润色');
+    assert.ok(brief[0].content.indexOf('[color=') >= 0, 'polish 提示词含 BBCode 手册');
+    const rw = ctx.Agent.buildMessages('rewrite', { fullText: '全文', outline: '大纲' }, '改写');
+    assert.ok(rw[0].content.indexOf('<随机跳转:') >= 0, 'rewrite 提示词含跳转语法手册');
+    const gn = ctx.Agent.buildMessages('general', {}, 'hi');
+    assert.ok(gn[0].content.indexOf('[瞬显]') >= 0, 'general 提示词含格式手册');
+    const v = ctx.Agent.buildMessages('vars', { vars: [{ name: 'x', type: 'number', value: 1 }], currentBlock: { name: 'B', text: 't' } }, '查变量');
+    assert.ok(v[0].content.indexOf('[color=') < 0, 'vars 提示词不含 BBCode 手册（保持聚焦）');
+    const ds = ctx.Agent.buildMessages('design', { outline: '大纲', currentBlock: { name: 'B', text: 't' } }, '建议');
+    assert.ok(ds[0].content.indexOf('[color=') < 0, 'design 提示词不含 BBCode 手册（保持聚焦）');
+    // 线索自维护引导（v25.4.106）：三写作场景提示词含 extract_clues 核对引导；vars/design 保持聚焦不含
+    assert.ok(brief[0].content.indexOf('extract_clues') >= 0, 'polish 提示词含线索自维护引导');
+    assert.ok(rw[0].content.indexOf('extract_clues') >= 0, 'rewrite 提示词含线索自维护引导');
+    assert.ok(gn[0].content.indexOf('extract_clues') >= 0, 'general 提示词含线索自维护引导');
+    assert.ok(v[0].content.indexOf('extract_clues') < 0, 'vars 提示词不含线索引导（保持聚焦）');
+    const guide = ctx.Agent.tools.read_formatting_guide({});
+    assert.ok(guide.ok === true && !('resultText' in guide), 'read_formatting_guide 只读返回 guide，无 resultText');
+    assert.ok(String(guide.guide).indexOf('[瞬显]') >= 0, '完整手册含瞬显');
+    assert.ok(String(guide.guide).indexOf('<随机跳转:') >= 0, '完整手册含随机跳转');
+    assert.ok(String(guide.guide).indexOf('{名}') >= 0, '完整手册含变量读取语法');
+  }
+  {
+    // 全局设置工具（v25.4.105）：read_global_settings 走 toolsDeps.getGlobalSettings 只读返回；
+    // update_global_setting（async）白名单/取值校验后经 toolsDeps.saveGlobalSettings 落盘，非法值直接拒绝
+    const saved = [];
+    ctx.Agent.toolsDeps.getGlobalSettings = () => ({ gameName: 'Demo', subtitle: '', authorId: '', playMode: 'longform', textContrast: 'auto', openingBg: '', openingMusic: '', watermark: { text: '', pos: '右下', opacity: 40 }, icon: '', fontName: '' });
+    ctx.Agent.toolsDeps.saveGlobalSettings = async (patch) => { saved.push(patch); return { ok: true }; };
+    const r = ctx.Agent.tools.read_global_settings({});
+    assert.equal(r.ok, true, 'read_global_settings 只读返回 ok');
+    assert.equal(r.settings.gameName, 'Demo', '返回当前游戏名');
+    assert.equal(r.settings.fontName, '', 'fontName 只读透出');
+    const ok1 = await ctx.Agent.tools.update_global_setting({ patch: { playMode: 'galgame', watermark: { text: 'demo', opacity: 30 } } });
+    assert.equal(ok1.error, undefined, '合法 patch 无 error');
+    assert.equal(saved.length, 1, '合法 patch 落盘一次');
+    assert.equal(saved[0].playMode, 'galgame', 'playMode 写入');
+    assert.equal(saved[0].watermark.opacity, 30, 'watermark 合并写入');
+    const bad = await ctx.Agent.tools.update_global_setting({ patch: { playMode: 'x' } });
+    assert.ok(bad.error.indexOf('playMode') >= 0, 'playMode 非法值拒绝');
+    const badPos = await ctx.Agent.tools.update_global_setting({ patch: { watermark: { pos: '中间' } } });
+    assert.ok(badPos.error.indexOf('pos') >= 0, 'watermark.pos 非法值拒绝');
+    const badOp = await ctx.Agent.tools.update_global_setting({ patch: { watermark: { opacity: 500 } } });
+    assert.ok(badOp.error.indexOf('opacity') >= 0, 'watermark.opacity 越界拒绝');
+    const badField = await ctx.Agent.tools.update_global_setting({ patch: { nope: 1 } });
+    assert.ok(badField.error.indexOf('不支持的字段') >= 0, '未知字段拒绝');
+    const empty = await ctx.Agent.tools.update_global_setting({ patch: {} });
+    assert.ok(empty.error.indexOf('patch') >= 0, '空 patch 拒绝');
   }
   {
     // 轮数上限：mock 永远返回同一工具调用 → 8 轮后 loop_limit + 提示语
@@ -1070,6 +1189,30 @@ function mockBlocks() {
     assert.ok(ctx.Agent.confirmDelete('delete_var', { name: '金币' }).error, 'confirmDelete(delete_var) 缺 saveVars 报错');
     assert.ok((await ctx.Agent.confirmDelete('delete_asset', { name: 'x' })).error, 'confirmDelete(delete_asset) 缺 deleteAsset 报错');
     assert.ok(ctx.Agent.confirmDelete('delete_other', {}).error, '未知删除目标报错');
+  }
+  {
+    // extract_clues 断言（v25.4.106）：工具是 async（deps 接线 async 走 window.AI.extractClues），直接调工具须 await。
+    // 放本大 IIFE 末尾：此时其余 async 块均已 settle，整体替换/恢复 toolsDeps 不再交错踩到任何块。
+    const saved = ctx.Agent.toolsDeps;
+    const calls = [];
+    ctx.Agent.toolsDeps = { extractClues: (opts) => { calls.push(opts); return { ok: true, clues: '线索A', summary: '新增1条' }; } };
+    const r = await ctx.Agent.tools.extract_clues({ blockName: '第一章', incremental: true });
+    assert.ok(r.ok && r.clues === '线索A' && r.summary === '新增1条', 'extract_clues 返回 deps 的 {ok, clues, summary}');
+    assert.equal(calls.length, 1, '恰好调用一次 deps');
+    assert.equal(calls[0].blockName, '第一章', 'blockName 原样透传');
+    assert.equal(calls[0].incremental, true, 'incremental 原样透传');
+    // async deps（真实形态）：工具 await deps 的 Promise 后正常判定（修复：原实现未 await，r 是 Promise、ok 恒 undefined → 恒「提取失败」）
+    ctx.Agent.toolsDeps = { extractClues: () => Promise.resolve({ ok: true, clues: '异步线索', summary: '移除1条' }) };
+    const ar = await ctx.Agent.tools.extract_clues({});
+    assert.ok(ar.ok && ar.clues === '异步线索' && ar.summary === '移除1条', 'await async deps 后正常判定');
+    // 未接线 / deps 失败 / deps 抛异常 → 一律返回 error，不抛异常
+    ctx.Agent.toolsDeps = {};
+    assert.ok((await ctx.Agent.tools.extract_clues({})).error, '未接线时报错');
+    ctx.Agent.toolsDeps = { extractClues: () => ({ ok: false, error: '管线超时' }) };
+    assert.ok(String((await ctx.Agent.tools.extract_clues({})).error).indexOf('管线超时') >= 0, 'deps 失败透传 error');
+    ctx.Agent.toolsDeps = { extractClues: () => { throw new Error('boom'); } };
+    assert.ok(String((await ctx.Agent.tools.extract_clues({})).error).indexOf('boom') >= 0, 'deps 抛异常转 error');
+    ctx.Agent.toolsDeps = saved;
   }
   console.log('agent.test.js OK');
 })().catch(e => { console.error(e); process.exit(1); });

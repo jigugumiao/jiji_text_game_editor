@@ -1918,7 +1918,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.90-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.91-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -7535,6 +7535,47 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Exporter;
       return 'preview';
     },
 
+    // ===== §14: 历史摘要压缩（DSH 上下文压缩设计移植） =====
+    // 分层：超阈值时把最旧条目压成摘要（tier1），保留最近 keep 段原文（活跃内容不压）；
+    // 再次超阈值时旧摘要+更早内容一起再压（tier2 蒸馏）。纯函数，供 editor.js 触发时调用。
+    classifyHistoryCompression: function (history, opts) {
+      history = Array.isArray(history) ? history : [];
+      opts = opts || {};
+      var maxChars = (typeof opts.maxChars === 'number' && opts.maxChars > 0) ? opts.maxChars : 30000;
+      if (!history.length) return { shouldCompress: false, compress: [], keep: history };
+      var total = 0;
+      for (var i = 0; i < history.length; i++) total += String(history[i] && history[i].content || '').length;
+      if (total <= maxChars) return { shouldCompress: false, compress: [], keep: history };
+      // 从最旧开始累积压缩段，直到剩余 keep 段 ≤ 阈值；最后一条 user 永不压（活跃内容）
+      var compress = [];
+      var keep = history.slice();
+      while (keep.length > 1) {
+        var head = keep.shift();
+        compress.push(head);
+        var rem = 0;
+        for (var j = 0; j < keep.length; j++) rem += String(keep[j] && keep[j].content || '').length;
+        if (rem <= maxChars || keep.length === 1) break;
+      }
+      return { shouldCompress: compress.length > 0, compress: compress, keep: keep };
+    },
+    // 归档检索（对应 DSH search_context/decompress）：大小写不敏感、逐行匹配、上限 20；纯函数
+    searchHistoryArchive: function (archive, query) {
+      var q = String(query || '').toLowerCase();
+      if (!q) return [];
+      var arr = Array.isArray(archive) ? archive : [];
+      var out = [];
+      for (var i = 0; i < arr.length && out.length < 20; i++) {
+        var item = arr[i] || {};
+        var lines = String(item.content || '').split('\n');
+        for (var j = 0; j < lines.length && out.length < 20; j++) {
+          if (lines[j].toLowerCase().indexOf(q) >= 0) {
+            out.push({ n: i + 1, role: item.role || '', lineNo: j + 1, snippet: lines[j] });
+          }
+        }
+      }
+      return out;
+    },
+
     // ===== Task 8: applyAgentWrite + 会话内撤销记录 =====
     // 本模块不做实际 DOM 写入：applyAgentWrite 仅分级 + 记录到会话日志（供 UI 渲染与撤销），
     // 返回 {block, before, after, level, impact} 让 UI（Task 15/16）决定自动落盘/预览/确认——
@@ -7608,8 +7649,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Exporter;
           var histMsgs = [];
           for (var hi = 0; hi < hist.length; hi++) {
             var hm = hist[hi];
-            if (hm && (hm.role === 'user' || hm.role === 'assistant') && typeof hm.content === 'string' && hm.content) {
-              histMsgs.push({ role: hm.role, content: hm.content });
+            if (hm && (hm.role === 'user' || hm.role === 'assistant' || hm.role === 'summary') && typeof hm.content === 'string' && hm.content) {
+              // summary 条目 = 早期对话压缩摘要（§14）：作为 user 消息前置（【早期对话摘要】标记），保持消息顺序与兼容性
+              histMsgs.push(hm.role === 'summary' ? { role: 'user', content: '【早期对话摘要】\n' + hm.content } : { role: hm.role, content: hm.content });
             }
           }
           if (histMsgs.length) {
@@ -7870,6 +7912,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Exporter;
         }
       }
       return out;
+    },
+    // §14: 在早期对话归档中检索（被摘要压缩的原文），经 toolsDeps.searchHistoryArchives 注入
+    search_history: function (a) {
+      var q = String(a && a.query || '');
+      if (!q) return { error: 'query 不能为空' };
+      var archive = (Agent.toolsDeps && typeof Agent.toolsDeps.searchHistoryArchives === 'function') ? Agent.toolsDeps.searchHistoryArchives() : [];
+      var hits = Agent.searchHistoryArchive(archive, q);
+      return { ok: true, query: q, hits: hits, archivedEntries: Array.isArray(archive) ? archive.length : 0 };
     },
     read_full_text: function () {
       var t = Agent.toolsDeps.fullText ? Agent.toolsDeps.fullText() : '';
@@ -8151,6 +8201,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Exporter;
     list_blocks: { type: 'function', function: { name: 'list_blocks', description: '列出全部剧情块名称。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
     read_block: { type: 'function', function: { name: 'read_block', description: '按名称读取剧情块全文；块不存在时返回可用块列表。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称' } }, required: ['blockName'] } } },
     search_in_doc: { type: 'function', function: { name: 'search_in_doc', description: '在全部剧情块中搜索关键词，返回命中的块、行号与片段（上限 20 条）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { query: { type: 'string', description: '搜索关键词' } }, required: ['query'] } } },
+    search_history: { type: 'function', function: { name: 'search_history', description: '在 Agent 早期对话归档中搜索关键词（已被摘要压缩的对话原文），返回命中的条目序号、角色、行号与片段（上限 20 条）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { query: { type: 'string', description: '搜索关键词' } }, required: ['query'] } } },
     read_full_text: { type: 'function', function: { name: 'read_full_text', description: '读取整篇故事全文（超 50k 字符会拒绝）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
     read_settings: { type: 'function', function: { name: 'read_settings', description: '读取创作设定（世界观/文风等）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
     append_to_block: { type: 'function', function: { name: 'append_to_block', description: '在指定剧情块末尾追加文字。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称' }, text: { type: 'string', description: '要追加的文字' } }, required: ['blockName', 'text'] } } },
@@ -15872,6 +15923,58 @@ self.onmessage = function (e) {
   function agentSaveHistory(arr) {
     try { localStorage.setItem(agentHistoryKey(), JSON.stringify(arr.slice(-50))); } catch (e) {} // 只保留最近 50 条
   }
+  // ---- §14: 早期对话摘要压缩（DSH 上下文压缩设计移植：分层摘要 + 原文归档可检索 + 活跃内容不压）----
+  function agentArchiveKey() {
+    let pid = 'default';
+    try { const id = window.Storage && window.Storage.getCurrentProjectId && window.Storage.getCurrentProjectId(); if (id) pid = id; } catch (e) {}
+    return 'agent-history-archive:' + pid;
+  }
+  function agentLoadArchive() {
+    try {
+      const raw = localStorage.getItem(agentArchiveKey());
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+  }
+  function agentSaveArchive(arr) {
+    try {
+      let list = Array.isArray(arr) ? arr : [];
+      // cap 总字符 100K：超限从最旧开始丢（归档仅用于 search_history 找回被压缩的早期细节）
+      while (list.length && list.reduce((s, it) => s + String(it && it.content || '').length, 0) > 100000) list.shift();
+      localStorage.setItem(agentArchiveKey(), JSON.stringify(list.slice(-200)));
+    } catch (e) {}
+  }
+  // 历史超阈值（30000 字符）→ 压缩最旧段：原文存档 + LLM 生成摘要；失败静默回滚（不丢历史）。
+  // 摘要写回后保持稳定（不重生成）→ 前缀缓存可命中；再次超阈值时旧摘要+更早内容一起再压（tier2 蒸馏）。
+  async function agentMaybeCompressHistory(hist) {
+    if (!window.Agent || !window.AI) return hist;
+    const plan = window.Agent.classifyHistoryCompression(hist, { maxChars: 30000 });
+    if (!plan.shouldCompress || !plan.compress.length) return hist;
+    const saved = plan.compress.length;
+    const note = agentAppendToolBubble('🧠 正在压缩早期对话（' + saved + ' 条）…');
+    try {
+      const srcText = plan.compress.map(m => '【' + (m.role === 'assistant' ? '助手' : '用户') + '】\n' + (m.content || '')).join('\n\n');
+      const sys = '你是对话摘要器。把用户与 AI 助手在剧情编辑器中的早期对话压缩成紧凑中文摘要（要点列表，200-400 字）。必须逐字保留：用户原始指令与偏好、涉及的剧情块名、变量名与数值、已确认的修改与撤销、未解决的问题。不要编造任何内容。';
+      const out = await window.AI.callDeepseek(
+        [{ role: 'system', content: sys }, { role: 'user', content: srcText }],
+        { stream: false, thinking: false, onUsage: (u) => agentAccumUsage(u) }
+      );
+      const summary = String((out && out.content) || out || '').trim();
+      if (!summary) { note.textContent = '🧠 早期对话压缩失败（空摘要），保留原文'; return hist; }
+      // 原文归档（保留时间序；与已有归档合并后整体截断）
+      const archive = agentLoadArchive();
+      plan.compress.forEach(m => archive.push({ role: m.role, content: m.content, ts: Date.now() }));
+      agentSaveArchive(archive);
+      const next = [{ role: 'summary', content: summary }].concat(plan.keep);
+      agentSaveHistory(next);
+      note.textContent = '🧠 已压缩早期对话 ' + saved + ' 条（原文已归档，可让 Agent 用 search_history 检索）';
+      return next;
+    } catch (e) {
+      note.textContent = '🧠 早期对话压缩失败（' + ((e && e.message) || '未知错误') + '），保留原文';
+      return hist;
+    }
+  }
   function agentAppendBubble(role, text) {
     const box = $('#agent-messages');
     const el = document.createElement('div');
@@ -16162,7 +16265,7 @@ self.onmessage = function (e) {
     if (!userText) return;
     ta.value = '';
     agentAppendBubble('user', userText);
-    const hist = agentLoadHistory();
+    const hist = await agentMaybeCompressHistory(agentLoadHistory()); // §14：超阈值先压缩早期对话（存档原文+摘要前置）
     hist.push({ role: 'user', content: userText });
     agentSaveHistory(hist);
     const replyBubble = agentAppendBubble('assistant', '');
@@ -16354,6 +16457,7 @@ self.onmessage = function (e) {
       settings: () => agentSettingsText(),
       getVars: () => window.Storage.getVars(),
       saveVars: (a) => window.Storage.saveVars(a),
+      searchHistoryArchives: () => agentLoadArchive(), // §14：search_history 工具的归档数据源（agent-history-archive:<pid>）
       blocksDoc: () => {
         // {块名: 文本} 块对象视图（Agent 结构组工具契约）；主剧情用 MAIN_BLOCK 键
         const doc = (window.Storage.loadBlocks ? window.Storage.loadBlocks() : null) || { main: '', blocks: {} };

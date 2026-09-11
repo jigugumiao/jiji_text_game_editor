@@ -7347,7 +7347,7 @@ self.onmessage = function (e) {
   // 契约见 js/agent.js：runLoop(opts, deps) 不向外抛错（内部 catch 后走 onStatus('error') + onReply('出错了：…')）；
   // onStatus 收到的是字符串：'intent' / 'scenario:<id>' / 'thinking' / 'loop_limit' / 'error'；最终回复经 onReply 送达（无 'reply' 状态）。
   // onWrite(rec) 的 rec={block,before,after,level,impact}；applyAgentWrite 只分级并记录到 sessionWrites、不碰 DOM，
-  // DOM 写入在本节 onWrite 回调里经 commitAgentWrite 完成（Task 16 换全量分级渲染，本节的 level 分支保留可替换点）。
+  // DOM 写入在本节 onWrite 回调里经 commitAgentWrite 完成（Task 16 已实现分级渲染：auto 立即落盘 / preview diff 预览卡 / destructive 二次确认）。
   let agentAbort = null;       // 当前轮次的 AbortController（「停止」按钮用）
   let agentStopping = false;   // 用户手动停止标记：abort 触发 runLoop 内部 catch → onReply('出错了：…')，据此显示「已停止」
   let agentSessionGen = 0;     // 会话代次：切工程/重开会话时自增，使遗留异步回调失效、不写回旧工程历史（同 ftSessionGen 语义）
@@ -7401,6 +7401,79 @@ self.onmessage = function (e) {
     tn.textContent += d;
     const box = $('#agent-messages');
     if (box) box.scrollTop = box.scrollHeight;
+  }
+  // 分级写入辅助（Task 16）：行数差 / 撤销按钮 / diff 预览卡片
+  // 行数差：|afterLines - beforeLines|（split on \n，null 安全），用于「已改《块》变更 N 行」提示
+  function agentCountLines(before, after) {
+    const b = (before == null) ? '' : String(before);
+    const a = (after == null) ? '' : String(after);
+    return Math.abs(a.split('\n').length - b.split('\n').length);
+  }
+  // 「撤销」按钮：挂到工具气泡上；点击撤销最近一次 sessionWrite（undoWrite 出栈 + 经 commitAgentWrite 还原 before）
+  function agentAttachUndo(bubbleEl, rec) {
+    const undoBtn = document.createElement('button');
+    undoBtn.type = 'button';
+    undoBtn.className = 'agent-undo';
+    undoBtn.textContent = '撤销';
+    undoBtn.addEventListener('click', function () {
+      const u = window.Agent.undoWrite({ commit: commitAgentWrite });
+      if (u) bubbleEl.textContent = '↩️ 已撤销对《' + u.block + '》的修改';
+      else bubbleEl.textContent = '没有可撤销的修改';
+    });
+    bubbleEl.appendChild(undoBtn);
+    return undoBtn;
+  }
+  // diff 预览卡片（preview/destructive 级别）：before/after 按行对齐（索引对齐，非 LCS），
+  // 变化行加 .changed；标题/两个 pane/操作按钮齐备后追加到消息区并返回，供调用方接事件
+  function agentDiffCard(rec) {
+    const box = $('#agent-messages');
+    const card = document.createElement('div');
+    card.className = 'agent-diff-card';
+    const title = document.createElement('div');
+    title.className = 'agent-diff-title';
+    title.textContent = '修改《' + rec.block + '》预览（apply 后生效）';
+    card.appendChild(title);
+    const panes = document.createElement('div');
+    panes.className = 'agent-diff-panes';
+    const bLines = (rec.before == null ? '' : String(rec.before)).split('\n');
+    const aLines = (rec.after == null ? '' : String(rec.after)).split('\n');
+    const n = Math.max(bLines.length, aLines.length);
+    const beforePane = document.createElement('pre');
+    beforePane.className = 'agent-diff-pane before';
+    const afterPane = document.createElement('pre');
+    afterPane.className = 'agent-diff-pane after';
+    for (let i = 0; i < n; i++) {
+      const bl = i < bLines.length ? bLines[i] : '';
+      const al = i < aLines.length ? aLines[i] : '';
+      const changed = (bl !== al) ? ' changed' : '';
+      const bd = document.createElement('div');
+      bd.className = 'agent-diff-line' + changed;
+      bd.textContent = bl;
+      beforePane.appendChild(bd);
+      const ad = document.createElement('div');
+      ad.className = 'agent-diff-line' + changed;
+      ad.textContent = al;
+      afterPane.appendChild(ad);
+    }
+    panes.appendChild(beforePane);
+    panes.appendChild(afterPane);
+    card.appendChild(panes);
+    const actions = document.createElement('div');
+    actions.className = 'agent-diff-actions';
+    const apply = document.createElement('button');
+    apply.type = 'button';
+    apply.className = 'btn btn-primary agent-diff-apply';
+    apply.textContent = '应用';
+    const ignore = document.createElement('button');
+    ignore.type = 'button';
+    ignore.className = 'btn btn-ghost agent-diff-ignore';
+    ignore.textContent = '忽略';
+    actions.appendChild(apply);
+    actions.appendChild(ignore);
+    card.appendChild(actions);
+    box.appendChild(card);
+    box.scrollTop = box.scrollHeight;
+    return card;
   }
   // 切换工程时调用：重置 Agent 会话态，使其按工程独立（同 ftResetSession editor.js:6707，openProject 里一并调用）
   function agentResetSession() {
@@ -7556,21 +7629,44 @@ self.onmessage = function (e) {
           onWrite: (rec) => {
             if (myGen !== agentSessionGen) return;
             if (!rec || rec.block == null || rec.after == null) return;
-            // TODO(Task 16): 全量分级渲染（auto 落盘 / preview 差异预览确认 / destructive 二次确认）。
-            // 当前最小实现（Task 15）：所有 level 一律立即落盘 + 「撤销」气泡，差异预览 UI 留待 Task 16。
-            commitAgentWrite(rec.block, rec.after);
-            const b = agentAppendToolBubble('✏️ 已改《' + rec.block + '》');
-            const undoBtn = document.createElement('button');
-            undoBtn.type = 'button';
-            undoBtn.className = 'agent-undo';
-            undoBtn.textContent = '撤销';
-            undoBtn.style.marginLeft = '8px';
-            undoBtn.addEventListener('click', function () {
-              const u = window.Agent.undoWrite({ commit: commitAgentWrite });
-              if (u) b.textContent = '↩️ 已撤销对《' + u.block + '》的修改';
-              else b.textContent = '没有可撤销的修改';
-            });
-            b.appendChild(undoBtn);
+            if (rec.level === 'auto') {
+              // 小改：立即落盘 + 可撤销气泡
+              commitAgentWrite(rec.block, rec.after);
+              const lines = agentCountLines(rec.before, rec.after); // 变更行数
+              const b = agentAppendToolBubble('✏️ 已改《' + rec.block + '》' + (lines > 0 ? ' 变更 ' + lines + ' 行' : ''));
+              agentAttachUndo(b, rec);
+            } else if (rec.level === 'preview') {
+              // 大改：diff 预览卡片，应用/忽略
+              const card = agentDiffCard(rec);
+              // 应用 → 落盘 + 撤销；忽略 → 从会话记录移除
+              card.querySelector('.agent-diff-apply').addEventListener('click', () => {
+                commitAgentWrite(rec.block, rec.after);
+                const b = agentAppendToolBubble('✅ 已应用对《' + rec.block + '》的修改');
+                agentAttachUndo(b, rec);
+                card.remove();
+              });
+              card.querySelector('.agent-diff-ignore').addEventListener('click', () => {
+                const shifted = window.Agent.sessionWrites.shift();
+                card.remove();
+                agentAppendToolBubble(shifted && shifted.block === rec.block ? '🗑️ 已忽略对《' + rec.block + '》的修改' : '🗑️ 已忽略');
+              });
+              // (destructive level: 同一卡片追加红色警示 + 确认删除按钮，见下)
+              if (rec.level === 'destructive') { /* destructive 与 preview 同卡，额外警示 */ }
+            } else if (rec.level === 'destructive') {
+              // 破坏性：红色警示 + 二次确认（防御性分支——目前删除类工具不产 resultText，走 onConfirm；保留以防未来）
+              const card = agentDiffCard(rec);
+              const warn = document.createElement('div');
+              warn.className = 'agent-diff-danger';
+              warn.textContent = '⚠️ 此操作具有破坏性';
+              card.querySelector('.agent-diff-panes').appendChild(warn);
+              const confirmBtn = document.createElement('button');
+              confirmBtn.type = 'button';
+              confirmBtn.className = 'btn btn-danger agent-diff-confirm';
+              confirmBtn.textContent = '确认执行';
+              confirmBtn.addEventListener('click', () => { commitAgentWrite(rec.block, rec.after); card.remove(); agentAppendToolBubble('⚠️ 已执行破坏性修改'); });
+              card.querySelector('.agent-diff-actions').appendChild(confirmBtn);
+              (card.querySelector('.agent-diff-ignore')).textContent = '取消';
+            }
           },
           onReply: (text) => {
             if (myGen !== agentSessionGen) return;
@@ -7583,9 +7679,42 @@ self.onmessage = function (e) {
             agentStopping = false;
           },
           onConfirm: async (info) => {
-            // TODO(Task 16): 换成真实的二次确认对话框。当前最小实现：自动放行（return true），
-            // 使 delete_block（report → confirm → confirmDelete 真删）与 delete_var/delete_asset 能完成循环。
-            return true;
+            if (myGen !== agentSessionGen) return false;
+            // 真实二次确认：渲染确认气泡到消息区，await 用户点按
+            const name = info && info.name;
+            const args = (info && info.args) || {};
+            const result = (info && info.result) || {};
+            const el = agentAppendBubble('assistant', '');
+            el.className = 'fta-msg assistant'; // 确认卡片样式
+            let html = '';
+            if (name === 'delete_block') {
+              const refs = Array.isArray(result.references) ? result.references : [];
+              html = '⚠️ 确认删除剧情块《' + escapeHtml(args.blockName || '') + '》？' +
+                (refs.length ? '<div class="agent-confirm-refs">其他块 ' + refs.length + ' 处跳转引用：<br>' +
+                  refs.map(r => '· ' + escapeHtml(r.block) + ' 第' + escapeHtml(r.lineNo) + '行：' + escapeHtml((r.snippet || '').slice(0, 60))).join('<br>') + '</div>' : '');
+            } else if (name === 'delete_var') {
+              html = '⚠️ 确认删除变量「' + escapeHtml(args.name || '') + '」？';
+            } else if (name === 'delete_asset') {
+              html = '⚠️ 确认删除素材「' + escapeHtml(args.name || '') + '」？';
+            } else {
+              html = '⚠️ 确认执行 ' + escapeHtml(name || '') + '？';
+            }
+            el.innerHTML = html;
+            const bar = document.createElement('div');
+            bar.className = 'agent-confirm-bar';
+            const ok = document.createElement('button'); ok.type = 'button'; ok.className = 'btn btn-danger btn-sm'; ok.textContent = '确认';
+            const no = document.createElement('button'); no.type = 'button'; no.className = 'btn btn-ghost btn-sm'; no.textContent = '取消';
+            bar.appendChild(ok); bar.appendChild(no); el.appendChild(bar);
+            const box = $('#agent-messages'); if (box) box.scrollTop = box.scrollHeight;
+            const decision = new Promise((resolve) => {
+              ok.addEventListener('click', () => { resolve(true); el.remove(); }, { once: true });
+              no.addEventListener('click', () => { resolve(false); el.remove(); }, { once: true });
+            });
+            // 会话已切换（gen 变化）或用户点了停止 → 视为取消
+            const timer = setTimeout(() => { if (myGen === agentSessionGen) { resolve(false); el.remove(); } }, 120000);
+            const v = await decision;
+            clearTimeout(timer);
+            return v;
           },
         },
       }, {

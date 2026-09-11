@@ -1597,6 +1597,13 @@ body.dark #fta-send.fta-stop:hover { background: #c93c3c; border-color: #c93c3c;
 .fta-actions .btn .ico { width: 15px; height: 15px; }
 body.dark .fta-messages { background: var(--bg-sunken); }
 .fta-box.hidden, #fulltext-assistant.hidden { display: none; }
+/* Agent 对话与全文助理同构，必须补齐等尺寸规则：通用 .modal-box 仅 380px 且无高度限制，
+   会导致窗口过小、消息区无滚动、内容撑破整页出界 */
+#agent-assistant { align-items: center; justify-content: center; }
+#agent-assistant .fta-box {
+  width: 720px; max-width: 94vw; height: 82vh; max-height: 820px;
+  display: flex; flex-direction: column; padding: 0; overflow: hidden;
+}
 
 /* ===== Agent 对话（分级写入预览/确认） ===== */
 .agent-diff-card {
@@ -1911,7 +1918,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.88-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.89-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>

@@ -368,4 +368,29 @@ function mockBlocks() {
   assert.ok(ctx.Agent.tools.create_block({ blockName: 'X' }).error, '缺 saveBlocks 时 create 必须报错而非静默 ok');
   assert.ok(ctx.Agent.tools.rename_block({ oldName: '第一章', newName: 'X' }).error, '缺 saveBlocks 时 rename 必须报错');
 }
+// Task 10 审查修复：newN 校验 / 单括号跳转同步与扫描 / __MAIN__ 守卫
+{
+  const get = mockBlocks();
+  assert.ok(ctx.Agent.tools.rename_block({ oldName: '第一章', newName: '' }).error, '空 newN 拒绝');
+  assert.ok(ctx.Agent.tools.rename_block({ oldName: '第一章', newName: '$&' }).error, '替换串特殊字符 newN 拒绝');
+  assert.ok('第一章' in get() && !('$&' in get()), '拒绝后数据未动');
+}
+{
+  const get = mockBlocks();
+  get()['第二章'] = '甲\n<剧情块:第一章>';
+  ctx.Agent.tools.rename_block({ oldName: '第一章', newName: '序章' });
+  assert.ok(get()['第二章'].indexOf('<剧情块:序章>') >= 0, '单括号跳转引用同步');
+  const get2 = mockBlocks();
+  get2()['第二章'] = '甲\n<剧情块:第一章>';
+  const r = ctx.Agent.tools.delete_block({ blockName: '第一章' });
+  assert.ok(r.references.length >= 1 && r.references[0].snippet.indexOf('<剧情块:第一章>') >= 0, '单括号引用计入删除报告');
+}
+{
+  const get = mockBlocks();
+  ctx.Agent.toolsDeps.mainBlock = '__MAIN__';
+  assert.ok(ctx.Agent.tools.create_block({ blockName: '__MAIN__' }).error, '不能创建主剧情同名块');
+  assert.ok(ctx.Agent.tools.rename_block({ oldName: '__MAIN__', newName: 'X' }).error, '主剧情不可改名');
+  assert.ok(ctx.Agent.tools.rename_block({ oldName: '第一章', newName: '__MAIN__' }).error, '不能改名为主剧情');
+  assert.ok(ctx.Agent.tools.delete_block({ blockName: '__MAIN__' }).error, '主剧情不可删除');
+}
 console.log('agent.test.js OK');

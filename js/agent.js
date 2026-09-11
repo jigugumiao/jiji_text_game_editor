@@ -401,6 +401,7 @@
     create_block: function (a) {
       var name = String(a && a.blockName || '').trim();
       if (!/^[A-Za-z0-9_\u4e00-\u9fa5]+$/.test(name)) return { error: '块名只允许 中文/字母/数字/下划线' };
+      if (Agent.toolsDeps.mainBlock && name === Agent.toolsDeps.mainBlock) return { error: '不能创建与主剧情同名的块' };
       if (typeof Agent.toolsDeps.saveBlocks !== 'function') return { error: '编辑器未就绪' };
       var doc = blocksDocObj();
       if (name in doc) return { error: '已存在同名剧情块「' + name + '」' };
@@ -417,12 +418,19 @@
       var newN = String(a && a.newName || '').trim();
       if (typeof Agent.toolsDeps.saveBlocks !== 'function') return { error: '编辑器未就绪' };
       var doc = blocksDocObj();
+      if (Agent.toolsDeps.mainBlock && oldN === Agent.toolsDeps.mainBlock) return { error: '主剧情块不可改名' };
+      if (Agent.toolsDeps.mainBlock && newN === Agent.toolsDeps.mainBlock) return { error: '不能改名为主剧情' };
       if (!(oldN in doc)) return { error: '未找到剧情块「' + oldN + '」' };
+      // newN 必须与 create_block 同规则校验：空串会建空键块，$&/$`/$' 等会污染替换串（审查加固）
+      if (!/^[A-Za-z0-9_\u4e00-\u9fa5]+$/.test(newN)) return { error: '块名只允许 中文/字母/数字/下划线' };
       if (newN in doc) return { error: '已存在同名剧情块「' + newN + '」' };
-      // 同步两类引用：<<剧情块:旧名>> 分块标记，与 <选项:"…",旧名…> 跳转目标（含条件行 <选项:"…",旧名,条件:…>）
-      // 块名无正则元字符（storage.js:288），插值安全
-      var reTag = new RegExp('<<剧情块:' + oldN + '>>', 'g');
-      var reOpt = new RegExp('(<选项:"[^"]*",\\s*)' + oldN + '(?=\\s*(,|>))', 'g');
+      // 旧名转义（repo 惯例 storage.js:564）：块名虽无正则元字符，但旧键可能来自手工编辑/历史数据
+      var escOld = oldN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // 同步三类引用：<<剧情块:旧名>> 分块标记、<选项:"…",旧名…> 跳转目标（含条件行）、
+      // 单括号运行期跳转 <剧情块:旧名> / <对话块:旧名>（storage.js:568 同源，防止改名后运行期悬空引用）
+      var reTag = new RegExp('<<剧情块:' + escOld + '>>', 'g');
+      var reOpt = new RegExp('(<选项:"[^"]*",\\s*)' + escOld + '(?=\\s*(,|>))', 'g');
+      var reJump = new RegExp('<(?:对话块|剧情块):\\s*' + escOld + '\\s*>', 'g');
       var next = {};
       for (var k in doc) {
         if (Object.prototype.hasOwnProperty.call(doc, k)) next[k] = doc[k];
@@ -434,7 +442,7 @@
       for (var b in next) {
         if (!Object.prototype.hasOwnProperty.call(next, b)) continue;
         var t = String(next[b] == null ? '' : next[b]);
-        var t2 = t.replace(reTag, '<<剧情块:' + newN + '>>').replace(reOpt, '$1' + newN);
+        var t2 = t.replace(reJump, '<剧情块:' + newN + '>').replace(reTag, '<<剧情块:' + newN + '>>').replace(reOpt, '$1' + newN);
         if (t2 !== t) { next[b] = t2; changed++; }
       }
       Agent.toolsDeps.saveBlocks(next);
@@ -442,17 +450,22 @@
     },
     delete_block: function (a) {
       var name = String(a && a.blockName || '').trim();
+      if (typeof Agent.toolsDeps.blocksDoc !== 'function' && typeof Agent.toolsDeps.listBlocks !== 'function') return { error: '编辑器未就绪' };
       var doc = blocksDocObj();
+      if (Agent.toolsDeps.mainBlock && name === Agent.toolsDeps.mainBlock) return { error: '主剧情块不可删除' };
       if (!(name in doc)) return { error: '未找到剧情块「' + name + '」' };
-      // 只扫其他块的跳转引用；无 g 标志 → .test() 无 lastIndex 陷阱
-      var re = new RegExp('<选项:"[^"]*",\\s*' + name + '(?=\\s*(,|>))');
+      // 只扫其他块的跳转引用：选项 <选项:"…",旧名…> 与单括号 <剧情块:旧名>/<对话块:旧名>；
+      // 无 g 标志 → .test() 无 lastIndex 陷阱；引用数上限 20 防超长回报（同 search_in_doc）
+      var escName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var re = new RegExp('<选项:"[^"]*",\\s*' + escName + '(?=\\s*(,|>))');
+      var reJump = new RegExp('<(?:对话块|剧情块):\\s*' + escName + '\\s*>');
       var refs = [];
       for (var k in doc) {
         if (!Object.prototype.hasOwnProperty.call(doc, k)) continue;
         if (k === name) continue;
         var lines = String(doc[k] == null ? '' : doc[k]).split('\n');
-        for (var i = 0; i < lines.length; i++) {
-          if (re.test(lines[i])) refs.push({ block: k, lineNo: i + 1, snippet: lines[i].slice(0, 60) });
+        for (var i = 0; i < lines.length && refs.length < 20; i++) {
+          if (re.test(lines[i]) || reJump.test(lines[i])) refs.push({ block: k, lineNo: i + 1, snippet: lines[i].slice(0, 60) });
         }
       }
       return { ok: true, blockName: name, destructive: true, references: refs };

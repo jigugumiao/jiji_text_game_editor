@@ -2019,7 +2019,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.108-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.109-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -4405,10 +4405,10 @@ const ITEM_VIEWER_WRAP = String.raw`<!DOCTYPE html>
 <div id="viewer"></div>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
-<\/script>
+${'</scr' + 'ipt>'}
 <script type="module">
 __VIEWER_SCRIPT__
-<\/script>
+${'</scr' + 'ipt>'}
 </body>
 </html>
 `;
@@ -4999,15 +4999,20 @@ __STORY_DATA__
   };
   // 初始化水印
   (function(){
-    const g = DATA.global || {};
-    const wm = g.watermark;
-    if (!wm || !wm.text) return;
-    const el = document.getElementById('watermark');
-    el.style.display = 'block';
-    el.style.opacity = (wm.opacity || 40) / 100;
-    el.textContent = wm.text;
-    const posMap = { '左上':'top:12px;left:16px', '右上':'top:12px;right:16px', '左下':'bottom:12px;left:16px', '右下':'bottom:12px;right:16px' };
-    el.style.cssText += ';' + (posMap[wm.pos] || posMap['右下']);
+    try {
+      const g = DATA.global || {};
+      const wm = g.watermark;
+      if (!wm || !wm.text) return;
+      const el = document.getElementById('watermark');
+      if (!el) return;
+      el.style.display = 'block';
+      el.style.opacity = (wm.opacity || 40) / 100;
+      el.textContent = wm.text;
+      const posMap = { '左上':'top:12px;left:16px', '右上':'top:12px;right:16px', '左下':'bottom:12px;left:16px', '右下':'bottom:12px;right:16px' };
+      el.style.cssText += ';' + (posMap[wm.pos] || posMap['右下']);
+    } catch (e) {
+      try { console.log('[runtime] 水印初始化异常（已忽略，不影响加载）：' + (e && e.message ? e.message : e)); } catch (e2) {}
+    }
   })();
 
     // 解析开场背景：支持「背景库素材名」（按名解析 src / 纯色）与旧版直链（data:/http(s)）
@@ -6431,7 +6436,7 @@ __STORY_DATA__
     scrollToBottom();
   });
 })();
-<\/script>
+${'</scr' + 'ipt>'}
 </body>
 </html>
 `;

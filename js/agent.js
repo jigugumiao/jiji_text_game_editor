@@ -131,6 +131,23 @@
       return rec;
     },
 
+    // 破坏性操作确认后的真删执行（C1）：delete_block 工具只报告引用（不落盘），
+    // 由 runLoop 确认门（onConfirm=true）后调用本方法执行真删。
+    // delete_var/delete_asset 是「立即型」——确认门挡在工具执行前，工具内即删，不走这里。
+    confirmDelete: function (kind, args) {
+      if (kind === 'delete_block') {
+        var bname = String(args && args.blockName || '').trim();
+        if (Agent.toolsDeps.mainBlock && bname === Agent.toolsDeps.mainBlock) return { error: '主剧情块不可删除' };
+        if (typeof Agent.toolsDeps.saveBlocks !== 'function') return { error: '编辑器未就绪' };
+        var doc = blocksDocObj();
+        if (!(bname in doc)) return { error: '未找到剧情块「' + bname + '」' };
+        delete doc[bname];
+        Agent.toolsDeps.saveBlocks(doc);
+        return { ok: true, blockName: bname, deleted: true };
+      }
+      return { error: '未知的删除目标：' + kind };
+    },
+
     // ===== Task 13: 意图路由 + 工具调用循环 =====
     INTENT_SYSTEM: '你是意图识别器。根据用户对剧情编辑器（剧情块/选项/变量/素材/线索）的请求，输出 JSON：{"scenario":"polish|rewrite|design|vars|general","needs":["需要的上下文项"],"note":"一句话理解"}。polish=局部润色/改稿（只读当前块）；rewrite=整篇改写/续写（需全文）；design=剧情问答/设计（需大纲+设定）；vars=变量/逻辑操作（需变量库）；无法归类用 general。只输出 JSON，不要其它文字。',
     isContinuation: function (text) {
@@ -153,7 +170,7 @@
           } else {
             cb.onStatus && cb.onStatus('intent');
             var intentMsgs = [{ role: 'system', content: Agent.INTENT_SYSTEM }, { role: 'user', content: opts.userText }];
-            var intentRes = await deps.request(intentMsgs, { thinking: { type: 'disabled' }, max_tokens: 512 });
+            var intentRes = await deps.request(intentMsgs, { thinking: false });
             scenario = Agent.intentParse(typeof intentRes === 'string' ? intentRes : (intentRes && intentRes.content)).scenario;
             cb.onStatus && cb.onStatus('scenario:' + scenario);
           }
@@ -165,16 +182,24 @@
           rounds++;
           cb.onStatus && cb.onStatus('thinking');
           var toolDefs = Agent.buildToolDefs(scenario);
-          var resp = await deps.request(messages, { tools: toolDefs.length ? toolDefs : undefined, tool_choice: toolDefs.length ? 'auto' : undefined, thinking: { type: 'disabled' } });
+          // ⚠️ I1：callDeepseek 的 opts.thinking 是 boolean（truthy=开启思考+max_tokens 32768，falsy=关闭+8192），
+          // 传 {type:'disabled'} 对象会被当 truthy → 反向开启 thinking；意图轮/工具轮一律传 false。
+          var resp = await deps.request(messages, { tools: toolDefs.length ? toolDefs : undefined, tool_choice: toolDefs.length ? 'auto' : undefined, thinking: false });
           var text = typeof resp === 'string' ? resp : (resp && resp.content) || '';
           var toolCalls = resp && resp.toolCalls;
           if (!toolCalls || !toolCalls.length) {
             cb.onReply && cb.onReply(text);
             return { scenario: scenario, rounds: rounds, finalText: text };
           }
+          // C2：白名单执行门——只允许本场景下发的工具（防注入工具名执行未下发工具）
+          var allowed = {};
+          for (var di = 0; di < toolDefs.length; di++) allowed[toolDefs[di].function.name] = true;
+          // I3：单轮并行工具上限 4（设计 §8）；assistant 消息与执行都用同一裁剪数组，保证 tool_call_id 匹配
+          var calls = toolCalls.slice(0, 4);
           var results = [];
-          for (var i = 0; i < toolCalls.length; i++) {
-            var fn = toolCalls[i].function;
+          var writtenBlocks = {}; // I3：同块写守卫（防并行写同块导致 stale-read 覆盖）
+          for (var i = 0; i < calls.length; i++) {
+            var fn = calls[i].function;
             var name = fn && fn.name;
             var args = {};
             try { args = fn.arguments ? JSON.parse(fn.arguments) : {}; } catch (e) { args = {}; }
@@ -182,16 +207,49 @@
             var impl = Agent.tools[name];
             var result;
             if (!impl) result = { error: '未知工具：' + name };
-            else result = await impl(args);   // ⚠️ 必须 await（素材组工具 async；同步工具 await 无害）
+            else if (!allowed[name]) result = { error: '工具「' + name + '」不在当前场景可用范围' };
+            else {
+              var isDestructive = TOOL_DEFS[name] && TOOL_DEFS[name].destructive === true;
+              var confirmed = true;
+              if (name === 'delete_block') {
+                // 报告型破坏性：先执行工具拿引用报告（delete_block 不落盘），再确认，确认后真删
+                try { result = await impl(args); }
+                catch (e) { result = { error: '工具执行异常：' + (e && e.message) }; }
+                if (result && result.destructive) {
+                  if (typeof cb.onConfirm === 'function') {
+                    try { confirmed = !!(await cb.onConfirm({ name: name, args: args, result: result })); }
+                    catch (e) { confirmed = false; }
+                  }
+                  if (confirmed) result = Agent.confirmDelete('delete_block', args);
+                  else result = { error: '用户取消了操作：' + name };
+                }
+              } else {
+                // 立即型破坏性（delete_var/delete_asset 工具内即删）：确认门必须在工具执行前
+                if (isDestructive && typeof cb.onConfirm === 'function') {
+                  try { confirmed = !!(await cb.onConfirm({ name: name, args: args })); }
+                  catch (e) { confirmed = false; }
+                }
+                if (!confirmed) {
+                  result = { error: '用户取消了操作：' + name };
+                } else if (args.blockName && writtenBlocks[args.blockName]) {
+                  result = { error: '同一剧情块「' + args.blockName + '」在本轮已被修改，请先 read_block 重新读取后再操作' };
+                } else {
+                  // I2：单个工具抛错不得炸掉整轮（转 error 回填，模型可换招）
+                  try { result = await impl(args); }
+                  catch (e) { result = { error: '工具执行异常：' + (e && e.message) }; }
+                  if (result && result.ok && result.resultText && args.blockName) writtenBlocks[args.blockName] = true;
+                }
+              }
+            }
             if (result && result.resultText) {
-              var rec = Agent.applyAgentWrite({ block: result.block, before: (result.before !== undefined) ? result.before : args.__before, resultText: result.resultText, impact: result.impact }, deps, null);
+              var rec = Agent.applyAgentWrite({ block: result.block, before: result.before, resultText: result.resultText, impact: result.impact }, deps, null);
               cb.onWrite && cb.onWrite(rec);
             }
-            results.push({ tool_call_id: toolCalls[i].id, role: 'tool', content: JSON.stringify(result || {}) });
+            results.push({ tool_call_id: calls[i].id || ('call_' + i), role: 'tool', content: JSON.stringify(result || {}) });
           }
-          // ⚠️ OpenAI/DeepSeek 兼容 API 硬性要求：tool_call_id 对应的「携带 tool_calls 的 assistant 消息」
+          // OpenAI/DeepSeek 兼容 API 硬性要求：tool_call_id 对应的「携带 tool_calls 的 assistant 消息」
           // 必须先于 tool 消息存在，否则 round 2+ 被拒（"tool_call_id does not exist in previous message"）
-          messages.push({ role: 'assistant', content: null, tool_calls: toolCalls });
+          messages.push({ role: 'assistant', content: null, tool_calls: calls });
           messages = messages.concat(results);
         }
         cb.onStatus && cb.onStatus('loop_limit');
@@ -399,8 +457,9 @@
       return { ok: true, block: a.blockName, before: t, resultText: result, impact: computeImpact(a.blockName, result, wholeBlock, t) };
     },
     apply_review_marker: function (a) {
-      // 占位：复用审阅标记管线（Task 10 关联创作辅助时接通 editor 侧 applyGeneratedBlocks/审阅写入）
-      return { error: 'apply_review_marker 待 UI 接线' };
+      // 占位：复用审阅标记管线（Task 10 关联创作辅助时接通 editor 侧 applyGeneratedBlocks/审阅写入）。
+      // 错误信息引导模型换用可用写工具，避免原地重试（I4）
+      return { error: 'apply_review_marker 尚未接线，请改用 insert_at 插入修改后的文字，或直接向用户给出修改建议' };
     },
     // ===== Task 9: 变量工具（直接读写 master 现有格式，经 toolsDeps.getVars/saveVars 注入） =====
     // 直接变更注入的变量数组；destructive 仅 delete_var 标记（变量写入不走 sessionWrites 撤销）
@@ -657,17 +716,17 @@
     list_vars: { type: 'function', function: { name: 'list_vars', description: '列出全部变量（名称/类型/值）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
     read_var: { type: 'function', function: { name: 'read_var', description: '读取单个变量的名称/类型/值。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' } }, required: ['name'] } } },
     create_var: { type: 'function', function: { name: 'create_var', description: '新建变量（number/text/boolean，命名：字母/下划线/中文开头）。修改变量库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' }, type: { type: 'string', enum: ['number', 'text', 'boolean'], description: '变量类型' }, value: { type: 'string', description: '初始值（缺省按类型取默认，数值/布尔由工具按类型转换）' } }, required: ['name', 'type'] } } },
-    delete_var: { type: 'function', function: { name: 'delete_var', description: '删除变量定义（正文中的引用不清理）。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' } }, required: ['name'] } } },
+    delete_var: { destructive: true, type: 'function', function: { name: 'delete_var', description: '删除变量定义（正文中的引用不清理）。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' } }, required: ['name'] } } },
     set_var: { type: 'function', function: { name: 'set_var', description: '修改已有变量的值（number 类型须数值）。修改变量库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' }, value: { type: 'string', description: '新值（数值/布尔由工具按类型转换）' } }, required: ['name', 'value'] } } },
     update_var: { type: 'function', function: { name: 'update_var', description: '对 number 类型变量做加减运算。修改变量库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' }, op: { type: 'string', enum: ['+', '-'], description: '运算（缺省 +）' }, delta: { type: 'number', description: '增减量' } }, required: ['name', 'delta'] } } },
     create_block: { type: 'function', function: { name: 'create_block', description: '新建空剧情块（命名校验 + 重名拒绝）。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '新块名称' } }, required: ['blockName'] } } },
     rename_block: { type: 'function', function: { name: 'rename_block', description: '重命名剧情块并同步正文中的跳转引用。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { oldName: { type: 'string', description: '原块名' }, newName: { type: 'string', description: '新块名' } }, required: ['oldName', 'newName'] } } },
-    delete_block: { type: 'function', function: { name: 'delete_block', description: '删除剧情块（先报告其他块中的跳转引用，确认后才删）。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '要删除的块名' } }, required: ['blockName'] } } },
+    delete_block: { destructive: true, type: 'function', function: { name: 'delete_block', description: '删除剧情块（先报告其他块中的跳转引用，确认后才删）。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '要删除的块名' } }, required: ['blockName'] } } },
     extract_clues: { type: 'function', function: { name: 'extract_clues', description: '从指定剧情块（缺省当前块）提取线索，结果回显给用户，不自动修改文档。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称（缺省当前块）' } }, required: [] } } },
     generate_options: { type: 'function', function: { name: 'generate_options', description: '校验并写入合法选项行（<选项:"文字",块名,条件>）。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { text: { type: 'string', description: '要解析的选项行文本' } }, required: ['text'] } } },
     list_assets: { type: 'function', function: { name: 'list_assets', description: '列出素材元数据（名称/类型/标签，不含二进制内容）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
     rename_asset: { type: 'function', function: { name: 'rename_asset', description: '重命名素材。修改素材库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '原素材名' }, newName: { type: 'string', description: '新素材名' } }, required: ['name', 'newName'] } } },
-    delete_asset: { type: 'function', function: { name: 'delete_asset', description: '删除素材。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '素材名' } }, required: ['name'] } } },
+    delete_asset: { destructive: true, type: 'function', function: { name: 'delete_asset', description: '删除素材。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '素材名' } }, required: ['name'] } } },
     export_project: { type: 'function', function: { name: 'export_project', description: '导出当前工程备份（含素材/变量/线索，不含 AI Key）。导出当前工程。', parameters: { type: 'object', properties: {} } } },
   };
   Agent.TOOL_DEFS = TOOL_DEFS;

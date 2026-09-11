@@ -686,5 +686,140 @@ function mockBlocks() {
     assert.equal(writes[0].block, '第一章');
     assert.ok(writes[0].before !== null && writes[0].before.indexOf('旧文第一行') >= 0, 'before 必须回传（撤销可用）');
   }
+  {
+    // I1：thinking 契约——callDeepseek 的 opts.thinking 是 boolean（truthy=开思考+32768），
+    // runLoop 必须传 false（传对象会被当 truthy → 反向开启 thinking）
+    const seen = [];
+    const req = (messages, toolOpts) => { seen.push(toolOpts); return { content: 'hi', toolCalls: null }; };
+    await ctx.Agent.runLoop({ userText: 'hi', activeScenario: null, callbacks: { onReply: () => {} } }, { request: req, buildCtx: () => ({}) });
+    assert.equal(seen[0].thinking, false, '意图轮 thinking 必须为 false');
+    assert.equal(seen[1].thinking, false, '工具轮 thinking 必须为 false');
+  }
+  {
+    // C2：白名单执行门——polish 场景只下发 6 工具，模型注入 delete_asset 调用必须被拒且不执行
+    let deleted = 0;
+    ctx.Agent.toolsDeps.deleteAsset = async () => { deleted++; return { ok: true }; };
+    const req = (messages) => {
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'tool') return { content: '收到', toolCalls: null };
+      return { content: null, toolCalls: [{ id: 'c1', type: 'function', function: { name: 'delete_asset', arguments: '{"name":"bg1"}' } }] };
+    };
+    await ctx.Agent.runLoop({ userText: '润色', activeScenario: 'polish', callbacks: { onReply: () => {} } }, { request: req, buildCtx: () => ({}) });
+    assert.equal(deleted, 0, '白名单外的工具不得执行');
+  }
+  {
+    // C1：破坏性确认门——onConfirm 返回 false → 不执行删除，模型收到取消说明
+    let deleted = 0;
+    ctx.Agent.toolsDeps.deleteAsset = async () => { deleted++; return { ok: true }; };
+    const toolContents = [];
+    const req = (messages) => {
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'tool') { toolContents.push(last.content); return { content: '收到', toolCalls: null }; }
+      return { content: null, toolCalls: [{ id: 'c1', type: 'function', function: { name: 'delete_asset', arguments: '{"name":"bg1"}' } }] };
+    };
+    await ctx.Agent.runLoop({
+      userText: '删素材', activeScenario: 'general',
+      callbacks: { onReply: () => {}, onConfirm: async () => false },
+    }, { request: req, buildCtx: () => ({}) });
+    assert.equal(deleted, 0, '确认=false 时不执行删除');
+    assert.ok(String(toolContents[0] || '').indexOf('用户取消了操作') >= 0, '取消原因回填模型');
+  }
+  {
+    // C1：onConfirm 返回 true → 执行删除
+    let deleted = 0;
+    ctx.Agent.toolsDeps.deleteAsset = async () => { deleted++; return { ok: true }; };
+    const req = (messages) => {
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'tool') return { content: '收到', toolCalls: null };
+      return { content: null, toolCalls: [{ id: 'c1', type: 'function', function: { name: 'delete_asset', arguments: '{"name":"bg1"}' } }] };
+    };
+    await ctx.Agent.runLoop({
+      userText: '删素材', activeScenario: 'general',
+      callbacks: { onReply: () => {}, onConfirm: async () => true },
+    }, { request: req, buildCtx: () => ({}) });
+    assert.equal(deleted, 1, '确认=true 时执行删除');
+  }
+  {
+    // C1：delete_block 报告引用 → onConfirm（带引用结果）→ 确认后真删落盘
+    const saved = [];
+    ctx.Agent.toolsDeps.listBlocks = () => ['主剧情', '第二章'];
+    ctx.Agent.toolsDeps.getBlockText = (n) => n === '第二章' ? '第二章内容' : '主剧情\n<剧情块:第二章>';
+    ctx.Agent.toolsDeps.blocksDoc = () => ({ '主剧情': '主剧情\n<剧情块:第二章>', '第二章': '第二章内容' });
+    ctx.Agent.toolsDeps.mainBlock = '__MAIN__';
+    ctx.Agent.toolsDeps.saveBlocks = (doc) => { saved.push(doc); };
+    const confirmResults = [];
+    const req = (messages) => {
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'tool') return { content: '删了', toolCalls: null };
+      return { content: null, toolCalls: [{ id: 'c1', type: 'function', function: { name: 'delete_block', arguments: '{"blockName":"第二章"}' } }] };
+    };
+    await ctx.Agent.runLoop({
+      userText: '删块', activeScenario: 'general',
+      callbacks: { onReply: () => {}, onConfirm: async (info) => { confirmResults.push(info); return true; } },
+    }, { request: req, buildCtx: () => ({}) });
+    assert.equal(confirmResults.length, 1, '确认回调收到引用报告');
+    assert.ok(confirmResults[0].result && confirmResults[0].result.references, '确认回调携带引用信息');
+    assert.equal(saved.length, 1, '确认后保存');
+    assert.equal(saved[0]['第二章'], undefined, '块被删除');
+    assert.ok(String(saved[0]['主剧情']).indexOf('第二章') >= 0, '主剧情保留');
+  }
+  {
+    // I3：单轮并行工具上限 4（设计 §8）——5 个 toolCalls 只执行前 4 个
+    const names = [];
+    ctx.Agent.toolsDeps.listBlocks = () => ['a', 'b', 'c', 'd', 'e'];
+    const req = (messages) => {
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'tool') return { content: '收到', toolCalls: null };
+      return {
+        content: null,
+        toolCalls: ['a', 'b', 'c', 'd', 'e'].map((n, i) => ({ id: 'c' + i, type: 'function', function: { name: 'list_blocks', arguments: '{}' } })),
+      };
+    };
+    await ctx.Agent.runLoop({
+      userText: 'x', activeScenario: 'general',
+      callbacks: { onTool: (t) => names.push(t.name), onReply: () => {} },
+    }, { request: req, buildCtx: () => ({}) });
+    assert.equal(names.length, 4, '单轮最多执行 4 个工具');
+  }
+  {
+    // I3：同块写守卫——本轮内两个 append_to_block 写同一块，第二个被拒（防 stale-read 覆盖）
+    ctx.Agent.toolsDeps.getBlockText = (n) => '旧文';
+    const toolContents = [];
+    let writeCount = 0;
+    const req = (messages) => {
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'tool') { toolContents.push(last.content); return { content: '收到', toolCalls: null }; }
+      return {
+        content: null,
+        toolCalls: [
+          { id: 'c1', type: 'function', function: { name: 'append_to_block', arguments: '{"blockName":"第一章","text":"A"}' } },
+          { id: 'c2', type: 'function', function: { name: 'append_to_block', arguments: '{"blockName":"第一章","text":"B"}' } },
+        ],
+      };
+    };
+    await ctx.Agent.runLoop({
+      userText: '追加', activeScenario: 'general',
+      callbacks: { onWrite: () => writeCount++, onReply: () => {} },
+    }, { request: req, buildCtx: () => ({}) });
+    // 第二轮 req 只「看到」最后一条 tool 消息（c2）——它必须是同块拒绝；c1 成功触发 onWrite
+    assert.equal(writeCount, 1, '第一个写成功（触发 onWrite）');
+    assert.ok(String(toolContents[0] || '').indexOf('已被修改') >= 0, '同块第二次写被拒');
+  }
+  {
+    // I2：单个工具抛错不得炸掉整轮——错误回填，runLoop 正常结束
+    const replies = [];
+    const req = (messages) => {
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'tool') return { content: '继续', toolCalls: null };
+      return { content: null, toolCalls: [{ id: 'c1', type: 'function', function: { name: 'read_block', arguments: '{"blockName":"x"}' } }] };
+    };
+    ctx.Agent.toolsDeps.getBlockText = () => { throw new Error('boom'); };
+    let threw = false;
+    try {
+      await ctx.Agent.runLoop({ userText: 'x', activeScenario: 'general', callbacks: { onReply: (t) => replies.push(t) } }, { request: req, buildCtx: () => ({}) });
+    } catch (e) { threw = true; }
+    assert.ok(!threw, '工具抛错不炸 runLoop');
+    assert.ok(replies.length >= 1, '仍有最终答复');
+  }
   console.log('agent.test.js OK');
 })().catch(e => { console.error(e); process.exit(1); });

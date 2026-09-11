@@ -410,6 +410,7 @@
 <script src="js/bbcode.js?v=20260722-60"></script>
 <script src="js/exporter.js?v=20260819-02"></script>
 <script src="js/ai.js?v=20260806-01"></script>
+<script src="js/agent.js?v=20260806-01"></script>
 <script src="js/lame.min.js?v=1"></script>
 <!-- sample-project.js 改为按需懒加载（内含压缩后内联示例素材 data URL，约 1.5MB，避免拖慢编辑器日常启动），见 editor.js ensureSampleProject() -->
 <script src="js/editor.js?v=20260819-06"></script>
@@ -791,6 +792,31 @@
         </label>
         <button id="fta-refeed" class="btn" type="button" title="把当前最新全文重新喂给助理"><svg class="ico" aria-hidden="true"><use href="#ic-refresh"/></svg>重新喂全文</button>
         <button id="fta-clear" class="btn btn-ghost" type="button" title="清空当前对话（不清空已喂的上下文）"><svg class="ico" aria-hidden="true"><use href="#ic-trash"/></svg>清空对话</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent 对话：真正的 Agent，可读写文档/变量/素材（按指令直接改稿，带分级确认与撤销） -->
+  <div id="agent-assistant" class="modal hidden">
+    <div class="fta-box modal-box">
+      <div class="fta-head">
+        <span class="fta-title"><svg class="ico" aria-hidden="true"><use href="#ic-brain"/></svg> Agent 对话</span>
+        <span id="agent-scenario-tag"></span>
+        <button id="agent-close" class="modal-x" type="button" title="关闭">×</button>
+      </div>
+      <div id="agent-messages" class="fta-messages"></div>
+      <div class="fta-start-wrap" id="agent-start-wrap">
+        <p class="fta-start-tip">Agent 是全能助理：可<b>直接改稿</b>（追加/插入/替换正文）、管理<b>变量</b>与<b>素材</b>、创建/重命名/删除<b>剧情块</b>。大改动会先弹出预览供你确认，删除类操作需二次确认，写入均可撤销。</p>
+        <button id="agent-start" class="btn btn-primary btn-lg"><svg class="ico" aria-hidden="true"><use href="#ic-brain"/></svg>开始对话</button>
+      </div>
+      <div class="fta-input-row hidden" id="agent-input-row">
+        <textarea id="agent-input" class="fta-input" placeholder="描述你想让 Agent 做的事…（Enter 发送，Shift+Enter 换行）" rows="3"></textarea>
+        <button id="agent-send" class="btn btn-primary" type="button">发送</button>
+        <button id="agent-stop" class="btn btn-ghost hidden" type="button">停止</button>
+      </div>
+      <div class="fta-actions hidden" id="agent-actions">
+        <button id="agent-refeed" class="btn" type="button" title="把当前最新文档重新喂给 Agent"><svg class="ico" aria-hidden="true"><use href="#ic-refresh"/></svg>重读当前文档</button>
+        <button id="agent-clear" class="btn btn-ghost" type="button" title="清空当前对话"><svg class="ico" aria-hidden="true"><use href="#ic-trash"/></svg>清空对话</button>
       </div>
     </div>
   </div>

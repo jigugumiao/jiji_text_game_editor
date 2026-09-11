@@ -812,6 +812,9 @@
     // 空数组不进请求体（部分 OpenAI 兼容服务端收到 tools:[] 会 400）
     if (opts.tools && opts.tools.length) body.tools = opts.tools;
     if (opts.tool_choice) body.tool_choice = opts.tool_choice;
+    // 流式 usage：OpenAI 兼容 SSE 默认不带 usage，请求 stream_options.include_usage 后才会在末尾（[DONE] 前）
+    // 下发 usage chunk（choices 为空数组、usage 在顶层）。仅当调用方需要（opts.onUsage）才加——其它流式调用行为完全不变。
+    if (opts.stream && opts.onUsage) body.stream_options = { include_usage: true };
     // 瞬时错误（服务端过载 5xx / 限流 429 / 网络抖动）自动重试：503 这类 “Server Overloaded” 多数重试一次即成功
     const MAX_RETRY = 2;
     let lastErr = null;
@@ -846,6 +849,7 @@
     if (!opts.stream) {
       const j = await res.json();
       if (opts && j.choices && j.choices[0]) opts._finishReason = j.choices[0].finish_reason || null;
+      if (opts && opts.onUsage && j.usage) opts.onUsage(j.usage);
       // 有 tool_calls 时返回 { content, toolCalls }（供 Agent 工具循环）；否则保持原行为：直接返回 content 字符串
       const msg = (j.choices && j.choices[0] && j.choices[0].message) || {};
       if (msg.tool_calls) return { content: msg.content, toolCalls: msg.tool_calls };
@@ -857,6 +861,7 @@
       try {
         const j = await res.json();
         if (opts && j.choices && j.choices[0]) opts._finishReason = j.choices[0].finish_reason || null;
+        if (opts && opts.onUsage && j.usage) opts.onUsage(j.usage);
         const fmsg = (j.choices && j.choices[0] && j.choices[0].message) || {};
         if (fmsg.tool_calls && opts.onToolCalls) opts.onToolCalls(fmsg.tool_calls);
         return fmsg.content || '';
@@ -881,6 +886,8 @@
         if (data === '[DONE]') continue;
         try {
           const j = JSON.parse(data);
+          // 流式 usage：末尾 usage chunk 的 usage 在顶层、choices 为空数组 → 回调（调用方如 Agent 用于缓存命中显示）
+          if (opts && opts.onUsage && j.usage) opts.onUsage(j.usage);
           const delta = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
           if (delta) { full += delta; if (opts.onToken) opts.onToken(delta, full); }
           // Agent 工具调用流式：delta.tool_calls 按 index 增量下发，id/type/name 通常首个 chunk 给全，arguments 分片拼接

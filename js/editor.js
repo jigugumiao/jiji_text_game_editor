@@ -7389,6 +7389,49 @@ self.onmessage = function (e) {
     el.style.opacity = '.8';
     return el;
   }
+  // ---- Agent 用量统计与全文指纹（缓存命中可见性）----
+  // DSH 上下文压缩的设计借鉴：稳定内容保持恒定前缀以命中 DeepSeek 前缀缓存（$0.014/M vs $0.14/M）；
+  // 全文指纹用于向用户解释本次请求的缓存命中来源（「全文未变」= 稳定前缀可命中，而非占位跳过——占位会破坏前缀缓存且模型拿不到全文）。
+  let agentUsageAgg = { reqs: 0, prompt: 0, cacheHit: 0, cacheMiss: 0, completion: 0 };
+  let agentCtxFullHash = null; // 会话级：上次 runLoop 的全文指纹
+  let agentCtxStatus = '';     // 会话级：本次上下文的全文状态（首次上下文/全文未变/全文已更新）
+  function agentUsageReset() {
+    agentUsageAgg = { reqs: 0, prompt: 0, cacheHit: 0, cacheMiss: 0, completion: 0 };
+  }
+  function agentAccumUsage(u) {
+    if (!u) return;
+    agentUsageAgg.reqs++;
+    agentUsageAgg.prompt += u.prompt_tokens || 0;
+    agentUsageAgg.cacheHit += u.prompt_cache_hit_tokens || 0;
+    agentUsageAgg.cacheMiss += u.prompt_cache_miss_tokens || 0;
+    agentUsageAgg.completion += u.completion_tokens || 0;
+  }
+  // 回复气泡下的小字用量行：请求数 / prompt（缓存命中%）/ 输出 / 全文状态；无请求则不渲染
+  function agentAppendUsage(bubble, ctxStatus) {
+    if (!bubble || !agentUsageAgg.reqs) return;
+    const hitPct = (agentUsageAgg.prompt > 0) ? Math.round((agentUsageAgg.cacheHit / agentUsageAgg.prompt) * 100) : 0;
+    let txt = 'ⓘ 请求 ' + agentUsageAgg.reqs + ' 次 · prompt ' + agentFmtK(agentUsageAgg.prompt);
+    if (hitPct > 0) txt += '（缓存命中 ' + hitPct + '% ' + agentFmtK(agentUsageAgg.cacheHit) + '）';
+    txt += ' · 输出 ' + agentFmtK(agentUsageAgg.completion);
+    if (ctxStatus) txt += ' · ' + ctxStatus;
+    const meta = document.createElement('div');
+    meta.textContent = txt;
+    meta.style.fontSize = '12px';
+    meta.style.opacity = '.65';
+    meta.style.marginTop = '4px';
+    bubble.appendChild(meta);
+  }
+  function agentFmtK(n) {
+    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+  // djb2 字符串指纹（字符级，中文全文 O(n) 足够快）；仅用于"全文是否变化"的会话内比较，非加密
+  function agentHashStr(s) {
+    let h = 5381;
+    const str = String(s || '');
+    for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+    return h;
+  }
   // 流式增量渲染：只追加新 token 的文本节点，避免每 token 重设 textContent（同 ftStreamAppend editor.js:7079）
   function agentStreamAppend(bubble, d) {
     if (d == null || d === '') return;
@@ -7482,6 +7525,9 @@ self.onmessage = function (e) {
     agentStopping = false;
     agentStarted = false;
     agentBusy = false;
+    agentCtxFullHash = null; // 跨工程重置：全文指纹/用量统计不得串工程
+    agentCtxStatus = '';
+    agentUsageReset();
     // 清空跨工程遗留的会话写入记录（sessionWrites 是 Agent 模块级，切工程必须重置，否则撤销/忽略会污染新工程）
     if (window.Agent && window.Agent.sessionWrites) window.Agent.sessionWrites.length = 0;
     const box = $('#agent-messages');
@@ -7610,6 +7656,7 @@ self.onmessage = function (e) {
   // 发送：进 runLoop（意图路由 + 工具循环）。runLoop 不抛错（内部 catch），收尾统一恢复 UI 态。
   async function agentSend() {
     if (agentBusy) return;
+    agentUsageReset(); // 每次发送独立统计本次对话的 token/缓存命中
     const myGen = agentSessionGen;
     const ta = $('#agent-input');
     const userText = (ta.value || '').trim();
@@ -7676,6 +7723,7 @@ self.onmessage = function (e) {
             let shown = text;
             if (agentStopping && String(text || '').indexOf('出错了：') === 0) shown = '已停止';
             replyBubble.textContent = shown; // 覆盖流式内容（同 FTA 收尾语义），工具气泡留在 DOM 原位
+            agentAppendUsage(replyBubble, agentCtxStatus); // 用量/缓存命中/全文状态小字行
             if (shown !== '已停止') { // 停止/中止提示不入历史，避免下轮当正文回喂模型
               const h = agentLoadHistory();
               h.push({ role: 'assistant', content: shown });
@@ -7733,6 +7781,8 @@ self.onmessage = function (e) {
           stream: true,
           signal: agentAbort ? agentAbort.signal : undefined,
           onToken: (d) => { if (myGen !== agentSessionGen) return; agentStreamAppend(replyBubble, d); },
+          // usage 透出（ai.js:777 callDeepseek）：意图轮 + 每轮工具轮各一次，全部累计到 agentUsageAgg
+          onUsage: (u) => { if (myGen !== agentSessionGen) return; agentAccumUsage(u); },
         })),
         buildCtx: () => agentBuildContext(),
       });
@@ -7754,9 +7804,15 @@ self.onmessage = function (e) {
     const blkName = (typeof activeBlock !== 'undefined' && activeBlock) ? activeBlock : '主剧情';
     let vars = [];
     try { vars = (window.Storage.getVars ? window.Storage.getVars() : []) || []; } catch (e) {}
+    // 全文指纹（djb2）：全文没变 → 本轮的稳定前缀（system/settings/fullText）与上轮一致 → 可命中 DeepSeek 前缀缓存。
+    // 注意：不因"没变"而跳过喂全文——占位会破坏前缀缓存且模型本轮拿不到全文内容（缓存纪律：稳定内容保持恒定）。
+    const fullText = ftaCollectFullText();
+    const fullHash = agentHashStr(fullText);
+    agentCtxStatus = (agentCtxFullHash === null) ? '首次上下文' : (agentCtxFullHash === fullHash ? '全文未变' : '全文已更新');
+    agentCtxFullHash = fullHash;
     return {
       settings: agentSettingsText(),
-      fullText: ftaCollectFullText(),
+      fullText: fullText,
       outline: c.outline || '',
       currentBlock: { name: blkName, text: (storyText ? storyText.value : '') },
       vars: vars,

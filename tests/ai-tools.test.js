@@ -126,6 +126,36 @@ async function testStreamMultiIndexInterleaved() {
   assert.equal(out[1].function.arguments, '{"blockName":"甲"}');
 }
 
+async function testNonStreamUsage() {
+  // 非流式：响应顶层 usage → onUsage 回调；请求体不带 stream_options（仅流式需要）
+  const calls = mockFetchOnce({
+    choices: [{ message: { role: 'assistant', content: '你好' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 300, completion_tokens: 40, total_tokens: 340, prompt_cache_hit_tokens: 200, prompt_cache_miss_tokens: 100 },
+  });
+  let got = null;
+  await AI.callDeepseek([{ role: 'user', content: 'hi' }], { stream: false, onUsage: (u) => { got = u; } });
+  const body = JSON.parse(calls[0].opts.body);
+  assert.ok(got && got.prompt_tokens === 300 && got.completion_tokens === 40, '非流式必须回调 onUsage 带完整 usage');
+  assert.equal(got.prompt_cache_hit_tokens, 200, 'usage 必须含 prompt_cache_hit_tokens（缓存命中可见性）');
+  assert.equal(body.stream_options, undefined, '非流式请求体不得带 stream_options');
+}
+
+async function testStreamUsage() {
+  // 流式：请求体必须带 stream_options.include_usage；末尾 usage chunk（choices 空数组）→ onUsage 回调
+  const calls = mockFetchStream([
+    JSON.stringify({ choices: [{ delta: { content: '你' }, finish_reason: null }] }),
+    JSON.stringify({ choices: [{ delta: { content: '好' }, finish_reason: null }] }),
+    JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] }),
+    JSON.stringify({ choices: [], usage: { prompt_tokens: 500, completion_tokens: 20, total_tokens: 520, prompt_cache_hit_tokens: 480, prompt_cache_miss_tokens: 20 } }),
+  ]);
+  let got = null;
+  const out = await AI.callDeepseek([{ role: 'user', content: 'hi' }], { stream: true, onUsage: (u) => { got = u; } });
+  const body = JSON.parse(calls[0].opts.body);
+  assert.equal(out, '你好', '流式内容正常拼接');
+  assert.ok(body.stream_options && body.stream_options.include_usage === true, '流式 + onUsage 必须请求 include_usage');
+  assert.ok(got && got.prompt_tokens === 500 && got.prompt_cache_hit_tokens === 480, '流式末尾 usage chunk 必须回调 onUsage');
+}
+
 (async () => {
   await testNonStreamTools();
   await testNoToolsBackwardCompat();
@@ -133,5 +163,7 @@ async function testStreamMultiIndexInterleaved() {
   await testEmptyToolsGuard();
   await testStreamToolCallsNoCallback();
   await testStreamMultiIndexInterleaved();
+  await testNonStreamUsage();
+  await testStreamUsage();
   console.log('ai-tools.test.js OK');
 })().catch(e => { console.error(e); process.exit(1); });

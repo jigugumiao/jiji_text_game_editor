@@ -8670,7 +8670,7 @@ self.onmessage = function (e) {
     const article = currentProjectMode === 'article';
     const items = [
       { mode: 'ft', special: 'openFulltext', label: '<svg class="ico" aria-hidden="true"><use href="#ic-brain"/></svg> 全文助理（对话式 AI，可全文改写）' },
-      { special: 'openAgent', label: '<svg class="ico" aria-hidden="true"><use href="#ic-brain"/></svg> Agent 对话（全能助理，可读写文档/变量/素材）' },
+      { special: 'openAgent', label: '<svg class="ico" aria-hidden="true"><use href="#ic-brain"/></svg> Agent 对话（新功能，耗费可能较高）' },
       { mode: 'hook', label: '<svg class="ico" aria-hidden="true"><use href="#ic-fish"/></svg> 生成文章开头（6 选 1）', rec: isBlank },
       { mode: 'continue', label: article ? '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg> AI 续写文章（按设定 / 上下文）' : '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg> AI 生成剧情（按设定 / 上下文）', rec: !hasSel },
       { mode: 'expand', label: '<svg class="ico" aria-hidden="true"><use href="#ic-redo"/></svg> AI 重写选中文字', rec: hasSel },

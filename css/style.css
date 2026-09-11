@@ -1628,6 +1628,17 @@ body.dark .fta-messages { background: var(--bg-sunken); }
 .btn-danger:hover { background: #b83232; border-color: #b83232; }
 body.dark .btn-danger { background: #e04848; border-color: #e04848; }
 body.dark .btn-danger:hover { background: #c93c3c; border-color: #c93c3c; }
+/* 工具调用行（可折叠）：收起=一行摘要，展开=参数+结果 */
+.agent-tool-row { cursor: pointer; }
+.agent-tool-row summary { outline: none; list-style: none; }
+.agent-tool-row summary::-webkit-details-marker { display: none; }
+.agent-tool-row summary::before { content: '▸ '; opacity: .5; }
+.agent-tool-row[open] summary::before { content: '▾ '; }
+.agent-tool-detail pre {
+  margin: 6px 0 0; font-size: 11.5px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-all; opacity: .9;
+  max-height: 220px; overflow: auto; color: var(--text);
+}
 
 /* ============================================================
    剧情分支节点图（浮动窗口）

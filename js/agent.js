@@ -211,7 +211,8 @@
           } else {
             cb.onStatus && cb.onStatus('intent');
             var intentMsgs = [{ role: 'system', content: Agent.INTENT_SYSTEM }, { role: 'user', content: opts.userText }];
-            var intentRes = await deps.request(intentMsgs, { thinking: false });
+            // 意图轮非流式：意图 JSON 是内部结果不是回答——流式会把 JSON 逐字送进回复气泡（用户看到"先蹦出回答"的假象）
+            var intentRes = await deps.request(intentMsgs, { thinking: false, stream: false });
             scenario = Agent.intentParse(typeof intentRes === 'string' ? intentRes : (intentRes && intentRes.content)).scenario;
             cb.onStatus && cb.onStatus('scenario:' + scenario);
           }
@@ -264,7 +265,6 @@
             var name = fn && fn.name;
             var args = {};
             try { args = fn.arguments ? JSON.parse(fn.arguments) : {}; } catch (e) { args = {}; }
-            cb.onTool && cb.onTool({ name: name, args: args });
             var impl = Agent.tools[name];
             var result;
             if (!impl) result = { error: '未知工具：' + name };
@@ -302,6 +302,8 @@
                 }
               }
             }
+            // onTool 在工具执行后上报（含 result）：UI 渲染可折叠工具行（一行摘要，展开看参数与结果）
+            cb.onTool && cb.onTool({ name: name, args: args, result: result });
             if (result && result.resultText) {
               var rec = Agent.applyAgentWrite({ block: result.block, before: result.before, resultText: result.resultText, impact: result.impact }, deps, null);
               cb.onWrite && cb.onWrite(rec);

@@ -583,6 +583,7 @@ function mockBlocks() {
     // （model 收到 tool 消息后给出最终答复，而不是工具轮就返回 toolCalls:null）
     const statuses = [];
     const toolEvents = [];
+    const toolResults = [];
     const replies = [];
     const calls = [];
     const fakeRequest = (messages) => {
@@ -596,13 +597,14 @@ function mockBlocks() {
       userText: '把这段润色一下',
       history: [],
       activeScenario: null,
-      callbacks: { onStatus: (s) => statuses.push(s), onTool: (t) => toolEvents.push(t.name), onWrite: () => {}, onReply: (t) => replies.push(t) },
+      callbacks: { onStatus: (s) => statuses.push(s), onTool: (t) => { toolEvents.push(t.name); toolResults.push(t.result); }, onWrite: () => {}, onReply: (t) => replies.push(t) },
     }, { request: fakeRequest, buildCtx: () => ({}) });
     assert.equal(res.scenario, 'polish', '意图轮解析出 polish');
     assert.ok(calls.length >= 3, '至少 intent + tool + answer 三轮');
     assert.equal(calls[0].length, 2, '意图轮消息最简（system + user）');
     assert.ok(statuses.indexOf('scenario:polish') >= 0, '发出 scenario:polish 状态');
     assert.ok(toolEvents.indexOf('get_current_block') >= 0, 'onTool 上报工具名');
+    assert.ok(toolResults.some((r) => r && r.blockName === '第一章'), 'onTool 在工具执行后上报并携带 result（含真实返回数据）');
     assert.equal(replies.join(','), '最终答复', '最终答复回调 onReply');
   }
   {

@@ -7621,14 +7621,35 @@ self.onmessage = function (e) {
     return (parts.length ? '（' + parts.join(' ') + '）' : '') + ' → 已执行';
   }
   // 工具活动气泡：🔧 + 工具名加粗 + 参数描述；瞬态提示，不落历史（复用 fta-msg tool 弱化样式）
+  // 工具调用行（可折叠）：一行显示 🔧 工具名 + 参数摘要；点击展开查看完整参数与执行结果（用户可见内部步骤，但不刷屏）
   function agentToolBubble(t) {
     const el = agentAppendToolBubble('');
     el.textContent = '';
-    el.appendChild(document.createTextNode('🔧 '));
+    const det = document.createElement('details');
+    det.className = 'agent-tool-row';
+    const sum = document.createElement('summary');
+    sum.appendChild(document.createTextNode('🔧 '));
     const nm = document.createElement('b');
     nm.textContent = agentToolName(t);
-    el.appendChild(nm);
-    el.appendChild(document.createTextNode(agentToolArgs(t)));
+    sum.appendChild(nm);
+    sum.appendChild(document.createTextNode(agentToolArgs(t)));
+    det.appendChild(sum);
+    const body = document.createElement('div');
+    body.className = 'agent-tool-detail';
+    const p1 = document.createElement('pre');
+    let argsText = '';
+    try { argsText = JSON.stringify(t.args || {}, null, 2); } catch (e) { argsText = String(t.args); }
+    p1.textContent = '参数：\n' + argsText;
+    body.appendChild(p1);
+    if (t.result !== undefined) {
+      let resText = '';
+      try { resText = JSON.stringify(t.result, null, 2); } catch (e) { resText = String(t.result); }
+      const p2 = document.createElement('pre');
+      p2.textContent = '结果：\n' + resText;
+      body.appendChild(p2);
+    }
+    det.appendChild(body);
+    el.appendChild(det);
     return el;
   }
   // 「开始对话」：显示输入区，并还原本工程历史气泡（有历史则自动进入，无历史则给一句引导）
@@ -7718,7 +7739,13 @@ self.onmessage = function (e) {
     const hist = await agentMaybeCompressHistory(agentLoadHistory()); // §14：超阈值先压缩早期对话（存档原文+摘要前置）
     hist.push({ role: 'user', content: userText });
     agentSaveHistory(hist);
-    const replyBubble = agentAppendBubble('assistant', '');
+    // 回复气泡惰性创建：意图轮/工具轮全部走完后才开始流式输出时才创建。
+    // 此前在 runLoop 前预创建占位，导致回复气泡 DOM 位置排在工具气泡之前（视觉"先回答后工具"）。
+    let replyBubble = null;
+    const ensureReplyBubble = () => {
+      if (!replyBubble || !replyBubble.isConnected) replyBubble = agentAppendBubble('assistant', '');
+      return replyBubble;
+    };
     agentStopping = false;
     agentAbort = new AbortController();
     agentSetBusy(true);
@@ -7731,8 +7758,9 @@ self.onmessage = function (e) {
           onStatus: (s) => {
             if (myGen !== agentSessionGen) return;
             if (typeof s === 'string' && s.indexOf('scenario:') === 0) agentShowScenario(s.slice('scenario:'.length));
-            // runLoop 每轮请求前都会发 'thinking'：借此清掉意图识别轮的 JSON / 轮间残留，避免短暂串台到气泡
-            if (s === 'thinking') { replyBubble.textContent = ''; replyBubble._streamNode = null; }
+            // 'thinking' 每轮 request 前发出；意图轮已非流式、工具轮 content 为空，轮间不再有残留文本进回复气泡——
+            // 回复气泡只在最终答复开始流式时才创建（ensureReplyBubble），此分支现为防御性保留
+            if (s === 'thinking' && replyBubble) { replyBubble.textContent = ''; replyBubble._streamNode = null; }
             // 'loop_limit'/'error' 由 onReply 收尾
           },
           onTool: (t) => {
@@ -7774,8 +7802,9 @@ self.onmessage = function (e) {
             if (myGen !== agentSessionGen) return;
             let shown = text;
             if (agentStopping && String(text || '').indexOf('出错了：') === 0) shown = '已停止';
-            replyBubble.textContent = shown; // 覆盖流式内容（同 FTA 收尾语义），工具气泡留在 DOM 原位
-            agentAppendUsage(replyBubble, agentCtxStatus); // 用量/缓存命中/全文状态小字行
+            const rb = ensureReplyBubble();
+            rb.textContent = shown; // 覆盖流式内容（同 FTA 收尾语义），工具气泡留在 DOM 原位
+            agentAppendUsage(rb, agentCtxStatus); // 用量/缓存命中/全文状态小字行
             if (shown !== '已停止') { // 停止/中止提示不入历史，避免下轮当正文回喂模型
               const h = agentLoadHistory();
               h.push({ role: 'assistant', content: shown });
@@ -7830,9 +7859,10 @@ self.onmessage = function (e) {
         },
       }, {
         request: (messages, toolOpts) => window.AI.callDeepseek(messages, Object.assign({}, toolOpts || {}, {
-          stream: true,
+          // 意图轮（runLoop 传 stream:false）非流式——意图 JSON 是内部结果，不逐字流入回复气泡；其余轮次（工具轮/答复轮）保持流式
+          stream: (toolOpts && toolOpts.stream === false) ? false : true,
           signal: agentAbort ? agentAbort.signal : undefined,
-          onToken: (d) => { if (myGen !== agentSessionGen) return; agentStreamAppend(replyBubble, d); },
+          onToken: (d) => { if (myGen !== agentSessionGen) return; agentStreamAppend(ensureReplyBubble(), d); },
           // usage 透出（ai.js:777 callDeepseek）：意图轮 + 每轮工具轮各一次，全部累计到 agentUsageAgg
           onUsage: (u) => { if (myGen !== agentSessionGen) return; agentAccumUsage(u); },
         })),
@@ -7841,7 +7871,7 @@ self.onmessage = function (e) {
     } catch (e) {
       // runLoop 内部已统一 catch（经 onReply 反馈），这里仅兜底防御意外路径
       if (myGen !== agentSessionGen) return;
-      replyBubble.textContent = '已停止';
+      ensureReplyBubble().textContent = '已停止';
       agentStopping = false;
     }
     if (myGen !== agentSessionGen) return;

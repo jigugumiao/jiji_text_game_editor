@@ -821,5 +821,43 @@ function mockBlocks() {
     assert.ok(!threw, '工具抛错不炸 runLoop');
     assert.ok(replies.length >= 1, '仍有最终答复');
   }
+  {
+    // runLoop 历史接入（spec review 修复）：opts.history 须插入到「当前 userText」之前（多轮对话连续性）
+    const captured = [];
+    const req = (messages) => {
+      captured.push(messages.map(m => m.role + ':' + String(m.content).slice(0, 20)));
+      return { content: '好', toolCalls: null };
+    };
+    await ctx.Agent.runLoop({
+      userText: '继续改第二段',
+      activeScenario: 'polish',
+      history: [
+        { role: 'user', content: '第一轮请求' },
+        { role: 'assistant', content: '第一轮答复' },
+        { role: 'tool', content: '不得进入' },
+        { role: 'user', content: '' },
+      ],
+      callbacks: { onReply: () => {} },
+    }, { request: req, buildCtx: () => ({}) });
+    const msgs = captured[0];
+    const last = msgs[msgs.length - 1];
+    assert.ok(last.indexOf('user:继续改第二段') >= 0, '最后一条必须是当前 userText');
+    const joined = msgs.join('|');
+    assert.ok(joined.indexOf('user:第一轮请求') >= 0, '历史 user 消息参与上下文');
+    assert.ok(joined.indexOf('assistant:第一轮答复') >= 0, '历史 assistant 消息参与上下文');
+    assert.ok(joined.indexOf('tool:') < 0, '非 user/assistant 历史消息被过滤');
+    assert.ok(joined.indexOf('user:') < joined.lastIndexOf('user:继续改第二段'), '历史消息位于当前 userText 之前');
+  }
+  {
+    // 无 history 时消息结构不变（最后一条仍为当前 userText，向后兼容）
+    const captured = [];
+    await ctx.Agent.runLoop({
+      userText: '润色', activeScenario: 'polish',
+      callbacks: { onReply: () => {} },
+    }, { request: (messages) => { captured.push(messages); return { content: '好', toolCalls: null }; }, buildCtx: () => ({}) });
+    const last = captured[0][captured[0].length - 1];
+    assert.equal(last.role, 'user');
+    assert.equal(last.content, '润色');
+  }
   console.log('agent.test.js OK');
 })().catch(e => { console.error(e); process.exit(1); });

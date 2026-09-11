@@ -7669,10 +7669,10 @@ self.onmessage = function (e) {
         // adaptation（deviation from plan snippet）：window.Storage.saveBlocks 期望 {main, blocks} 结构，
         // 而 Agent 传入的是 {块名: 文本} 扁平映射（blocksDocObj 契约）——必须转回存储结构，
         // 否则扁平 map 会被 loadBlocks 解析成空工程、清空全部剧情块。
-        const prev = (window.Storage.loadBlocks ? window.Storage.loadBlocks() : null) || { main: '', blocks: {} };
-        const next = { main: String(prev.main || ''), blocks: {} };
-        const prevB = prev.blocks || {};
-        for (const k in prevB) { if (Object.prototype.hasOwnProperty.call(prevB, k) && !(k in b)) next.blocks[k] = prevB[k]; }
+        // 注意：b 由 blocksDoc() 完整读取生成，是「目标态」——被删除的键必须真的消失
+        // （delete_block 的 confirmDelete / rename_block 改名都依赖删除语义，spec review 发现原 preserve-loop 会复活已删键）。
+        // 因此直接由 b 构建 next，不做任何 prev 键保留。
+        const next = { main: '', blocks: {} };
         for (const k in b) {
           if (!Object.prototype.hasOwnProperty.call(b, k)) continue;
           if (k === MAIN_BLOCK) next.main = b[k] == null ? '' : String(b[k]);

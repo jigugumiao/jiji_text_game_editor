@@ -177,6 +177,21 @@
         }
         var ctx = deps.buildCtx ? deps.buildCtx() : {};
         var messages = Agent.buildMessages(scenario, ctx, opts.userText, {});
+        // 历史对话连续性（agent-history:<pid> 持久化的 user/assistant 文本，Task 15 传入 opts.history）：
+        // 插入到 buildMessages 末尾的「当前 userText」之前——可变内容全部在末尾，保持前缀缓存纪律。
+        var hist = Array.isArray(opts.history) ? opts.history : [];
+        if (hist.length) {
+          var histMsgs = [];
+          for (var hi = 0; hi < hist.length; hi++) {
+            var hm = hist[hi];
+            if (hm && (hm.role === 'user' || hm.role === 'assistant') && typeof hm.content === 'string' && hm.content) {
+              histMsgs.push({ role: hm.role, content: hm.content });
+            }
+          }
+          if (histMsgs.length) {
+            messages.splice.apply(messages, [messages.length - 1, 0].concat(histMsgs));
+          }
+        }
         var rounds = 0;
         while (rounds < 8) {
           rounds++;

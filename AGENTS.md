@@ -40,7 +40,7 @@
 - 入口：AI 菜单 →「Agent 对话（新功能，耗费可能较高）」。纯前端、DeepSeek API、可读写正文/变量/素材/创作设定/外观。
 - 架构：js/agent.js（window.Agent + module.exports）意图路由→场景装配→工具调用循环（≤8 轮，thinking 仅意图轮 disabled）；5 场景 polish/rewrite/design/vars/general；28 工具 5 组（文档读写+结构+创作辅助+素材元数据+变量+设置/外观）。
 - 分级写入：auto（≤500 字非整块）直接落盘可撤销；preview（>500 或整块）diff 卡确认；destructive（删除类）二次确认对话框。undoWrite + pushHistory 保证撤销。
-- 历史：agent-history:<pid> cap 50；早期对话超 30000 字符自动摘要压缩（classifyHistoryCompression + search_history 归档检索 agent-history-archive:<pid>）。
+- 多对话：`agent-convs:<pid>` 对话列表（cap 30 条，`agent-current:<pid>` 记当前 id；旧 `agent-history:<pid>` 首次访问自动迁移为一条）；单对话历史 cap 50 条；早期对话超 30000 字符自动摘要压缩（classifyHistoryCompression + search_history 归档检索 `agent-history-archive:<pid>`）；上下文总字符 >30000 时显示弱提醒推荐新建对话。
 - 修改 Agent 逻辑后必跑：`node tests/agent.test.js` + `node tests/ai-tools.test.js`（agent.js 工具的 localStorage stub 约定见测试文件头）。
 - 文档：docs/agent-design.md（完整设计 14 节）。
 

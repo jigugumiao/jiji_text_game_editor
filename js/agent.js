@@ -532,28 +532,38 @@
     // list_assets 必须脱敏：素材记录含 dataURL 二进制（可能是大 base64），只回 name/type/tags，
     // 绝不让二进制进 LLM 上下文；未接线时按只读约定降级为空数组（同 list_blocks/list_vars）。
     // rename/delete/export 需要落盘 → 未接线报错；deps 失败 error 原样透传，falsy 兜底错误。
-    list_assets: function () {
-      var all = Agent.toolsDeps.getAllAssets ? Agent.toolsDeps.getAllAssets() : [];
+    // 素材 deps 接线层是 async（window.Storage 走 IndexedDB，storage.js:331/372/377/613）——
+    // 工具本身为 async（await deps），runLoop 统一 await 工具结果（同步工具返回值 await 无害）。
+    // deps 抛异常 → 转 error 返回，不让 Promise rejection 炸掉 runLoop。
+    list_assets: async function () {
+      var all = Agent.toolsDeps.getAllAssets ? await Agent.toolsDeps.getAllAssets() : [];
+      if (!Array.isArray(all)) all = [];
       return all.map(function (a) {
         var out = { name: a.name, type: a.type };
         if (a.tags) out.tags = a.tags;
         return out;
       });
     },
-    rename_asset: function (a) {
+    rename_asset: async function (a) {
       if (!Agent.toolsDeps.renameAsset) return { error: '素材系统未接线' };
-      var r = Agent.toolsDeps.renameAsset(a.name, a.newName);
-      return r && r.ok ? { ok: true, name: a.name, newName: a.newName } : { error: (r && r.error) || '改名失败' };
+      try {
+        var r = await Agent.toolsDeps.renameAsset(a.name, a.newName);
+        return r && r.ok ? { ok: true, name: a.name, newName: a.newName } : { error: (r && r.error) || '改名失败' };
+      } catch (e) { return { error: '改名异常：' + ((e && e.message) || e) }; }
     },
-    delete_asset: function (a) {
+    delete_asset: async function (a) {
       if (!Agent.toolsDeps.deleteAsset) return { error: '素材系统未接线' };
-      var r = Agent.toolsDeps.deleteAsset(a.name);
-      return r && r.ok ? { ok: true, name: a.name, destructive: true } : { error: (r && r.error) || '删除失败' };
+      try {
+        var r = await Agent.toolsDeps.deleteAsset(a.name);
+        return r && r.ok ? { ok: true, name: a.name, destructive: true } : { error: (r && r.error) || '删除失败' };
+      } catch (e) { return { error: '删除异常：' + ((e && e.message) || e) }; }
     },
-    export_project: function () {
+    export_project: async function () {
       if (!Agent.toolsDeps.exportProject) return { error: '导出未接线' };
-      var r = Agent.toolsDeps.exportProject();
-      return r ? { ok: true, format: r.format, exportedAt: r.exportedAt } : { error: '导出失败' };
+      try {
+        var r = await Agent.toolsDeps.exportProject();
+        return r ? { ok: true, format: r.format, exportedAt: r.exportedAt } : { error: '导出失败' };
+      } catch (e) { return { error: '导出异常：' + ((e && e.message) || e) }; }
     },
   };
   Agent.tools = tools;

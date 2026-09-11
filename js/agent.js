@@ -128,6 +128,13 @@
   // 注（Task 7 实现时修正的计划代码缺陷）：before/after 语义为「在锚点行前/后插入一整行」——
   // 因此 findAnchor 的 end 一律为锚点内容的末尾（不含行尾换行），并返回锚点所在行号 lineNo；
   // applyInsert 的 before/after 按行拼接（split/splice/join），replace 仍按字符区间精确替换。
+  // 模糊回退归一化（镜像 editor.js normText）：去所有空白（含全角空格）+ 全角标点→半角
+  function normText(s) {
+    if (!s) return '';
+    return String(s)
+      .replace(/[　\s]+/g, '')
+      .replace(/[！-～]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+  }
   function findAnchor(text, anchor, anchorType) {
     if (anchorType === 'line') {
       var lines = text.split('\n');
@@ -143,20 +150,27 @@
     if (idxExact >= 0) {
       return { start: idxExact, end: idxExact + q.length, lineNo: text.slice(0, idxExact).split('\n').length };
     }
-    // 模糊回退：去空白后包含匹配（取首个）
-    var qTrim = q.replace(/\s+/g, '');
-    var tTrim = text.replace(/\s+/g, '');
-    var pos = tTrim.indexOf(qTrim);
+    // 模糊回退：归一化后包含匹配（取首个），再按「非空白字符序号」映射回原文本偏移
+    // （计划字面实现的贪心匹配从文本头重匹配 qTrim，假起点会吞掉真匹配前导字符 → 静默损坏文本；
+    //   正确做法：起点 = 原文本第 pos+1 个非空白字符，终点 = 再消费 qNorm.length 个非空白字符）
+    var qNorm = normText(q);
+    var tNorm = normText(text);
+    var pos = qNorm ? tNorm.indexOf(qNorm) : -1;
     if (pos >= 0) {
-      // 把压缩串里的偏移映射回原文本偏移：逐步累加原字符，跳过空白
-      var cursor = 0, mapped = 0;
-      while (cursor < qTrim.length) {
-        while (text[mapped] && /\s/.test(text[mapped])) mapped++;
-        if (text[mapped] !== qTrim[cursor]) { mapped++; continue; }
-        cursor++; mapped++;
+      var s = 0, cnt = 0;
+      while (s < text.length && cnt <= pos) {
+        if (!/\s/.test(text[s])) {
+          if (cnt === pos) break;
+          cnt++;
+        }
+        s++;
       }
-      var s = mapped - qTrim.length;
-      return { start: s, end: mapped, lineNo: text.slice(0, s).split('\n').length, fuzzy: true };
+      var e = s, consumed = 0;
+      while (e < text.length && consumed < qNorm.length) {
+        if (!/\s/.test(text[e])) consumed++;
+        e++;
+      }
+      return { start: s, end: e, lineNo: text.slice(0, s).split('\n').length, fuzzy: true };
     }
     return { error: '未找到锚点「' + q.slice(0, 40) + '」' };
   }
@@ -170,9 +184,12 @@
     return lines.join('\n');
   }
 
-  function computeImpact(blockName, resultText, wholeBlock) {
+  // impact.chars 为「变更量」= |编辑后总长 − 编辑前总长|（设计 §6：小改判定按改动幅度，
+  // 而非块总长——否则任何 ≥500 字的块编辑都会误入 preview，'小改自动落盘'失效）
+  function computeImpact(blockName, resultText, wholeBlock, beforeText) {
     var lines = resultText.split('\n').length;
-    return { chars: resultText.length, lines: lines, wholeBlock: !!wholeBlock, block: blockName };
+    var delta = Math.abs(resultText.length - (beforeText ? beforeText.length : 0));
+    return { chars: delta, lines: lines, wholeBlock: !!wholeBlock, block: blockName };
   }
 
   var tools = {
@@ -198,7 +215,7 @@
       var out = [];
       var names = Agent.toolsDeps.listBlocks ? Agent.toolsDeps.listBlocks() : [];
       for (var i = 0; i < names.length && out.length < 20; i++) {
-        var t = Agent.toolsDeps.getBlockText(names[i]);
+        var t = Agent.toolsDeps.getBlockText ? Agent.toolsDeps.getBlockText(names[i]) : null;
         if (!t) continue;
         var lines = t.split('\n');
         for (var j = 0; j < lines.length && out.length < 20; j++) {
@@ -220,17 +237,20 @@
       var t = Agent.toolsDeps.getBlockText && Agent.toolsDeps.getBlockText(a.blockName);
       if (t === null || t === undefined) return { error: '未找到剧情块「' + a.blockName + '」' };
       var result = t + (t && !t.endsWith('\n') && !String(a.text).startsWith('\n') ? '\n' : '') + String(a.text);
-      return { ok: true, block: a.blockName, resultText: result, impact: computeImpact(a.blockName, result, false) };
+      return { ok: true, block: a.blockName, resultText: result, impact: computeImpact(a.blockName, result, false, t) };
     },
     insert_at: function (a) {
       if (!a.blockName || a.anchor === undefined || a.text === undefined) return { error: '缺少 blockName/anchor/text' };
       var t = Agent.toolsDeps.getBlockText && Agent.toolsDeps.getBlockText(a.blockName);
       if (t === null || t === undefined) return { error: '未找到剧情块「' + a.blockName + '」' };
       var mode = a.mode || 'before';
+      if (mode !== 'before' && mode !== 'after' && mode !== 'replace') return { error: 'mode 无效：' + mode + '（应为 before/after/replace）' };
       var pos = findAnchor(t, a.anchor, a.anchorType || 'text');
       if (pos.error) return { error: pos.error };
       var result = applyInsert(t, pos, String(a.text), mode);
-      return { ok: true, block: a.blockName, resultText: result, impact: computeImpact(a.blockName, result, false) };
+      // 整块替换必须标记 wholeBlock → 走预览确认（设计 §6）
+      var wholeBlock = (mode === 'replace' && pos.start === 0 && pos.end === t.length);
+      return { ok: true, block: a.blockName, resultText: result, impact: computeImpact(a.blockName, result, wholeBlock, t) };
     },
     apply_review_marker: function (a) {
       // 占位：复用审阅标记管线（Task 10 关联创作辅助时接通 editor 侧 applyGeneratedBlocks/审阅写入）
@@ -238,6 +258,8 @@
     },
   };
   Agent.tools = tools;
+  // 暴露 textOps 纯函数（供测试直测 & 后续 applyAgentWrite 复用）
+  Agent.textOps = { normText: normText, findAnchor: findAnchor, applyInsert: applyInsert, computeImpact: computeImpact };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Agent;
   if (typeof window !== 'undefined') window.Agent = Agent;

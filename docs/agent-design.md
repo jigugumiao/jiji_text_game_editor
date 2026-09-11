@@ -174,6 +174,10 @@
 | **大改（预览）** | `chars > 500` 或 `wholeBlock` | 聊天流渲染 diff 预览卡片（旧片段→新片段），点「应用」才落盘 / 「忽略」放弃 |
 | **破坏性（强制确认）** | `destructive:true`（`delete_block` / `delete_asset` / `delete_var`） | 除 diff 预览外再弹「将删除 X（含 N 处跳转引用）」，二次确认才执行；`rename_block` 同步引用后同样走预览确认 |
 
+> **`impact.chars` 语义 = 本次写操作的「变更量」**（`|编辑后总长 − 编辑前总长|`），不是编辑后的块总长。
+> 理由：若按块总长判定，任何 ≥500 字的剧情块编辑都会强制进预览，「小改自动落盘」对正常篇幅的块失效。
+> 大段替换（diff 展示的旧片段≠新片段）由 `wholeBlock` 或较大 delta 天然覆盖。
+
 - 落盘统一走 `applyAgentWrite(blockName, newText)`：`pushHistory()` + 写入（目标块为当前编辑块 → 走 `storyText.value` setter 自动保存；否则 `window.Storage.setBlockText`）+ toast
 - 每个已应用写操作在会话内可单独「撤销」（记录 `{block, before}`，一键还原 = `pushHistory() + setBlockText(before)`），与全局 Ctrl+Z 撤销栈并存不冲突
 - 变量写操作同样分级（`create_var` 自动、`update_var` 自动、`set_var` 自动；批量改值算大改走预览；`delete_var` 破坏性）

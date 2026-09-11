@@ -178,4 +178,49 @@ function callTool(name, args) {
   assert.equal(r.resultText, '第一行\n第二行\nY\n第三行', '去空白模糊匹配');
 }
 
+// ===== Task 7 审查修复：模糊回退假起点 / 整块替换 / chars=变更量 / 防护 =====
+{
+  // 模糊回退不得吞字符：锚点归一化后从正确起点消费非空白字符
+  ctx.Agent.toolsDeps = { getBlockText: (n) => n === 'B1' ? '他 他 来了' : n === 'B2' ? 'ABA C' : n === 'B3' ? '他来了，我们走吧。' : null, listBlocks: () => ['B1', 'B2', 'B3'] };
+  const t = ctx.Agent.tools;
+  const r1 = t.insert_at({ blockName: 'B2', anchor: 'AC', text: 'Z', mode: 'replace', anchorType: 'text' });
+  assert.equal(r1.resultText, 'ABZ', '模糊假起点不得吞字符（ABA C → 锚 AC 替换为 ABZ）');
+  const r2 = t.insert_at({ blockName: 'B1', anchor: '他来了', text: 'Z', mode: 'replace', anchorType: 'text' });
+  assert.equal(r2.resultText, '他 Z', '跨空白模糊替换必须命中正确起点');
+  const r3 = t.insert_at({ blockName: 'B3', anchor: '他来了,我们走吧。', text: 'Y', mode: 'replace', anchorType: 'text' });
+  assert.equal(r3.resultText, 'Y', '全角标点归一化后也能匹配');
+}
+{
+  // 整块替换必须标记 wholeBlock → 强制 preview
+  ctx.Agent.toolsDeps = { getBlockText: () => '只有八个字', listBlocks: () => ['B'] };
+  const r = ctx.Agent.tools.insert_at({ blockName: 'B', anchor: '只有八个字', text: '新内容', mode: 'replace', anchorType: 'text' });
+  assert.equal(r.impact.wholeBlock, true, '整块替换必须标记 wholeBlock');
+  assert.equal(ctx.Agent.classifyWrite(r.impact), 'preview', '整块替换强制走预览');
+}
+{
+  // impact.chars 必须是变更量（delta），不是编辑后总长
+  const long = '字'.repeat(600);
+  ctx.Agent.toolsDeps = { getBlockText: () => long, listBlocks: () => ['L'] };
+  const r = ctx.Agent.tools.append_to_block({ blockName: 'L', text: '追加' });
+  assert.equal(r.impact.chars, 3, 'chars 为变更量（追加 2 字 + 1 换行分隔 = 3），而非 603 总长');
+  assert.equal(ctx.Agent.classifyWrite(r.impact), 'auto', '600 字块的 2 字小改仍 auto');
+}
+{
+  // 部分 deps 防护：有 listBlocks 无 getBlockText 时 search_in_doc 不抛错
+  ctx.Agent.toolsDeps = { listBlocks: () => ['A'] };
+  const r = ctx.Agent.tools.search_in_doc({ query: 'x' });
+  assert.ok(Array.isArray(r) && r.length === 0, '缺 getBlockText 不抛错');
+}
+{
+  // 无效 mode 报错而非静默按 before 处理
+  ctx.Agent.toolsDeps = { getBlockText: () => 'a\nb', listBlocks: () => ['B'] };
+  const r = ctx.Agent.tools.insert_at({ blockName: 'B', anchor: 1, text: 'x', mode: 'After', anchorType: 'line' });
+  assert.ok(String(r.error).indexOf('mode') >= 0, '无效 mode 必须报错');
+}
+{
+  // 暴露的 textOps 直测模糊映射起点
+  const fa = ctx.Agent.textOps.findAnchor('他 他 来了', '他来了', 'text');
+  assert.equal(fa.start, 2, '模糊起点 = 第 pos+1 个非空白字符');
+  assert.equal(fa.end, 6, '模糊终点消费完整匹配');
+}
 console.log('agent.test.js OK');

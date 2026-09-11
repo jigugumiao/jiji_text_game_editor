@@ -529,5 +529,127 @@ function mockBlocks() {
     ctx.Agent.toolsDeps.exportProject = () => Promise.reject(new Error('导出失败'));
     assert.ok(String((await ctx.Agent.tools.export_project({})).error).indexOf('导出失败') >= 0, 'deps reject 转 error');
   }
+  // ===== Task 13: runLoop（意图轮 → 装配 → 工具循环）+ isContinuation + buildToolDefs =====
+  // runLoop 经 deps.request mock 驱动；断言全部用 primitive / JSON.stringify（vm 沙箱对象不做 deepEqual）。
+  {
+    // 计划 mock 修复：工具结果轮必须返回 {content:'最终答复', toolCalls:null}
+    // （model 收到 tool 消息后给出最终答复，而不是工具轮就返回 toolCalls:null）
+    const statuses = [];
+    const toolEvents = [];
+    const replies = [];
+    const calls = [];
+    const fakeRequest = (messages) => {
+      calls.push(messages);
+      if (calls.length === 1) return '{"scenario":"polish","needs":["current_block"],"note":"润色第二段"}';
+      if (calls.length === 2) return { content: '已处理', toolCalls: [{ id: 'call_1', type: 'function', function: { name: 'get_current_block', arguments: '{}' } }] };
+      return { content: '最终答复', toolCalls: null };
+    };
+    ctx.Agent.toolsDeps.getActiveBlock = () => ({ name: '第一章', text: '正文' });
+    const res = await ctx.Agent.runLoop({
+      userText: '把这段润色一下',
+      history: [],
+      activeScenario: null,
+      callbacks: { onStatus: (s) => statuses.push(s), onTool: (t) => toolEvents.push(t.name), onWrite: () => {}, onReply: (t) => replies.push(t) },
+    }, { request: fakeRequest, buildCtx: () => ({}) });
+    assert.equal(res.scenario, 'polish', '意图轮解析出 polish');
+    assert.ok(calls.length >= 3, '至少 intent + tool + answer 三轮');
+    assert.equal(calls[0].length, 2, '意图轮消息最简（system + user）');
+    assert.ok(statuses.indexOf('scenario:polish') >= 0, '发出 scenario:polish 状态');
+    assert.ok(toolEvents.indexOf('get_current_block') >= 0, 'onTool 上报工具名');
+    assert.equal(replies.join(','), '最终答复', '最终答复回调 onReply');
+  }
+  {
+    // 延续语跳过意图轮：直接以活跃场景进工具循环（省一次请求）
+    const calls = [];
+    const replies = [];
+    const statuses = [];
+    const fakeRequest = (messages) => { calls.push(messages); return { content: '好的，继续写。', toolCalls: null }; };
+    const res = await ctx.Agent.runLoop({
+      userText: '继续',
+      history: [],
+      activeScenario: 'polish',
+      callbacks: { onStatus: (s) => statuses.push(s), onReply: (t) => replies.push(t) },
+    }, { request: fakeRequest, buildCtx: () => ({}) });
+    assert.ok(calls[0][0].content.indexOf('局部改稿') >= 0, '首轮即 polish 场景提示词（无意图轮）');
+    assert.ok(statuses.indexOf('intent') < 0, '延续语不触发意图轮');
+    assert.equal(res.scenario, 'polish', '场景沿用 polish');
+    assert.equal(replies.join(','), '好的，继续写。');
+  }
+  {
+    // 异步工具执行：list_assets 是 async（await toolsDeps 的 Promise）→ runLoop 必须 await 工具结果。
+    // 断言工具消息回灌的是脱敏素材 JSON（无 dataURL 泄露）→ 验证 await impl(args) 生效（否则 JSON.stringify(Promise)='{}'）
+    const toolMsgs = [];
+    const fakeRequest = (messages) => {
+      const hasTool = messages.some((m) => m && m.role === 'tool');
+      if (!hasTool) return { content: '查询素材', toolCalls: [{ id: 'call_a', type: 'function', function: { name: 'list_assets', arguments: '{}' } }] };
+      for (const m of messages) if (m.role === 'tool') toolMsgs.push(m);
+      return { content: '素材如下', toolCalls: null };
+    };
+    ctx.Agent.toolsDeps.getAllAssets = () => Promise.resolve([{ name: 'x', type: 'image', dataURL: 'data:image/png;base64,ZZZ' }]);
+    const res = await ctx.Agent.runLoop({
+      userText: '看下素材',
+      history: [],
+      activeScenario: 'general',
+      callbacks: {},
+    }, { request: fakeRequest, buildCtx: () => ({}) });
+    assert.equal(toolMsgs.length, 1, '工具结果消息回灌一轮');
+    assert.ok(toolMsgs[0].content.indexOf('"name":"x"') >= 0, '工具消息含脱敏素材 JSON');
+    assert.ok(toolMsgs[0].content.indexOf('dataURL') < 0 && toolMsgs[0].content.indexOf('base64,ZZZ') < 0, 'dataURL 不得进 LLM 上下文');
+    assert.equal(res.rounds, 2, '工具轮 + 答复轮');
+  }
+  {
+    // buildToolDefs 语义（§4.4）：polish 白名单 6 个；空白名单（general/vars）= 全量 24；__proto__ 兜底 general
+    const polish = ctx.Agent.buildToolDefs('polish');
+    assert.equal(polish.length, 6, 'polish 白名单 6 个工具');
+    assert.equal(ctx.Agent.buildToolDefs('general').length, 24, 'general 空列表 = 全部工具');
+    assert.equal(ctx.Agent.buildToolDefs('vars').length, 24, 'vars 空列表 = 全部工具');
+    assert.equal(ctx.Agent.buildToolDefs('__proto__').length, 24, '原型链键兜底 general 全量');
+    for (const d of polish) {
+      assert.equal(d.type, 'function');
+      assert.ok(typeof d.function.name === 'string' && d.function.name.length > 0, 'def 有 name');
+      assert.ok(typeof d.function.description === 'string' && d.function.description.length > 0, 'def 有 description');
+      assert.ok(d.function.parameters && d.function.parameters.type === 'object', 'def 有 parameters');
+    }
+    const toolNames = Object.keys(ctx.Agent.tools).sort().join(',');
+    const defNames = ctx.Agent.buildToolDefs('general').map((d) => d.function.name).sort().join(',');
+    assert.equal(defNames, toolNames, 'TOOL_DEFS 键与 Agent.tools 完全一致');
+  }
+  {
+    // 轮数上限：mock 永远返回同一工具调用 → 8 轮后 loop_limit + 提示语
+    const statuses = [];
+    const replies = [];
+    ctx.Agent.toolsDeps.getActiveBlock = () => ({ name: '第一章', text: '正文' });
+    const fakeRequest = () => ({ content: '再读', toolCalls: [{ id: 'call_x', type: 'function', function: { name: 'get_current_block', arguments: '{}' } }] });
+    const res = await ctx.Agent.runLoop({
+      userText: '一直读',
+      history: [],
+      activeScenario: 'general',
+      callbacks: { onStatus: (s) => statuses.push(s), onReply: (t) => replies.push(t) },
+    }, { request: fakeRequest, buildCtx: () => ({}) });
+    assert.ok(statuses.indexOf('loop_limit') >= 0, '第 8 轮后触发 loop_limit');
+    assert.equal(res.rounds, 8, '恰好 8 轮');
+    assert.equal(res.loopLimit, true, '返回 loopLimit 标记');
+    assert.equal(replies.join(','), '任务步骤过多，已停止。建议拆成更小的步骤，或先撤销不想要的改动。', '提示语回调');
+  }
+  {
+    // 错误路径：request 抛异常 → onStatus('error') + onReply('出错了：…')，runLoop resolve 不抛
+    const statuses = [];
+    const replies = [];
+    const fakeRequest = () => { throw new Error('boom'); };
+    let threw = false;
+    let res = null;
+    try {
+      res = await ctx.Agent.runLoop({
+        userText: 'hi',
+        history: [],
+        activeScenario: 'general',
+        callbacks: { onStatus: (s, m) => statuses.push([s, m]), onReply: (t) => replies.push(t) },
+      }, { request: fakeRequest, buildCtx: () => ({}) });
+    } catch (e) { threw = true; }
+    assert.ok(!threw, 'runLoop 出错时不抛出，resolve 返回 {error}');
+    assert.ok(statuses.some(([s]) => s === 'error'), '发出 error 状态');
+    assert.equal(replies.join(','), '出错了：boom', '错误信息透传 onReply');
+    assert.ok(res && res.error && res.error.message === 'boom', '返回 {error} 携带原始异常');
+  }
   console.log('agent.test.js OK');
 })().catch(e => { console.error(e); process.exit(1); });

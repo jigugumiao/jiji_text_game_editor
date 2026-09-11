@@ -130,6 +130,76 @@
       if (commitDeps && commitDeps.commit && rec.before !== null) commitDeps.commit(rec.block, rec.before);
       return rec;
     },
+
+    // ===== Task 13: 意图路由 + 工具调用循环 =====
+    INTENT_SYSTEM: '你是意图识别器。根据用户对剧情编辑器（剧情块/选项/变量/素材/线索）的请求，输出 JSON：{"scenario":"polish|rewrite|design|vars|general","needs":["需要的上下文项"],"note":"一句话理解"}。polish=局部润色/改稿（只读当前块）；rewrite=整篇改写/续写（需全文）；design=剧情问答/设计（需大纲+设定）；vars=变量/逻辑操作（需变量库）；无法归类用 general。只输出 JSON，不要其它文字。',
+    isContinuation: function (text) {
+      return /^(确认|继续|再来|换一种|再多写点|然后呢|接着写|好的|可以|ok|apply|继续写|所以呢|还有呢)/i.test(String(text || '').trim());
+    },
+    buildToolDefs: function (scenario) {
+      // tools 语义（§4.4）：场景表 tools 空数组 = 全部工具可用（默认全量）；非空 = 仅白名单（硬裁剪，polish 唯一显式白名单）
+      var sc = Object.prototype.hasOwnProperty.call(AGENT_SCENARIOS, scenario) ? AGENT_SCENARIOS[scenario] : AGENT_SCENARIOS.general;
+      var allow = sc.tools || [];
+      var names = (!allow.length || allow.indexOf('*') >= 0) ? Object.keys(Agent.tools) : allow;
+      return names.filter(function (n) { return TOOL_DEFS[n]; }).map(function (n) { return TOOL_DEFS[n]; });
+    },
+    runLoop: async function (opts, deps) {
+      var cb = opts.callbacks || {};
+      var scenario = opts.activeScenario;
+      try {
+        if (!scenario) {
+          if (Agent.isContinuation(opts.userText)) {
+            scenario = 'general';
+          } else {
+            cb.onStatus && cb.onStatus('intent');
+            var intentMsgs = [{ role: 'system', content: Agent.INTENT_SYSTEM }, { role: 'user', content: opts.userText }];
+            var intentRes = await deps.request(intentMsgs, { thinking: { type: 'disabled' }, max_tokens: 512 });
+            scenario = Agent.intentParse(typeof intentRes === 'string' ? intentRes : (intentRes && intentRes.content)).scenario;
+            cb.onStatus && cb.onStatus('scenario:' + scenario);
+          }
+        }
+        var ctx = deps.buildCtx ? deps.buildCtx() : {};
+        var messages = Agent.buildMessages(scenario, ctx, opts.userText, {});
+        var rounds = 0;
+        while (rounds < 8) {
+          rounds++;
+          cb.onStatus && cb.onStatus('thinking');
+          var toolDefs = Agent.buildToolDefs(scenario);
+          var resp = await deps.request(messages, { tools: toolDefs.length ? toolDefs : undefined, tool_choice: toolDefs.length ? 'auto' : undefined, thinking: { type: 'disabled' } });
+          var text = typeof resp === 'string' ? resp : (resp && resp.content) || '';
+          var toolCalls = resp && resp.toolCalls;
+          if (!toolCalls || !toolCalls.length) {
+            cb.onReply && cb.onReply(text);
+            return { scenario: scenario, rounds: rounds, finalText: text };
+          }
+          var results = [];
+          for (var i = 0; i < toolCalls.length; i++) {
+            var fn = toolCalls[i].function;
+            var name = fn && fn.name;
+            var args = {};
+            try { args = fn.arguments ? JSON.parse(fn.arguments) : {}; } catch (e) { args = {}; }
+            cb.onTool && cb.onTool({ name: name, args: args });
+            var impl = Agent.tools[name];
+            var result;
+            if (!impl) result = { error: '未知工具：' + name };
+            else result = await impl(args);   // ⚠️ 必须 await（素材组工具 async；同步工具 await 无害）
+            if (result && result.resultText) {
+              var rec = Agent.applyAgentWrite({ block: result.block, before: args.__before, resultText: result.resultText, impact: result.impact }, deps, null);
+              cb.onWrite && cb.onWrite(rec);
+            }
+            results.push({ tool_call_id: toolCalls[i].id, role: 'tool', content: JSON.stringify(result || {}) });
+          }
+          messages = messages.concat(results);
+        }
+        cb.onStatus && cb.onStatus('loop_limit');
+        cb.onReply && cb.onReply('任务步骤过多，已停止。建议拆成更小的步骤，或先撤销不想要的改动。');
+        return { scenario: scenario, rounds: rounds, finalText: null, loopLimit: true };
+      } catch (e) {
+        cb.onStatus && cb.onStatus('error', e && e.message);
+        cb.onReply && cb.onReply('出错了：' + (e && e.message));
+        return { scenario: scenario, error: e };
+      }
+    },
   };
 
   // ===== Task 7: 文档编辑工具纯函数 =====
@@ -567,6 +637,37 @@
     },
   };
   Agent.tools = tools;
+  // ===== Task 13: 工具定义常量 TOOL_DEFS（OpenAI function calling 格式） =====
+  // 键与 Agent.tools 完全一致（buildToolDefs 按场景白名单过滤后下发）；description 中文说明
+  // 行为与确认语义：只读工具 →「只读操作，不修改任何数据」；写工具 →「小改自动落盘、大改走预览确认」；
+  // 破坏性工具（delete_block/delete_var/delete_asset）→「破坏性操作，触发二次确认」；export_project →「导出当前工程」。
+  var TOOL_DEFS = {
+    get_current_block: { type: 'function', function: { name: 'get_current_block', description: '获取当前正在编辑的剧情块名称与全文（含 <审阅:N> 标记）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    list_blocks: { type: 'function', function: { name: 'list_blocks', description: '列出全部剧情块名称。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    read_block: { type: 'function', function: { name: 'read_block', description: '按名称读取剧情块全文；块不存在时返回可用块列表。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称' } }, required: ['blockName'] } } },
+    search_in_doc: { type: 'function', function: { name: 'search_in_doc', description: '在全部剧情块中搜索关键词，返回命中的块、行号与片段（上限 20 条）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { query: { type: 'string', description: '搜索关键词' } }, required: ['query'] } } },
+    read_full_text: { type: 'function', function: { name: 'read_full_text', description: '读取整篇故事全文（超 50k 字符会拒绝）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    read_settings: { type: 'function', function: { name: 'read_settings', description: '读取创作设定（世界观/文风等）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    append_to_block: { type: 'function', function: { name: 'append_to_block', description: '在指定剧情块末尾追加文字。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称' }, text: { type: 'string', description: '要追加的文字' } }, required: ['blockName', 'text'] } } },
+    insert_at: { type: 'function', function: { name: 'insert_at', description: '按行号或原文锚点在指定块插入/替换文字。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称' }, anchor: { type: 'string', description: '锚点：行号数字（anchorType=line）或原文片段（anchorType=text）' }, text: { type: 'string', description: '要插入/替换的文字' }, mode: { type: 'string', enum: ['before', 'after', 'replace'], description: '插入模式（缺省 before）' }, anchorType: { type: 'string', enum: ['line', 'text'], description: '锚点类型（缺省 text）' } }, required: ['blockName', 'anchor', 'text'] } } },
+    apply_review_marker: { type: 'function', function: { name: 'apply_review_marker', description: '在指定剧情块标注审阅标记（<审阅:N>）并记录修改建议。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称' }, current: { type: 'string', description: '当前原文片段' }, suggestion: { type: 'string', description: '修改建议' } }, required: ['blockName'] } } },
+    list_vars: { type: 'function', function: { name: 'list_vars', description: '列出全部变量（名称/类型/值）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    read_var: { type: 'function', function: { name: 'read_var', description: '读取单个变量的名称/类型/值。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' } }, required: ['name'] } } },
+    create_var: { type: 'function', function: { name: 'create_var', description: '新建变量（number/text/boolean，命名：字母/下划线/中文开头）。修改变量库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' }, type: { type: 'string', enum: ['number', 'text', 'boolean'], description: '变量类型' }, value: { type: 'string', description: '初始值（缺省按类型取默认，数值/布尔由工具按类型转换）' } }, required: ['name', 'type'] } } },
+    delete_var: { type: 'function', function: { name: 'delete_var', description: '删除变量定义（正文中的引用不清理）。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' } }, required: ['name'] } } },
+    set_var: { type: 'function', function: { name: 'set_var', description: '修改已有变量的值（number 类型须数值）。修改变量库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' }, value: { type: 'string', description: '新值（数值/布尔由工具按类型转换）' } }, required: ['name', 'value'] } } },
+    update_var: { type: 'function', function: { name: 'update_var', description: '对 number 类型变量做加减运算。修改变量库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' }, op: { type: 'string', enum: ['+', '-'], description: '运算（缺省 +）' }, delta: { type: 'number', description: '增减量' } }, required: ['name', 'delta'] } } },
+    create_block: { type: 'function', function: { name: 'create_block', description: '新建空剧情块（命名校验 + 重名拒绝）。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '新块名称' } }, required: ['blockName'] } } },
+    rename_block: { type: 'function', function: { name: 'rename_block', description: '重命名剧情块并同步正文中的跳转引用。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { oldName: { type: 'string', description: '原块名' }, newName: { type: 'string', description: '新块名' } }, required: ['oldName', 'newName'] } } },
+    delete_block: { type: 'function', function: { name: 'delete_block', description: '删除剧情块（先报告其他块中的跳转引用，确认后才删）。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '要删除的块名' } }, required: ['blockName'] } } },
+    extract_clues: { type: 'function', function: { name: 'extract_clues', description: '从指定剧情块（缺省当前块）提取线索，结果回显给用户，不自动修改文档。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称（缺省当前块）' } }, required: [] } } },
+    generate_options: { type: 'function', function: { name: 'generate_options', description: '校验并写入合法选项行（<选项:"文字",块名,条件>）。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { text: { type: 'string', description: '要解析的选项行文本' } }, required: ['text'] } } },
+    list_assets: { type: 'function', function: { name: 'list_assets', description: '列出素材元数据（名称/类型/标签，不含二进制内容）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    rename_asset: { type: 'function', function: { name: 'rename_asset', description: '重命名素材。修改素材库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '原素材名' }, newName: { type: 'string', description: '新素材名' } }, required: ['name', 'newName'] } } },
+    delete_asset: { type: 'function', function: { name: 'delete_asset', description: '删除素材。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '素材名' } }, required: ['name'] } } },
+    export_project: { type: 'function', function: { name: 'export_project', description: '导出当前工程备份（含素材/变量/线索，不含 AI Key）。导出当前工程。', parameters: { type: 'object', properties: {} } } },
+  };
+  Agent.TOOL_DEFS = TOOL_DEFS;
   // 暴露 textOps 纯函数（供测试直测 & 后续 applyAgentWrite 复用）
   Agent.textOps = { normText: normText, findAnchor: findAnchor, applyInsert: applyInsert, computeImpact: computeImpact };
 

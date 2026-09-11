@@ -86,4 +86,27 @@ assert.ok(scen.rewrite.preload.includes('full_text'), 'rewrite 应预载全文')
   const prefixLen = Math.min(a[2].content.length, b[2].content.length);
   assert.equal(a[2].content.slice(0, prefixLen), b[2].content.slice(0, prefixLen), '预载 user 消息是稳定前缀');
 }
+// buildMessages 健壮性：settings 不重复 + 未知场景/原型链键兜底 + 缺省 ctx/userText
+{
+  // 创作设定只在 system 消息出现一次（rewrite/design 的 preload 不得重复带 settings）
+  const r = ctx.Agent.buildMessages('rewrite', { settings: '世界观：魔都', fullText: '全文', outline: '大纲' }, '改写');
+  let settingsCount = 0;
+  for (const m of r) { if (typeof m.content === 'string' && m.content.indexOf('世界观：魔都') >= 0) settingsCount++; }
+  assert.equal(settingsCount, 1, 'rewrite 的创作设定必须只出现一次（system 消息）');
+  const d = ctx.Agent.buildMessages('design', { settings: '世界观：魔都', outline: '大纲', currentBlock: { name: '第一章', text: '正文' } }, '设计问题');
+  let dCount = 0;
+  for (const m of d) { if (typeof m.content === 'string' && m.content.indexOf('世界观：魔都') >= 0) dCount++; }
+  assert.equal(dCount, 1, 'design 的创作设定必须只出现一次（system 消息）');
+}
+{
+  const r = ctx.Agent.buildMessages('nope', { settings: 's' }, 'hi');
+  assert.ok(typeof r[0].content === 'string' && r[0].content.indexOf('全能助理') >= 0, '未知场景兜底 general');
+  const p = ctx.Agent.buildMessages('__proto__', { settings: 's' }, 'hi');
+  assert.ok(typeof p[0].content === 'string' && p[0].content.length > 50, '原型链键也须兜底 general，不得产出 undefined systemPrompt');
+}
+{
+  const r = ctx.Agent.buildMessages('general', undefined, undefined);
+  assert.equal(r.length, 2, 'ctx/userText 缺省：system + 空 user 两条');
+  assert.equal(r[1].content, '', 'userText 缺省为空串');
+}
 console.log('agent.test.js OK');

@@ -14,12 +14,12 @@
     },
     rewrite: {
       systemPrompt: '你是剧情编辑器的整篇改写/续写助手。可读取全文后整篇重写或续写，保留 <<剧情块:名称>> 分块标记与 <跳回>/<跳回重选> 跳转标记，只改写文字。大篇幅改动会走 diff 预览确认。',
-      preload: ['full_text', 'outline', 'settings'],
+      preload: ['full_text', 'outline'],
       tools: [],
     },
     design: {
       systemPrompt: '你是剧情编辑器的剧情设计顾问。围绕世界观、大纲、人物与剧情走向回答问题、出主意、梳理结构。以只读为主，可写大纲类块；不要擅自动当前正在创作的正文。',
-      preload: ['outline', 'settings', 'current_block'],
+      preload: ['outline', 'current_block'],
       tools: [],
     },
     vars: {
@@ -75,7 +75,8 @@
     // 预载内容按场景表 preload 固定顺序拼装、同场景同工程不变 → 前缀稳定可命中缓存；
     // 可变内容（用户消息/工具往返）只 append 在末尾，绝不插入中段。
     buildMessages: function (scenario, ctx, userText, opts) {
-      var sc = AGENT_SCENARIOS[scenario] || AGENT_SCENARIOS.general;
+      // 只认场景表自有键（防 __proto__/constructor 等原型链键产生 undefined systemPrompt）
+      var sc = Object.prototype.hasOwnProperty.call(AGENT_SCENARIOS, scenario) ? AGENT_SCENARIOS[scenario] : AGENT_SCENARIOS.general;
       ctx = ctx || {};
       var msgs = [];
       msgs.push({ role: 'system', content: sc.systemPrompt });

@@ -533,6 +533,7 @@
     bindThemeToggle();    // 暗色模式切换按钮（#btn-theme）
     bindContextMenu();    // 自定义右键菜单（接管原生右键，编辑器工作区）
     applyHideAllAI(); // 启动时应用「隐藏所有 AI 功能」开关
+    agentWireToolsDeps(); // Agent 工具依赖注入（一次性，window.Agent 已先行加载）
     // 先迁移旧数据并展示项目页，进入某项目后才加载其剧情
     window.Storage.migrateLegacyIfNeeded().then(() => {
       renderProjectsScreen();
@@ -1410,6 +1411,7 @@
     refreshReviewToggleBadge();
     refreshBlockReviewLine();
     ftResetSession(); // 全文助理对话按工程隔离：切工程时重置内存态，下次开面板从本工程 key 重新加载
+    agentResetSession(); // Agent 对话同样按工程隔离：切工程时中止在途请求并重置内存态
   }
   // 记录已渲染的项目签名（各项目 id 拼串），用于判断「返回项目页」时是否需要整页重建
   let _projectsSignature = null;
@@ -7341,12 +7343,396 @@ self.onmessage = function (e) {
     });
   }
 
+  // ============ Agent 对话（全能助理）：意图路由 + 工具循环接线 ============
+  // 契约见 js/agent.js：runLoop(opts, deps) 不向外抛错（内部 catch 后走 onStatus('error') + onReply('出错了：…')）；
+  // onStatus 收到的是字符串：'intent' / 'scenario:<id>' / 'thinking' / 'loop_limit' / 'error'；最终回复经 onReply 送达（无 'reply' 状态）。
+  // onWrite(rec) 的 rec={block,before,after,level,impact}；applyAgentWrite 只分级并记录到 sessionWrites、不碰 DOM，
+  // DOM 写入在本节 onWrite 回调里经 commitAgentWrite 完成（Task 16 换全量分级渲染，本节的 level 分支保留可替换点）。
+  let agentAbort = null;       // 当前轮次的 AbortController（「停止」按钮用）
+  let agentStopping = false;   // 用户手动停止标记：abort 触发 runLoop 内部 catch → onReply('出错了：…')，据此显示「已停止」
+  let agentSessionGen = 0;     // 会话代次：切工程/重开会话时自增，使遗留异步回调失效、不写回旧工程历史（同 ftSessionGen 语义）
+  let agentStarted = false;    // 是否已「开始对话」（显示输入行）
+  let agentBusy = false;       // 是否生成中（禁用发送/输入，显示停止按钮）
+  let agentBound = false;      // 面板事件只绑定一次（防重复绑定）
+
+  function agentHistoryKey() {
+    // 用真实工程 id 作 key：每个工程独立存对话历史（同 ftHistoryKey editor.js:6676）
+    let pid = 'default';
+    try { const id = window.Storage && window.Storage.getCurrentProjectId && window.Storage.getCurrentProjectId(); if (id) pid = id; } catch (e) {}
+    return 'agent-history:' + pid;
+  }
+  function agentLoadHistory() {
+    try {
+      const raw = localStorage.getItem(agentHistoryKey());
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return [];
+      return arr.filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string');
+    } catch (e) { return []; }
+  }
+  function agentSaveHistory(arr) {
+    try { localStorage.setItem(agentHistoryKey(), JSON.stringify(arr.slice(-50))); } catch (e) {} // 只保留最近 50 条
+  }
+  function agentAppendBubble(role, text) {
+    const box = $('#agent-messages');
+    const el = document.createElement('div');
+    el.className = 'fta-msg ' + (role === 'user' ? 'user' : (role === 'tool' ? 'tool' : 'assistant'));
+    el.textContent = text || '';
+    box.appendChild(el);
+    box.scrollTop = box.scrollHeight;
+    return el;
+  }
+  // 工具活动气泡（🔧/✏️/🔄）：瞬态提示，不落历史；复用 fta-msg 容器 + 内联弱化样式（不新增 CSS 文件改动）
+  function agentAppendToolBubble(text) {
+    const el = agentAppendBubble('tool', text);
+    el.style.fontSize = '12.5px';
+    el.style.opacity = '.8';
+    return el;
+  }
+  // 流式增量渲染：只追加新 token 的文本节点，避免每 token 重设 textContent（同 ftStreamAppend editor.js:7079）
+  function agentStreamAppend(bubble, d) {
+    if (d == null || d === '') return;
+    let tn = bubble._streamNode;
+    if (!tn) {
+      tn = document.createTextNode('');
+      bubble.insertBefore(tn, bubble.firstChild);
+      bubble._streamNode = tn;
+    }
+    tn.textContent += d;
+    const box = $('#agent-messages');
+    if (box) box.scrollTop = box.scrollHeight;
+  }
+  // 切换工程时调用：重置 Agent 会话态，使其按工程独立（同 ftResetSession editor.js:6707，openProject 里一并调用）
+  function agentResetSession() {
+    agentSessionGen++;   // 使在途请求的遗留回调全部失效，绝不写回旧工程历史
+    if (agentAbort) { try { agentAbort.abort(); } catch (e) {} agentAbort = null; }
+    agentStopping = false;
+    agentStarted = false;
+    agentBusy = false;
+    const box = $('#agent-messages');
+    if (box) box.innerHTML = '';
+    const startWrap = $('#agent-start-wrap');
+    if (startWrap) startWrap.classList.remove('hidden');
+    const inputRow = $('#agent-input-row');
+    if (inputRow) inputRow.classList.add('hidden');
+    const actions = $('#agent-actions');
+    if (actions) actions.classList.add('hidden');
+    const tag = $('#agent-scenario-tag');
+    if (tag) { tag.textContent = ''; tag.classList.add('hidden'); }
+    const send = $('#agent-send'); if (send) send.disabled = false;
+    const stop = $('#agent-stop'); if (stop) stop.classList.add('hidden');
+    const input = $('#agent-input'); if (input) input.disabled = false;
+    const refeed = $('#agent-refeed'); if (refeed) refeed.disabled = false;
+  }
+  // 场景中文名：polish→润色改稿 / rewrite→整篇改写 / design→剧情设计 / vars→变量逻辑 / general→通用
+  function agentShowScenario(id) {
+    const names = { polish: '润色改稿', rewrite: '整篇改写', design: '剧情设计', vars: '变量逻辑', general: '通用' };
+    const tag = $('#agent-scenario-tag');
+    if (!tag) return;
+    tag.textContent = '场景：' + (names[id] || id);
+    tag.classList.remove('hidden');
+  }
+  // 工具活动描述：read_block {blockName:"第二章"} → 「read_block（blockName="第二章"）→ 已执行」
+  function agentToolDesc(t) {
+    const name = (t && t.name) || '工具';
+    const args = (t && t.args) ? t.args : {};
+    const parts = [];
+    for (const k in args) {
+      if (Object.prototype.hasOwnProperty.call(args, k)) {
+        let v = args[k];
+        if (typeof v === 'string' && v.length > 40) v = v.slice(0, 40) + '…';
+        parts.push(k + '=' + JSON.stringify(v));
+      }
+    }
+    return name + (parts.length ? '（' + parts.join(' ') + '）' : '') + ' → 已执行';
+  }
+  // 「开始对话」：显示输入区，并还原本工程历史气泡（有历史则自动进入，无历史则给一句引导）
+  function agentStart() {
+    if (agentStarted) return;
+    agentStarted = true;
+    const box = $('#agent-messages');
+    box.innerHTML = '';
+    const hist = agentLoadHistory();
+    hist.forEach(function (t) { agentAppendBubble(t.role === 'user' ? 'user' : 'assistant', t.content); });
+    if (!hist.length) agentAppendBubble('assistant', 'Agent 已就绪：可直接改稿（追加/插入/替换正文）、管理变量与素材、创建/重命名/删除剧情块。直接描述你想做的事。');
+    $('#agent-start-wrap').classList.add('hidden');
+    $('#agent-input-row').classList.remove('hidden');
+    $('#agent-actions').classList.remove('hidden');
+    const ta = $('#agent-input');
+    if (ta) ta.focus();
+  }
+  function openAgent() {
+    if (!window.Agent) { toast('Agent 模块未加载'); return; }
+    if (!window.AI) { toast('AI 模块未加载'); return; }
+    const settings = window.AI.loadSettings();
+    if (!settings.key) { toast('请先在「设置 → AI 编剧 → 模型与密钥」填写 Deepseek API Key'); openSettings('ai'); return; }
+    agentBindEvents();
+    $('#agent-assistant').classList.remove('hidden');
+    const hist = agentLoadHistory();
+    if (agentStarted) {
+      const box = $('#agent-messages');
+      if (box) box.scrollTop = box.scrollHeight;
+    } else if (hist.length) {
+      agentStart(); // 有历史对话：自动恢复，无需再点「开始对话」（同全文助理 openFulltextAssistant editor.js:6761）
+    } else {
+      $('#agent-start-wrap').classList.remove('hidden');
+      $('#agent-input-row').classList.add('hidden');
+      $('#agent-actions').classList.add('hidden');
+    }
+  }
+  // 面板事件绑定（一次）：元素在 Task 14 的 index.html 中已存在，openAgent 首次调用时绑定
+  function agentBindEvents() {
+    if (agentBound) return;
+    agentBound = true;
+    $('#agent-close').addEventListener('click', function () {
+      if (agentAbort) { try { agentAbort.abort(); } catch (e) {} } // 关闭即中止在途生成
+      $('#agent-assistant').classList.add('hidden');
+    });
+    $('#agent-start').addEventListener('click', agentStart);
+    $('#agent-send').addEventListener('click', agentSend);
+    $('#agent-stop').addEventListener('click', function () {
+      agentStopping = true;
+      if (agentAbort) { try { agentAbort.abort(); } catch (e) {} }
+    });
+    $('#agent-clear').addEventListener('click', agentClear);
+    $('#agent-refeed').addEventListener('click', agentRefeed);
+    const input = $('#agent-input');
+    if (input) input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); agentSend(); }
+    });
+  }
+  function agentClear() {
+    try { localStorage.removeItem(agentHistoryKey()); } catch (e) {}
+    const box = $('#agent-messages');
+    if (box) box.innerHTML = '';
+    agentAppendBubble('assistant', '对话已清空。继续聊吧。');
+    const tag = $('#agent-scenario-tag');
+    if (tag) { tag.textContent = ''; tag.classList.add('hidden'); }
+  }
+  function agentRefeed() {
+    // 文档上下文按轮次经 toolsDeps/buildCtx 即时组装，无需缓存重置；这里仅作可见提示（最小实现，Task 16 可扩展）
+    agentAppendToolBubble('🔄 已重读当前文档');
+  }
+  function agentSetBusy(on) {
+    agentBusy = on;
+    const send = $('#agent-send'); if (send) send.disabled = on;
+    const input = $('#agent-input'); if (input) input.disabled = on;
+    const refeed = $('#agent-refeed'); if (refeed) refeed.disabled = on;
+    const stop = $('#agent-stop'); if (stop) stop.classList.toggle('hidden', !on);
+  }
+  // 发送：进 runLoop（意图路由 + 工具循环）。runLoop 不抛错（内部 catch），收尾统一恢复 UI 态。
+  async function agentSend() {
+    if (agentBusy) return;
+    const myGen = agentSessionGen;
+    const ta = $('#agent-input');
+    const userText = (ta.value || '').trim();
+    if (!userText) return;
+    ta.value = '';
+    agentAppendBubble('user', userText);
+    const hist = agentLoadHistory();
+    hist.push({ role: 'user', content: userText });
+    agentSaveHistory(hist);
+    const replyBubble = agentAppendBubble('assistant', '');
+    agentStopping = false;
+    agentAbort = new AbortController();
+    agentSetBusy(true);
+    try {
+      await window.Agent.runLoop({
+        userText: userText,
+        history: hist,
+        activeScenario: undefined, // 每轮都走意图识别（polish/rewrite/design/vars/general）
+        callbacks: {
+          onStatus: (s) => {
+            if (myGen !== agentSessionGen) return;
+            if (typeof s === 'string' && s.indexOf('scenario:') === 0) agentShowScenario(s.slice('scenario:'.length));
+            // runLoop 每轮请求前都会发 'thinking'：借此清掉意图识别轮的 JSON / 轮间残留，避免短暂串台到气泡
+            if (s === 'thinking') { replyBubble.textContent = ''; replyBubble._streamNode = null; }
+            // 'loop_limit'/'error' 由 onReply 收尾
+          },
+          onTool: (t) => {
+            if (myGen !== agentSessionGen) return;
+            agentAppendToolBubble('🔧 ' + agentToolDesc(t));
+          },
+          onWrite: (rec) => {
+            if (myGen !== agentSessionGen) return;
+            if (!rec || rec.block == null || rec.after == null) return;
+            // TODO(Task 16): 全量分级渲染（auto 落盘 / preview 差异预览确认 / destructive 二次确认）。
+            // 当前最小实现（Task 15）：所有 level 一律立即落盘 + 「撤销」气泡，差异预览 UI 留待 Task 16。
+            commitAgentWrite(rec.block, rec.after);
+            const b = agentAppendToolBubble('✏️ 已改《' + rec.block + '》');
+            const undoBtn = document.createElement('button');
+            undoBtn.type = 'button';
+            undoBtn.className = 'agent-undo';
+            undoBtn.textContent = '撤销';
+            undoBtn.style.marginLeft = '8px';
+            undoBtn.addEventListener('click', function () {
+              const u = window.Agent.undoWrite({ commit: commitAgentWrite });
+              if (u) b.textContent = '↩️ 已撤销对《' + u.block + '》的修改';
+              else b.textContent = '没有可撤销的修改';
+            });
+            b.appendChild(undoBtn);
+          },
+          onReply: (text) => {
+            if (myGen !== agentSessionGen) return;
+            let shown = text;
+            if (agentStopping && String(text || '').indexOf('出错了：') === 0) shown = '已停止';
+            replyBubble.textContent = shown; // 覆盖流式内容（同 FTA 收尾语义），工具气泡留在 DOM 原位
+            const h = agentLoadHistory();
+            h.push({ role: 'assistant', content: shown });
+            agentSaveHistory(h);
+            agentStopping = false;
+          },
+          onConfirm: async (info) => {
+            // TODO(Task 16): 换成真实的二次确认对话框。当前最小实现：自动放行（return true），
+            // 使 delete_block（report → confirm → confirmDelete 真删）与 delete_var/delete_asset 能完成循环。
+            return true;
+          },
+        },
+      }, {
+        request: (messages, toolOpts) => window.AI.callDeepseek(messages, Object.assign({}, toolOpts || {}, {
+          stream: true,
+          signal: agentAbort ? agentAbort.signal : undefined,
+          onToken: (d) => { if (myGen !== agentSessionGen) return; agentStreamAppend(replyBubble, d); },
+        })),
+        buildCtx: () => agentBuildContext(),
+      });
+    } catch (e) {
+      // runLoop 内部已统一 catch（经 onReply 反馈），这里仅兜底防御意外路径
+      if (myGen !== agentSessionGen) return;
+      replyBubble.textContent = '已停止';
+      agentStopping = false;
+    }
+    if (myGen !== agentSessionGen) return;
+    agentAbort = null;
+    agentSetBusy(false);
+    const ta2 = $('#agent-input');
+    if (ta2) ta2.focus();
+  }
+  // buildCtx：runLoop 每轮调用一次，组装 Agent.buildMessages 需要的上下文（settings/fullText/outline/currentBlock/vars）
+  function agentBuildContext() {
+    const c = loadCreation();
+    const blkName = (typeof activeBlock !== 'undefined' && activeBlock) ? activeBlock : '主剧情';
+    let vars = [];
+    try { vars = (window.Storage.getVars ? window.Storage.getVars() : []) || []; } catch (e) {}
+    return {
+      settings: agentSettingsText(),
+      fullText: ftaCollectFullText(),
+      outline: c.outline || '',
+      currentBlock: { name: blkName, text: (storyText ? storyText.value : '') },
+      vars: vars,
+    };
+  }
+  // 创作设定拼接（大纲/简介/世界观/文风/线索），供 toolsDeps.settings 与 buildCtx.settings 共用
+  function agentSettingsText() {
+    const c = loadCreation();
+    const parts = [];
+    if (c.outline) parts.push('【大纲】\n' + c.outline);
+    if (c.intro) parts.push('【简介】\n' + c.intro);
+    if (c.world) parts.push('【世界观】\n' + c.world);
+    if (c.style) parts.push('【文风】\n' + c.style);
+    if (c.clues) parts.push('【关键线索】\n' + c.clues);
+    return parts.join('\n\n');
+  }
+  // Agent 写回唯一入口：程序化改文统一走 pushHistory + commitEdit，保证可撤销、可落盘
+  function commitAgentWrite(block, text) {
+    pushHistory(); // 程序化改文前必须入栈，否则不可撤销
+    const curBlock = (StoryEditorApi.getActiveBlock && StoryEditorApi.getActiveBlock()) || '主剧情';
+    if (block === curBlock) {
+      storyText.value = text; // 触发 value 钩子（刷新行号 editor.js:1617）
+      commitEdit(); // deviation from plan snippet：.value 赋值不会触发 input 事件，必须手动 commit 才会保存当前块
+    } else {
+      window.Storage.setBlockText(block, text);
+      // 若该块当前在编辑器打开则刷新（按需，最小实现：不强制刷新其它块）
+    }
+  }
+  // 工具依赖注入（一次性）：契约见 agent.js toolsDeps 注释；与 window.Storage 签名不一致处做了适配并注明
+  function agentWireToolsDeps() {
+    if (!window.Agent) return;
+    window.Agent.toolsDeps = {
+      getActiveBlock: () => StoryEditorApi.getActiveBlock ? { name: StoryEditorApi.getActiveBlock(), text: storyText.value } : { name: '主剧情', text: storyText.value },
+      listBlocks: () => StoryEditorApi.listBlockNames ? StoryEditorApi.listBlockNames() : [],
+      getBlockText: (n) => StoryEditorApi.getBlockText ? StoryEditorApi.getBlockText(n) : null,
+      fullText: () => { /* 拼接全部块，同 ftaCollectFullText (editor.js:6645) */ return ftaCollectFullText(); },
+      settings: () => agentSettingsText(),
+      getVars: () => window.Storage.getVars(),
+      saveVars: (a) => window.Storage.saveVars(a),
+      blocksDoc: () => {
+        // {块名: 文本} 块对象视图（Agent 结构组工具契约）；主剧情用 MAIN_BLOCK 键
+        const doc = (window.Storage.loadBlocks ? window.Storage.loadBlocks() : null) || { main: '', blocks: {} };
+        const out = {};
+        out[MAIN_BLOCK] = doc.main || '';
+        const bs = doc.blocks || {};
+        for (const k in bs) { if (Object.prototype.hasOwnProperty.call(bs, k)) out[k] = bs[k]; }
+        return out;
+      },
+      saveBlocks: (b) => {
+        // adaptation（deviation from plan snippet）：window.Storage.saveBlocks 期望 {main, blocks} 结构，
+        // 而 Agent 传入的是 {块名: 文本} 扁平映射（blocksDocObj 契约）——必须转回存储结构，
+        // 否则扁平 map 会被 loadBlocks 解析成空工程、清空全部剧情块。
+        const prev = (window.Storage.loadBlocks ? window.Storage.loadBlocks() : null) || { main: '', blocks: {} };
+        const next = { main: String(prev.main || ''), blocks: {} };
+        const prevB = prev.blocks || {};
+        for (const k in prevB) { if (Object.prototype.hasOwnProperty.call(prevB, k) && !(k in b)) next.blocks[k] = prevB[k]; }
+        for (const k in b) {
+          if (!Object.prototype.hasOwnProperty.call(b, k)) continue;
+          if (k === MAIN_BLOCK) next.main = b[k] == null ? '' : String(b[k]);
+          else next.blocks[k] = b[k] == null ? '' : String(b[k]);
+        }
+        window.Storage.saveBlocks(next);
+      },
+      mainBlock: () => window.Storage.MAIN_BLOCK,
+      extractClues: async (o) => {
+        try {
+          const opts = {};
+          if (o && o.blockName) { const t = StoryEditorApi.getBlockText ? StoryEditorApi.getBlockText(o.blockName) : null; if (t != null) opts.body = t; }
+          const r = await window.AI.extractClues(opts);
+          return { ok: true, clues: (r && (r.clues || r.text)) || '' };
+        } catch (e) { return { error: (e && e.message) || '提取失败' }; }
+      },
+      applyGeneratedBlocks: (options) => {
+        const block = (StoryEditorApi.getActiveBlock && StoryEditorApi.getActiveBlock()) || '主剧情';
+        const cur = StoryEditorApi.getBlockText ? StoryEditorApi.getBlockText(block) : null;
+        const curText = (cur != null) ? cur : storyText.value;
+        const text = options.join('\n');
+        commitAgentWrite(block, curText.endsWith('\n') ? curText + text : curText + '\n' + text);
+        return { ok: true };
+      },
+      getAllAssets: async () => {
+        const out = [];
+        for (const lib of ['background', 'item', 'overlay', 'music', 'sound']) {
+          try { out.push.apply(out, await window.Storage.getAllAssets(lib)); } catch (e) { /* 跳过该库 */ }
+        }
+        return out;
+      },
+      renameAsset: async (name, newName) => {
+        for (const lib of ['background', 'item', 'overlay', 'music', 'sound']) {
+          const recs = await window.Storage.getAllAssets(lib).catch(() => []);
+          const rec = recs.find(r => r.name === name);
+          if (rec) { await window.Storage.renameAsset(lib, rec.id, newName); return { ok: true }; }
+        }
+        return { error: '素材不存在' };
+      },
+      deleteAsset: async (name) => {
+        for (const lib of ['background', 'item', 'overlay', 'music', 'sound']) {
+          const recs = await window.Storage.getAllAssets(lib).catch(() => []);
+          const rec = recs.find(r => r.name === name);
+          if (rec) { await window.Storage.deleteAsset(lib, rec.id); return { ok: true }; }
+        }
+        return { error: '素材不存在' };
+      },
+      exportProject: async () => await window.Storage.exportProject(window.Storage.getCurrentProjectId()),
+    };
+  }
+
   // ============ 关键线索提取 ============
   // 隐藏所有 AI 功能开关：在 body 上挂 class，CSS 据此隐藏编辑器/素材待办里的 AI 按钮（设置内不受影响）
   function applyHideAllAI() {
     if (!window.AI) return;
     const on = !!window.AI.loadSettings().hideAllAI;
     document.body.classList.toggle('ai-hidden', on);
+    // Agent 面板随「隐藏所有 AI 功能」一并隐藏（只加不减，避免在未打开时被误显示；菜单按钮 #btn-ai-quick 已由 CSS 隐藏）
+    const agentModal = $('#agent-assistant');
+    if (agentModal && on) agentModal.classList.add('hidden');
   }
   function setCluesStatus(msg, cls) {
     const el = $('#clues-status');
@@ -8141,6 +8527,7 @@ self.onmessage = function (e) {
     const article = currentProjectMode === 'article';
     const items = [
       { mode: 'ft', special: 'openFulltext', label: '<svg class="ico" aria-hidden="true"><use href="#ic-brain"/></svg> 全文助理（对话式 AI，可全文改写）' },
+      { special: 'openAgent', label: '<svg class="ico" aria-hidden="true"><use href="#ic-brain"/></svg> Agent 对话（全能助理，可读写文档/变量/素材）' },
       { mode: 'hook', label: '<svg class="ico" aria-hidden="true"><use href="#ic-fish"/></svg> 生成文章开头（6 选 1）', rec: isBlank },
       { mode: 'continue', label: article ? '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg> AI 续写文章（按设定 / 上下文）' : '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg> AI 生成剧情（按设定 / 上下文）', rec: !hasSel },
       { mode: 'expand', label: '<svg class="ico" aria-hidden="true"><use href="#ic-redo"/></svg> AI 重写选中文字', rec: hasSel },
@@ -8159,6 +8546,7 @@ self.onmessage = function (e) {
       b.addEventListener('click', () => {
         menu.classList.add('hidden');
         if (b.dataset.special === 'openFulltext') openFulltextAssistant();
+        else if (b.dataset.special === 'openAgent') openAgent();
         else prepareMode(b.dataset.mode);
       });
     });

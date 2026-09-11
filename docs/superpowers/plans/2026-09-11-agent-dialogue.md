@@ -1327,7 +1327,8 @@ Expected: FAIL——`Agent.runLoop` undefined。
 - [ ] **Step 3: 实现 runLoop 与配套**
 
 ```js
-// Agent 对象内
+// Agent 对象内（已按 8fce069/1aa0c0c 实现同步：thinking 用 boolean、assistant(tool_calls) 消息、白名单门、
+// 并行上限 4、同块写守卫、delete_block 报告型确认、history 去重兜底、before 语义）
 INTENT_SYSTEM: '你是意图识别器。根据用户对剧情编辑器（剧情块/选项/变量/素材/线索）的请求，输出 JSON：{"scenario":"polish|rewrite|design|vars|general","needs":["需要的上下文项"],"note":"一句话理解"}。polish=局部润色/改稿（只读当前块）；rewrite=整篇改写/续写（需全文）；design=剧情问答/设计（需大纲+设定）；vars=变量/逻辑操作（需变量库）；无法归类用 general。只输出 JSON，不要其它文字。',
 isContinuation: function (text) {
   return /^(确认|继续|再来|换一种|再多写点|然后呢|接着写|好的|可以|ok|apply|继续写|所以呢|还有呢)/i.test(String(text || '').trim());
@@ -1348,28 +1349,51 @@ runLoop: async function (opts, deps) {
       } else {
         cb.onStatus && cb.onStatus('intent');
         var intentMsgs = [{ role: 'system', content: Agent.INTENT_SYSTEM }, { role: 'user', content: opts.userText }];
-        var intentRes = await deps.request(intentMsgs, { thinking: { type: 'disabled' }, max_tokens: 512 });
+        var intentRes = await deps.request(intentMsgs, { thinking: false }); // ⚠️ boolean：对象 {type:'disabled'} 会被 callDeepseek 当 truthy → 反向开 thinking
         scenario = Agent.intentParse(typeof intentRes === 'string' ? intentRes : (intentRes && intentRes.content)).scenario;
         cb.onStatus && cb.onStatus('scenario:' + scenario);
       }
     }
     var ctx = deps.buildCtx ? deps.buildCtx() : {};
     var messages = Agent.buildMessages(scenario, ctx, opts.userText, {});
+    // 历史对话（agent-history:<pid>）插到「当前 userText」之前（可变内容全部在末尾，前缀缓存纪律）；
+    // 去重兜底：末条 user 消息与 opts.userText 相同（editor.js agentSend 先 push 再整体传）→ pop，避免重复发两次
+    var hist = Array.isArray(opts.history) ? opts.history : [];
+    if (hist.length) {
+      var histMsgs = [];
+      for (var hi = 0; hi < hist.length; hi++) {
+        var hm = hist[hi];
+        if (hm && (hm.role === 'user' || hm.role === 'assistant') && typeof hm.content === 'string' && hm.content) {
+          histMsgs.push({ role: hm.role, content: hm.content });
+        }
+      }
+      if (histMsgs.length) {
+        var lastHist = histMsgs[histMsgs.length - 1];
+        if (lastHist.role === 'user' && lastHist.content === opts.userText) histMsgs.pop();
+        messages.splice.apply(messages, [messages.length - 1, 0].concat(histMsgs));
+      }
+    }
     var rounds = 0;
     while (rounds < 8) {
       rounds++;
       cb.onStatus && cb.onStatus('thinking');
       var toolDefs = Agent.buildToolDefs(scenario);
-      var resp = await deps.request(messages, { tools: toolDefs.length ? toolDefs : undefined, tool_choice: toolDefs.length ? 'auto' : undefined, thinking: { type: 'disabled' } });
+      var resp = await deps.request(messages, { tools: toolDefs.length ? toolDefs : undefined, tool_choice: toolDefs.length ? 'auto' : undefined, thinking: false });
       var text = typeof resp === 'string' ? resp : (resp && resp.content) || '';
       var toolCalls = resp && resp.toolCalls;
       if (!toolCalls || !toolCalls.length) {
         cb.onReply && cb.onReply(text);
         return { scenario: scenario, rounds: rounds, finalText: text };
       }
+      // C2：白名单执行门——只允许本场景下发的工具（防注入工具名执行未下发工具）
+      var allowed = {};
+      for (var di = 0; di < toolDefs.length; di++) allowed[toolDefs[di].function.name] = true;
+      // I3：单轮并行上限 4（设计 §8）；assistant 消息与执行都用同一裁剪数组，保证 tool_call_id 匹配
+      var calls = toolCalls.slice(0, 4);
       var results = [];
-      for (var i = 0; i < toolCalls.length; i++) {
-        var fn = toolCalls[i].function;
+      var writtenBlocks = {}; // I3：同块写守卫（防并行写同块 stale-read 覆盖）
+      for (var i = 0; i < calls.length; i++) {
+        var fn = calls[i].function;
         var name = fn && fn.name;
         var args = {};
         try { args = fn.arguments ? JSON.parse(fn.arguments) : {}; } catch (e) { args = {}; }
@@ -1377,16 +1401,50 @@ runLoop: async function (opts, deps) {
         var impl = Agent.tools[name];
         var result;
         if (!impl) result = { error: '未知工具：' + name };
-        // ⚠️ 必须 await：素材组工具是 async（接线层 deps 走 IndexedDB，storage.js:331/372/377/613）；
-        // 同步工具（文档/变量/结构组）的返回值 await 也无害。不 await 会把 Promise 当结果，
-        // JSON.stringify(Promise) = '{}'，模型会拿到空对象。
-        else result = await impl(args);
+        else if (!allowed[name]) result = { error: '工具「' + name + '」不在当前场景可用范围' };
+        else {
+          var isDestructive = TOOL_DEFS[name] && TOOL_DEFS[name].destructive === true;
+          var confirmed = true;
+          if (name === 'delete_block') {
+            // 报告型破坏性：先执行工具拿引用报告（delete_block 不落盘），确认后真删
+            try { result = await impl(args); }
+            catch (e) { result = { error: '工具执行异常：' + (e && e.message) }; }
+            if (result && result.destructive) {
+              if (typeof cb.onConfirm === 'function') {
+                try { confirmed = !!(await cb.onConfirm({ name: name, args: args, result: result })); }
+                catch (e) { confirmed = false; }
+              }
+              if (confirmed) result = Agent.confirmDelete('delete_block', args);
+              else result = { error: '用户取消了操作：' + name };
+            }
+          } else {
+            // 立即型破坏性（delete_var/delete_asset 工具内即删）：确认门必须在工具执行前
+            if (isDestructive && typeof cb.onConfirm === 'function') {
+              try { confirmed = !!(await cb.onConfirm({ name: name, args: args })); }
+              catch (e) { confirmed = false; }
+            }
+            if (!confirmed) {
+              result = { error: '用户取消了操作：' + name };
+            } else if (args.blockName && writtenBlocks[args.blockName]) {
+              result = { error: '同一剧情块「' + args.blockName + '」在本轮已被修改，请先 read_block 重新读取后再操作' };
+            } else {
+              // I2：单个工具抛错不得炸掉整轮（转 error 回填，模型可换招）
+              try { result = await impl(args); }
+              catch (e) { result = { error: '工具执行异常：' + (e && e.message) }; }
+              if (result && result.ok && result.resultText && args.blockName) writtenBlocks[args.blockName] = true;
+            }
+          }
+        }
+        // before 语义（Task 7 修正）：写工具返回 result.before（原文本），applyAgentWrite 据以撤销
         if (result && result.resultText) {
-          var rec = Agent.applyAgentWrite({ block: result.block, before: args.__before, resultText: result.resultText, impact: result.impact }, deps, null);
+          var rec = Agent.applyAgentWrite({ block: result.block, before: result.before, resultText: result.resultText, impact: result.impact }, deps, null);
           cb.onWrite && cb.onWrite(rec);
         }
-        results.push({ tool_call_id: toolCalls[i].id, role: 'tool', content: JSON.stringify(result || {}) });
+        results.push({ tool_call_id: calls[i].id || ('call_' + i), role: 'tool', content: JSON.stringify(result || {}) });
       }
+      // OpenAI/DeepSeek 兼容 API 硬性要求：tool_call_id 对应的「携带 tool_calls 的 assistant 消息」
+      // 必须先于 tool 消息存在，否则 round 2+ 被拒（"tool_call_id does not exist in previous message"）
+      messages.push({ role: 'assistant', content: null, tool_calls: calls });
       messages = messages.concat(results);
     }
     cb.onStatus && cb.onStatus('loop_limit');
@@ -1400,7 +1458,7 @@ runLoop: async function (opts, deps) {
 },
 ```
 
-配套常量（Agent 对象内）：`TOOL_DEFS`——为每个工具写 name/description/parameters（description 用中文明确「该工具会修改文档/变量，需分级确认」等行为），parameters 用 `{type:'object', properties:{...}, required:[...]}` 精简描述即可（本任务给全 5 组 22 个工具的 defs，字段与 Task 7-12 工具签名一致）。
+配套常量（Agent 对象内）：`TOOL_DEFS`——为每个工具写 name/description/parameters（description 用中文明确「该工具会修改文档/变量，需分级确认」等行为），parameters 用 `{type:'object', properties:{...}, required:[...]}` 精简描述即可（实际实现为 24 个工具：文档读 6 写 3 + 结构组 3 + 创作辅助 2 + 素材组 4 + 变量组 6，字段与 Task 7-12 工具签名一致；**3 个破坏性工具 delete_var/delete_block/delete_asset 带 `destructive: true`**——白名单门 + 确认门均据此生效）。
 
 - [ ] **Step 4: 跑测试确认通过**
 

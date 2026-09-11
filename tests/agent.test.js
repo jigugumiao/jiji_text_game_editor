@@ -64,7 +64,7 @@ assert.ok(scen.rewrite.preload.includes('full_text'), 'rewrite 应预载全文')
   assert.equal(ctx.Agent.intentParse('{"scenario":"__proto__"}').scenario, 'general', '原型链键不算合法场景');
   assert.equal(ctx.Agent.intentParse('{"scenario":"constructor"}').scenario, 'general', '原型链键不算合法场景');
 }
-// buildMessages：前缀构造（§4.3 缓存纪律）— 场景 system → 可靠性 system → settings system → 预载 user → 用户 user
+// buildMessages：前缀构造（§4.3 缓存纪律）— 场景 system → 可靠性 system → 回复风格 system → settings system → 预载 user → 用户 user
 // 注意：本地上下文变量命名为 sctx，避免遮蔽外层 vm 沙箱 ctx（ctx.Agent 是模块句柄）
 {
   const sctx = { outline: '大纲A', settings: '世界观：魔都', currentBlock: { name: '第一章', text: '正文…' }, fullText: '全文…', vars: [{ name: '金币', type: 'number', value: 10 }] };
@@ -74,19 +74,21 @@ assert.ok(scen.rewrite.preload.includes('full_text'), 'rewrite 应预载全文')
   assert.equal(msgs[1].role, 'system');
   assert.ok(msgs[1].content.indexOf('可靠性铁律') >= 0, '第二条=可靠性铁律 system 消息');
   assert.equal(msgs[2].role, 'system');
-  assert.ok(msgs[2].content.indexOf('世界观：魔都') >= 0, '第三条=创作设定（settings）');
-  assert.ok(msgs[3].role === 'user' && msgs[3].content.indexOf('大纲A') >= 0, '预载上下文在第四条 user');
-  assert.ok(msgs[3].content.indexOf('当前编辑块《第一章》') >= 0, '预载按场景顺序含大纲+当前块');
-  assert.equal(msgs[4].role, 'user');
-  assert.equal(msgs[4].content, '润色第二段', '用户消息必须在最后');
+  assert.ok(msgs[2].content.indexOf('回复风格') >= 0, '第三条=回复风格 system 消息（不倾倒清单/能力菜单）');
+  assert.equal(msgs[3].role, 'system');
+  assert.ok(msgs[3].content.indexOf('世界观：魔都') >= 0, '第四条=创作设定（settings）');
+  assert.ok(msgs[4].role === 'user' && msgs[4].content.indexOf('大纲A') >= 0, '预载上下文在第五条 user');
+  assert.ok(msgs[4].content.indexOf('当前编辑块《第一章》') >= 0, '预载按场景顺序含大纲+当前块');
+  assert.equal(msgs[5].role, 'user');
+  assert.equal(msgs[5].content, '润色第二段', '用户消息必须在最后');
 }
 {
   // 缓存纪律：同场景同工程两次构建，前缀逐字符相同（稳定前缀在可变内容之前）
   const sctx = { outline: '大纲A', settings: '世界观：魔都', currentBlock: { name: '第一章', text: '正文…' }, fullText: '全文…' };
   const a = ctx.Agent.buildMessages('general', sctx, '第一个问题');
   const b = ctx.Agent.buildMessages('general', sctx, '第二个问题');
-  const prefixLen = Math.min(a[3].content.length, b[3].content.length);
-  assert.equal(a[3].content.slice(0, prefixLen), b[3].content.slice(0, prefixLen), '预载 user 消息是稳定前缀');
+  const prefixLen = Math.min(a[4].content.length, b[4].content.length);
+  assert.equal(a[4].content.slice(0, prefixLen), b[4].content.slice(0, prefixLen), '预载 user 消息是稳定前缀');
 }
 // buildMessages 健壮性：settings 不重复 + 未知场景/原型链键兜底 + 缺省 ctx/userText
 {
@@ -108,9 +110,10 @@ assert.ok(scen.rewrite.preload.includes('full_text'), 'rewrite 应预载全文')
 }
 {
   const r = ctx.Agent.buildMessages('general', undefined, undefined);
-  assert.equal(r.length, 3, 'ctx/userText 缺省：场景 system + 可靠性 system + 空 user 三条');
+  assert.equal(r.length, 4, 'ctx/userText 缺省：场景 system + 可靠性 system + 回复风格 system + 空 user 四条');
   assert.ok(String(r[1].content).indexOf('可靠性铁律') >= 0, '第 2 条=可靠性铁律 system 消息（禁止假设性提醒/编造/虚报）');
-  assert.equal(r[2].content, '', 'userText 缺省为空串');
+  assert.ok(String(r[2].content).indexOf('回复风格') >= 0, '第 3 条=回复风格 system 消息（克制信息供给）');
+  assert.equal(r[3].content, '', 'userText 缺省为空串');
 }
 // classifyWrite：写操作分级判定（设计 §6）
 // destructive:true → 'destructive'；chars ≤ 500 且 !wholeBlock → 'auto'；否则 'preview'

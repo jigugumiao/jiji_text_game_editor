@@ -45,6 +45,15 @@
     + '6) 承认错误或道歉之后，必须立即按用户已经给出的指令继续行动，道歉不是重新谈判；不得在道歉后又把已明确的任务抛回给用户重新选择。\n'
     + '7) 执行完毕后如实汇报：实际执行了哪些操作、每个操作的结果（以工具返回为准）、未执行或失败的部分。做了的说做了，没做的说没做，绝不补造结果。';
 
+  // 回复风格纪律（用户要求：信息量过高不适合思考——不要倾倒清单/能力菜单，把思考留给用户）。
+  // 与可靠性铁律并列的固定 system 消息（位置固定→前缀缓存不受影响）。
+  var REPLY_STYLE_RULES = '【回复风格】\n'
+    + '1) 信息供给要克制：只给用户当下真正需要的内容。用户没有明确要求时，不要主动复述或列举剧情块/章节清单、素材清单、变量清单、能力菜单。\n'
+    + '2) 用户只是打招呼或没有具体任务时，用一两句话自然回应即可；不要汇报「我读了什么」、不要复述读到的上下文。\n'
+    + '3) 用户明确问「有哪些/你知道什么」时，才提供完整清单；平时只给最相关的一条线索或一个方向，把思考空间留给用户。\n'
+    + '4) 需要给出选项时最多 2-3 个，且每个都要有实际意义；不要给出「比如…」式的能力说明书。\n'
+    + '5) 执行任务后的结果汇报不受本条限制，仍按可靠性铁律如实进行。';
+
   var Agent = {
     AGENT_SCENARIOS: AGENT_SCENARIOS,
 
@@ -92,6 +101,7 @@
       var msgs = [];
       msgs.push({ role: 'system', content: sc.systemPrompt });
       msgs.push({ role: 'system', content: AGENT_RELIABILITY_RULES });
+      msgs.push({ role: 'system', content: REPLY_STYLE_RULES });
       var settings = ctx.settings;
       if (settings && String(settings).trim()) {
         msgs.push({ role: 'system', content: '【创作设定】\n' + settings });

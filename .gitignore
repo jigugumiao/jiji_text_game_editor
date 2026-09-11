@@ -4,6 +4,7 @@ TEST/node_modules/
 
 # 构建产物（由 build_inline.py 生成，可重建）
 dist/
+dist-test/
 
 # 项目内部记忆与工作日志
 .workbuddy/

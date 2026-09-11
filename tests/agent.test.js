@@ -283,4 +283,34 @@ function mockVars(initial) {
   ctx.Agent.tools.delete_var({ name: '金币' });
   assert.equal(m().length, 0, 'delete_var 删除');
 }
+// Task 9 边界健壮性：空名拒绝 / boolean·text 强制 / 缺省初值 / update_var 分支 / saveVars 守卫
+{
+  const m = mockVars([]);
+  assert.ok(ctx.Agent.tools.create_var({}).error, '缺 name 不得创建变量（不得落 undefined 垃圾条目）');
+  assert.ok(ctx.Agent.tools.create_var({ name: '旗', type: 'boolean' }).ok);
+  assert.equal(m()[0].value, false, 'boolean 缺省初值 false');
+  assert.ok(ctx.Agent.tools.create_var({ name: '标题', type: 'text' }).ok);
+  assert.equal(m()[1].value, '', 'text 缺省初值空串');
+  ctx.Agent.tools.set_var({ name: '旗', value: '1' });
+  assert.equal(m()[0].value, true, "boolean '1'→true");
+  ctx.Agent.tools.set_var({ name: '旗', value: 'false' });
+  assert.equal(m()[0].value, false, "boolean 'false'→false");
+  ctx.Agent.tools.set_var({ name: '标题', value: 42 });
+  assert.equal(m()[1].value, '42', 'text 强制 String(42)');
+}
+{
+  const m = mockVars([{ name: '金币', type: 'number', value: 100 }, { name: '标题', type: 'text', value: 'x' }]);
+  ctx.Agent.tools.update_var({ name: '金币', op: '-', delta: 5 });
+  assert.equal(m()[0].value, 95, "update_var '-' 减法");
+  assert.ok(ctx.Agent.tools.update_var({ name: '标题', op: '+', delta: 1 }).error, 'text 不支持加减');
+  assert.ok(ctx.Agent.tools.update_var({ name: '金币', op: '+', delta: 'abc' }).error, 'delta 非数值拒绝');
+  assert.ok(ctx.Agent.tools.update_var({ name: '没有', op: '+', delta: 1 }).error, 'update 不存在的变量报错');
+  assert.ok(ctx.Agent.tools.set_var({ name: '没有', value: 1 }).error, 'set 不存在的变量报错');
+  assert.ok(ctx.Agent.tools.delete_var({ name: '没有' }).error, 'delete 不存在的变量报错');
+}
+{
+  ctx.Agent.toolsDeps = { getVars: () => [{ name: '金币', type: 'number', value: 1 }] };
+  const r = ctx.Agent.tools.set_var({ name: '金币', value: 2 });
+  assert.ok(r.error, 'saveVars 未接线时写入必须报错而非静默 ok');
+}
 console.log('agent.test.js OK');

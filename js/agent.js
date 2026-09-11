@@ -216,7 +216,9 @@
   // 变量格式 {name, type:'number'|'text'|'boolean', value}（storage.js:602）；
   // 命名规则同 editor.js:2886：字母/数字/下划线/中文，不得数字开头。
   function validVarName(name) {
-    return /^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(String(name));
+    // 空值守卫：String(undefined)='undefined' 会命中正则，必须显式拒绝（防 LLM 漏传 name 落垃圾条目）
+    if (typeof name !== 'string' || !name) return false;
+    return /^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(name);
   }
   function getVarsArr() {
     return Agent.toolsDeps.getVars ? Agent.toolsDeps.getVars() : [];
@@ -289,7 +291,7 @@
     // ===== Task 9: 变量工具（直接读写 master 现有格式，经 toolsDeps.getVars/saveVars 注入） =====
     // 直接变更注入的变量数组；destructive 仅 delete_var 标记（变量写入不走 sessionWrites 撤销）
     list_vars: function () {
-      return getVarsArr();
+      return getVarsArr().slice();
     },
     read_var: function (a) {
       var name = a && a.name;
@@ -319,7 +321,8 @@
       var created = { name: name, type: type, value: value };
       var next = arr.slice();
       next.push(created);
-      if (Agent.toolsDeps.saveVars) Agent.toolsDeps.saveVars(next);
+      if (!Agent.toolsDeps.saveVars) return { error: '编辑器未就绪' };
+      Agent.toolsDeps.saveVars(next);
       return { ok: true, name: created.name, type: created.type, value: created.value };
     },
     delete_var: function (a) {
@@ -332,7 +335,8 @@
       if (found < 0) return { error: '未找到变量「' + name + '」' };
       var next = arr.slice();
       next.splice(found, 1);
-      if (Agent.toolsDeps.saveVars) Agent.toolsDeps.saveVars(next);
+      if (!Agent.toolsDeps.saveVars) return { error: '编辑器未就绪' };
+      Agent.toolsDeps.saveVars(next);
       return { ok: true, name: name, destructive: true };
     },
     set_var: function (a) {
@@ -354,7 +358,8 @@
       } else {
         v.value = String(val);
       }
-      if (Agent.toolsDeps.saveVars) Agent.toolsDeps.saveVars(arr);
+      if (!Agent.toolsDeps.saveVars) return { error: '编辑器未就绪' };
+      Agent.toolsDeps.saveVars(arr);
       return { ok: true, name: v.name, value: v.value };
     },
     update_var: function (a) {
@@ -369,7 +374,8 @@
       var d = Number(a && a.delta);
       if (isNaN(d)) return { error: 'delta 必须是数值' };
       v.value = (a && a.op === '-') ? v.value - d : v.value + d;
-      if (Agent.toolsDeps.saveVars) Agent.toolsDeps.saveVars(arr);
+      if (!Agent.toolsDeps.saveVars) return { error: '编辑器未就绪' };
+      Agent.toolsDeps.saveVars(arr);
       return { ok: true, name: v.name, value: v.value };
     },
   };

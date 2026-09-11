@@ -184,11 +184,14 @@
             if (!impl) result = { error: '未知工具：' + name };
             else result = await impl(args);   // ⚠️ 必须 await（素材组工具 async；同步工具 await 无害）
             if (result && result.resultText) {
-              var rec = Agent.applyAgentWrite({ block: result.block, before: args.__before, resultText: result.resultText, impact: result.impact }, deps, null);
+              var rec = Agent.applyAgentWrite({ block: result.block, before: (result.before !== undefined) ? result.before : args.__before, resultText: result.resultText, impact: result.impact }, deps, null);
               cb.onWrite && cb.onWrite(rec);
             }
             results.push({ tool_call_id: toolCalls[i].id, role: 'tool', content: JSON.stringify(result || {}) });
           }
+          // ⚠️ OpenAI/DeepSeek 兼容 API 硬性要求：tool_call_id 对应的「携带 tool_calls 的 assistant 消息」
+          // 必须先于 tool 消息存在，否则 round 2+ 被拒（"tool_call_id does not exist in previous message"）
+          messages.push({ role: 'assistant', content: null, tool_calls: toolCalls });
           messages = messages.concat(results);
         }
         cb.onStatus && cb.onStatus('loop_limit');
@@ -380,7 +383,7 @@
       var t = Agent.toolsDeps.getBlockText && Agent.toolsDeps.getBlockText(a.blockName);
       if (t === null || t === undefined) return { error: '未找到剧情块「' + a.blockName + '」' };
       var result = t + (t && !t.endsWith('\n') && !String(a.text).startsWith('\n') ? '\n' : '') + String(a.text);
-      return { ok: true, block: a.blockName, resultText: result, impact: computeImpact(a.blockName, result, false, t) };
+      return { ok: true, block: a.blockName, before: t, resultText: result, impact: computeImpact(a.blockName, result, false, t) };
     },
     insert_at: function (a) {
       if (!a.blockName || a.anchor === undefined || a.text === undefined) return { error: '缺少 blockName/anchor/text' };
@@ -393,7 +396,7 @@
       var result = applyInsert(t, pos, String(a.text), mode);
       // 整块替换必须标记 wholeBlock → 走预览确认（设计 §6）
       var wholeBlock = (mode === 'replace' && pos.start === 0 && pos.end === t.length);
-      return { ok: true, block: a.blockName, resultText: result, impact: computeImpact(a.blockName, result, wholeBlock, t) };
+      return { ok: true, block: a.blockName, before: t, resultText: result, impact: computeImpact(a.blockName, result, wholeBlock, t) };
     },
     apply_review_marker: function (a) {
       // 占位：复用审阅标记管线（Task 10 关联创作辅助时接通 editor 侧 applyGeneratedBlocks/审阅写入）

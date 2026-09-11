@@ -651,5 +651,40 @@ function mockBlocks() {
     assert.equal(replies.join(','), '出错了：boom', '错误信息透传 onReply');
     assert.ok(res && res.error && res.error.message === 'boom', '返回 {error} 携带原始异常');
   }
+  {
+    // ⚠️ spec review 修正：工具轮必须带「携带 tool_calls 的 assistant 消息」——
+    // OpenAI/DeepSeek 兼容 API 要求 tool_call_id 对应的 assistant 消息先存在，否则 round 2+ 被拒
+    const seen = [];
+    const req = (messages) => {
+      seen.push(messages.slice());
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'tool') return { content: '最终答复', toolCalls: null };
+      return { content: null, toolCalls: [{ id: 'c1', type: 'function', function: { name: 'list_blocks', arguments: '{}' } }] };
+    };
+    await ctx.Agent.runLoop({ userText: 'hi', activeScenario: 'general', callbacks: { onReply: () => {} } }, { request: req, buildCtx: () => ({}) });
+    // 第 2 次请求（工具结果轮）的 messages 里，role:'assistant' 且带 tool_calls 的消息必须在 role:'tool' 之前
+    const toolRoundMsgs = seen[1] || [];
+    const asstIdx = toolRoundMsgs.findIndex(m => m.role === 'assistant' && m.tool_calls);
+    const toolIdx = toolRoundMsgs.findIndex(m => m.role === 'tool');
+    assert.ok(asstIdx >= 0 && toolIdx > asstIdx, 'assistant(tool_calls) 消息必须先于 tool 消息');
+  }
+  {
+    // ⚠️ spec review 修正：写工具的 before 必须回传（append_to_block/insert_at 返回 before: t），
+    // runLoop 透传 → applyAgentWrite 记 before → undoWrite 才能真正撤销
+    const writes = [];
+    ctx.Agent.toolsDeps.getBlockText = (n) => '旧文第一行\n旧文第二行';
+    const req = (messages) => {
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'tool') return { content: '改好了', toolCalls: null };
+      return { content: null, toolCalls: [{ id: 'c1', type: 'function', function: { name: 'append_to_block', arguments: '{"blockName":"第一章","text":"新行"}' } }] };
+    };
+    await ctx.Agent.runLoop({
+      userText: '追加', activeScenario: 'general',
+      callbacks: { onWrite: (rec) => writes.push(rec), onReply: () => {} },
+    }, { request: req, buildCtx: () => ({}) });
+    assert.equal(writes.length, 1, '写工具触发 onWrite');
+    assert.equal(writes[0].block, '第一章');
+    assert.ok(writes[0].before !== null && writes[0].before.indexOf('旧文第一行') >= 0, 'before 必须回传（撤销可用）');
+  }
   console.log('agent.test.js OK');
 })().catch(e => { console.error(e); process.exit(1); });

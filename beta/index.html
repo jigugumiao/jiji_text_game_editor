@@ -2019,7 +2019,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.101-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.102-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -8094,7 +8094,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Exporter;
     + '2) 用户只是打招呼或没有具体任务时，用一两句话自然回应即可；不要汇报「我读了什么」、不要复述读到的上下文。\n'
     + '3) 用户明确问「有哪些/你知道什么」时，才提供完整清单；平时只给最相关的一条线索或一个方向，把思考空间留给用户。\n'
     + '4) 需要给出选项时最多 2-3 个，且每个都要有实际意义；不要给出「比如…」式的能力说明书。\n'
-    + '5) 执行任务后的结果汇报不受本条限制，仍按可靠性铁律如实进行。';
+    + '5) 执行任务后的结果汇报不受本条限制，仍按可靠性铁律如实进行。\n'
+    + '6) 与用户交流一律使用自然语言，绝不暴露内部实现细节：不念出工具名（如 update_appearance、read_settings）、不出现内部参数名或字段名（如 fontSize、galBoxColor）。描述能力时用用户能直接理解的说法（如「能改正文字号、标题字体、底框颜色」）。';
 
   var Agent = {
     AGENT_SCENARIOS: AGENT_SCENARIOS,

@@ -1929,7 +1929,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.93-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.94-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -10267,10 +10267,13 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
         if (k === 's') { e.preventDefault(); saveNow(); toast('已保存'); return; }
       }
       if (e.key === 'F12') { e.preventDefault(); openPreview(); }
-      // 右侧 Ctrl：按住=预览，松开=编辑
-      if (e.code === 'ControlRight' && !e.repeat) { setPreviewMode(true); }
+      // 右侧 Ctrl：按住=预览，松开=编辑（焦点在 AI 对话框内时忽略——Agent/全文助理输入不应触发画布预览）
+      const inAiDialog = (t) => t && t.closest && !!(t.closest('#agent-assistant') || t.closest('#fulltext-assistant'));
+      if (e.code === 'ControlRight' && !e.repeat && !inAiDialog(e.target)) { setPreviewMode(true); }
     });
     document.addEventListener('keyup', (e) => {
+      // keyup 不做对话框内判断：即使在对话框内按下（keydown 已忽略），无条件解除预览也安全（关闭无副作用，
+      // 且避免"框外按下→焦点移入框内→keyup 被忽略"导致预览卡在按住态）
       if (e.code === 'ControlRight') { setPreviewMode(false); }
     });
     // 窗口失焦时强制松开，避免卡在预览态

@@ -7471,6 +7471,7 @@ self.onmessage = function (e) {
   let agentStarted = false;    // 是否已「开始对话」（显示输入行）
   let agentBusy = false;       // 是否生成中（禁用发送/输入，显示停止按钮）
   let agentBound = false;      // 面板事件只绑定一次（防重复绑定）
+  let agentCtxWarnDismissed = false; // 会话级：当前对话是否已手动关闭「上下文过长」弱提醒
 
   function agentHistoryKey() {
     // 用真实工程 id 作 key：每个工程独立存对话历史（同 ftHistoryKey editor.js:6676）
@@ -7478,17 +7479,102 @@ self.onmessage = function (e) {
     try { const id = window.Storage && window.Storage.getCurrentProjectId && window.Storage.getCurrentProjectId(); if (id) pid = id; } catch (e) {}
     return 'agent-history:' + pid;
   }
+  // ---- 多对话：agent-convs:<pid> 对话列表 + agent-current:<pid> 当前对话 id；旧单对话 agent-history:<pid> 首次访问时迁移 ----
+  function agentPid() {
+    let pid = 'default';
+    try { const id = window.Storage && window.Storage.getCurrentProjectId && window.Storage.getCurrentProjectId(); if (id) pid = id; } catch (e) {}
+    return pid;
+  }
+  function agentConvsKey() { return 'agent-convs:' + agentPid(); }
+  function agentCurrentKey() { return 'agent-current:' + agentPid(); }
+  function agentLoadConvs() {
+    try {
+      let list = null;
+      const raw = localStorage.getItem(agentConvsKey());
+      if (raw) {
+        try { const p = JSON.parse(raw); if (Array.isArray(p)) list = p; } catch (e) { list = null; }
+      }
+      if (!list) {
+        // 迁移旧单对话：agent-history:<pid> → 第一条对话（id 'legacy'）
+        const legacy = localStorage.getItem(agentHistoryKey());
+        if (legacy) {
+          try {
+            const arr = JSON.parse(legacy);
+            if (Array.isArray(arr) && arr.length) {
+              list = [{ id: 'legacy', title: agentConvTitle(arr), messages: arr, updatedAt: Date.now() }];
+              localStorage.removeItem(agentHistoryKey()); // 迁移完成，旧键清掉防重复迁移
+            }
+          } catch (e) {}
+        }
+      }
+      if (!list) list = [];
+      return list.filter(c => c && typeof c.id === 'string' && Array.isArray(c.messages));
+    } catch (e) { return []; }
+  }
+  function agentSaveConvs(list) {
+    try { localStorage.setItem(agentConvsKey(), JSON.stringify(list.slice(-30))); } catch (e) {} // cap 30 条对话
+  }
+  function agentGetCurrentId() {
+    try { return localStorage.getItem(agentCurrentKey()) || ''; } catch (e) { return ''; }
+  }
+  function agentSetCurrentId(id) {
+    try { localStorage.setItem(agentCurrentKey(), id); } catch (e) {}
+  }
+  function agentFindConv(id) {
+    const list = agentLoadConvs();
+    for (let i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+  // 保证存在一个可用的当前对话：无 id 或 id 失效 → 用列表第一条；列表空则新建
+  function agentEnsureCurrent() {
+    const list = agentLoadConvs();
+    let cur = agentGetCurrentId();
+    if (!cur || !list.some(c => c.id === cur)) {
+      if (list.length) {
+        cur = list[0].id;
+        agentSetCurrentId(cur);
+      } else {
+        cur = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        list.unshift({ id: cur, title: '新对话', messages: [], updatedAt: Date.now() });
+        agentSaveConvs(list);
+        agentSetCurrentId(cur);
+      }
+    }
+    return cur;
+  }
+  // 对话标题：第一条 user 消息内容前 20 字
+  function agentConvTitle(msgs) {
+    const arr = Array.isArray(msgs) ? msgs : [];
+    let t = '';
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i] && arr[i].role === 'user' && typeof arr[i].content === 'string') { t = arr[i].content.replace(/\s+/g, ' ').trim(); break; }
+    }
+    if (!t) return '新对话';
+    return t.length > 20 ? t.slice(0, 20) + '…' : t;
+  }
   function agentLoadHistory() {
     try {
-      const raw = localStorage.getItem(agentHistoryKey());
-      if (!raw) return [];
-      const arr = JSON.parse(raw);
-      if (!Array.isArray(arr)) return [];
+      const c = agentFindConv(agentEnsureCurrent());
+      if (!c) return [];
+      const arr = Array.isArray(c.messages) ? c.messages : [];
       return arr.filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string');
     } catch (e) { return []; }
   }
   function agentSaveHistory(arr) {
-    try { localStorage.setItem(agentHistoryKey(), JSON.stringify(arr.slice(-50))); } catch (e) {} // 只保留最近 50 条
+    try {
+      const cur = agentEnsureCurrent();
+      const list = agentLoadConvs();
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].id === cur) {
+          list[i].messages = arr.slice(-50);
+          list[i].title = agentConvTitle(arr);
+          list[i].updatedAt = Date.now();
+          break;
+        }
+      }
+      agentSaveConvs(list);
+      agentRenderConvList();
+    } catch (e) {}
   }
   // ---- §14: 早期对话摘要压缩（DSH 上下文压缩设计移植：分层摘要 + 原文归档可检索 + 活跃内容不压）----
   function agentArchiveKey() {
@@ -7712,7 +7798,9 @@ self.onmessage = function (e) {
     const send = $('#agent-send'); if (send) send.disabled = false;
     const stop = $('#agent-stop'); if (stop) stop.classList.add('hidden');
     const input = $('#agent-input'); if (input) input.disabled = false;
-    const refeed = $('#agent-refeed'); if (refeed) refeed.disabled = false;
+    agentCtxWarnDismissed = false; // 跨工程重置：提醒关闭态不串工程
+    const warn = $('#agent-ctx-warn');
+    if (warn) warn.classList.add('hidden');
   }
   // 场景中文名：polish→润色改稿 / rewrite→整篇改写 / design→剧情设计 / vars→变量逻辑 / general→通用
   function agentShowScenario(id) {
@@ -7769,20 +7857,109 @@ self.onmessage = function (e) {
     el.appendChild(det);
     return el;
   }
-  // 「开始对话」：显示输入区，并还原本工程历史气泡（有历史则自动进入，无历史则给一句引导）
-  function agentStart() {
-    if (agentStarted) return;
+  // 渲染当前对话到消息区（打开/切换/新建共用）：直接进入输入态；空对话给引导气泡
+  function agentOpenConv() {
     agentStarted = true;
+    agentCtxWarnDismissed = false; // 切换/新对话重置提醒关闭态
+    agentCtxFullHash = null;       // 全文指纹/用量统计不跨对话
+    agentCtxStatus = '';
+    agentUsageReset();
+    if (window.Agent && window.Agent.sessionWrites) window.Agent.sessionWrites.length = 0; // 会话写入记录不跨对话
     const box = $('#agent-messages');
-    box.innerHTML = '';
+    if (box) box.innerHTML = '';
     const hist = agentLoadHistory();
     hist.forEach(function (t) { agentAppendBubble(t.role === 'user' ? 'user' : 'assistant', t.content); });
     if (!hist.length) agentAppendBubble('assistant', 'Agent 已就绪：可直接改稿（追加/插入/替换正文）、管理变量与素材、创建/重命名/删除剧情块。直接描述你想做的事。');
     $('#agent-start-wrap').classList.add('hidden');
     $('#agent-input-row').classList.remove('hidden');
     $('#agent-actions').classList.remove('hidden');
+    const warn = $('#agent-ctx-warn');
+    if (warn) warn.classList.add('hidden');
+    const tag = $('#agent-scenario-tag');
+    if (tag) { tag.textContent = ''; tag.classList.add('hidden'); }
+    agentRenderConvList();
     const ta = $('#agent-input');
     if (ta) ta.focus();
+  }
+  // 「开始对话」：多对话下等价于打开当前对话（有历史恢复、无历史引导），保留入口兼容
+  function agentStart() {
+    agentOpenConv();
+  }
+  // 新对话：列表头部插入空对话并切换（busy 时先中止在途请求）
+  function agentNewConversation() {
+    if (agentBusy) { toast('请先等待当前生成完成或停止'); return; }
+    if (agentAbort) { try { agentAbort.abort(); } catch (e) {} }
+    agentStopping = false;
+    const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const list = agentLoadConvs();
+    list.unshift({ id: id, title: '新对话', messages: [], updatedAt: Date.now() });
+    agentSaveConvs(list);
+    agentSetCurrentId(id);
+    agentOpenConv();
+  }
+  // 切换对话：更新当前 id 并重渲染（busy 时先中止在途请求）
+  function agentSwitchConversation(id) {
+    if (id === agentGetCurrentId()) return;
+    if (agentBusy) { toast('请先等待当前生成完成或停止'); return; }
+    if (agentAbort) { try { agentAbort.abort(); } catch (e) {} }
+    agentStopping = false;
+    agentSetCurrentId(id);
+    agentOpenConv();
+  }
+  // 删除对话：确认后移除；若删的是当前对话，切到剩余第一条（列表空则留空待新建）
+  function agentDeleteConversation(id) {
+    if (agentBusy) { toast('请先等待当前生成完成或停止'); return; }
+    const c = agentFindConv(id);
+    const label = c ? (c.title || '该对话') : '该对话';
+    if (!confirm('确定删除对话「' + label + '」？此操作不可恢复。')) return;
+    const list = agentLoadConvs().filter(x => x.id !== id);
+    agentSaveConvs(list);
+    if (agentGetCurrentId() === id) {
+      if (list.length) agentSetCurrentId(list[0].id);
+      else agentSetCurrentId('');
+    }
+    agentOpenConv();
+  }
+  // 渲染左侧对话列表（新建/删除/切换/当前高亮）
+  function agentRenderConvList() {
+    const listEl = $('#agent-conv-list');
+    if (!listEl) return;
+    const list = agentLoadConvs();
+    const cur = agentGetCurrentId();
+    listEl.innerHTML = '';
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'agent-conv-empty';
+      empty.textContent = '暂无对话';
+      listEl.appendChild(empty);
+      return;
+    }
+    list.forEach(function (c) {
+      const item = document.createElement('div');
+      item.className = 'agent-conv-item' + (c.id === cur ? ' active' : '');
+      item.title = c.title || '新对话';
+      const title = document.createElement('span');
+      title.className = 'agent-conv-title';
+      title.textContent = c.title || '新对话';
+      item.appendChild(title);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'agent-conv-del';
+      del.title = '删除对话';
+      del.textContent = '×';
+      del.addEventListener('click', function (e) { e.stopPropagation(); agentDeleteConversation(c.id); });
+      item.appendChild(del);
+      item.addEventListener('click', function () { agentSwitchConversation(c.id); });
+      listEl.appendChild(item);
+    });
+  }
+  // 上下文过长弱提醒：当前对话消息总字符 > 30000 时显示提示条（可关闭，会话级；与 §14 自动压缩阈值一致）
+  function agentMaybeWarnCtxLength(hist) {
+    if (agentCtxWarnDismissed) return;
+    const total = (hist || []).reduce(function (s, m) { return s + String((m && m.content) || '').length; }, 0);
+    if (total < 30000) return;
+    const warn = $('#agent-ctx-warn');
+    if (warn) warn.classList.remove('hidden');
   }
   function openAgent() {
     if (!window.Agent) { toast('Agent 模块未加载'); return; }
@@ -7791,17 +7968,7 @@ self.onmessage = function (e) {
     if (!settings.key) { toast('请先在「设置 → AI 编剧 → 模型与密钥」填写 Deepseek API Key'); openSettings('ai'); return; }
     agentBindEvents();
     $('#agent-assistant').classList.remove('hidden');
-    const hist = agentLoadHistory();
-    if (agentStarted) {
-      const box = $('#agent-messages');
-      if (box) box.scrollTop = box.scrollHeight;
-    } else if (hist.length) {
-      agentStart(); // 有历史对话：自动恢复，无需再点「开始对话」（同全文助理 openFulltextAssistant editor.js:6761）
-    } else {
-      $('#agent-start-wrap').classList.remove('hidden');
-      $('#agent-input-row').classList.add('hidden');
-      $('#agent-actions').classList.add('hidden');
-    }
+    agentOpenConv(); // 多对话：直接渲染当前对话（有历史恢复、无历史给引导），左侧列表同步
   }
   // 面板事件绑定（一次）：元素在 Task 14 的 index.html 中已存在，openAgent 首次调用时绑定
   function agentBindEvents() {
@@ -7818,29 +7985,26 @@ self.onmessage = function (e) {
       if (agentAbort) { try { agentAbort.abort(); } catch (e) {} }
     });
     $('#agent-clear').addEventListener('click', agentClear);
-    $('#agent-refeed').addEventListener('click', agentRefeed);
+    $('#agent-new-conv').addEventListener('click', agentNewConversation);
+    $('#agent-ctx-warn-close').addEventListener('click', function () {
+      agentCtxWarnDismissed = true;
+      const warn = $('#agent-ctx-warn');
+      if (warn) warn.classList.add('hidden');
+    });
     const input = $('#agent-input');
     if (input) input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); agentSend(); }
     });
   }
   function agentClear() {
-    try { localStorage.removeItem(agentHistoryKey()); } catch (e) {}
-    const box = $('#agent-messages');
-    if (box) box.innerHTML = '';
-    agentAppendBubble('assistant', '对话已清空。继续聊吧。');
-    const tag = $('#agent-scenario-tag');
-    if (tag) { tag.textContent = ''; tag.classList.add('hidden'); }
-  }
-  function agentRefeed() {
-    // 文档上下文按轮次经 toolsDeps/buildCtx 即时组装，无需缓存重置；这里仅作可见提示（最小实现，Task 16 可扩展）
-    agentAppendToolBubble('🔄 已重读当前文档');
+    if (agentBusy) { toast('请先停止当前生成'); return; }
+    agentSaveHistory([]); // 清空当前对话消息（对话条目保留，标题回「新对话」）
+    agentOpenConv();
   }
   function agentSetBusy(on) {
     agentBusy = on;
     const send = $('#agent-send'); if (send) send.disabled = on;
     const input = $('#agent-input'); if (input) input.disabled = on;
-    const refeed = $('#agent-refeed'); if (refeed) refeed.disabled = on;
     const stop = $('#agent-stop'); if (stop) stop.classList.toggle('hidden', !on);
   }
   // 发送：进 runLoop（意图路由 + 工具循环）。runLoop 不抛错（内部 catch），收尾统一恢复 UI 态。
@@ -7856,6 +8020,7 @@ self.onmessage = function (e) {
     const hist = await agentMaybeCompressHistory(agentLoadHistory()); // §14：超阈值先压缩早期对话（存档原文+摘要前置）
     hist.push({ role: 'user', content: userText });
     agentSaveHistory(hist);
+    agentMaybeWarnCtxLength(hist); // 上下文过长弱提醒（推荐创建新对话）
     // 回复气泡惰性创建：意图轮/工具轮全部走完后才开始流式输出时才创建。
     // 此前在 runLoop 前预创建占位，导致回复气泡 DOM 位置排在工具气泡之前（视觉"先回答后工具"）。
     let replyBubble = null;

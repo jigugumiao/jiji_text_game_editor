@@ -1593,9 +1593,45 @@ body.dark .fta-messages { background: var(--bg-sunken); }
    会导致窗口过小、消息区无滚动、内容撑破整页出界 */
 #agent-assistant { align-items: center; justify-content: center; }
 #agent-assistant .fta-box {
-  width: 720px; max-width: 94vw; height: 82vh; max-height: 820px;
+  width: 920px; max-width: 96vw; height: 82vh; max-height: 820px;
   display: flex; flex-direction: column; padding: 0; overflow: hidden;
 }
+
+/* ===== Agent 多对话：左侧对话列表 + 上下文过长弱提醒 ===== */
+.agent-layout { flex: 1 1 auto; display: flex; min-height: 0; }
+.agent-sidebar {
+  flex: 0 0 200px; width: 200px; display: flex; flex-direction: column; min-height: 0;
+  border-right: 1px solid var(--border); background: var(--bg-soft);
+}
+#agent-new-conv { flex: 0 0 auto; margin: 10px; width: auto; font-size: 13px; padding: 8px 10px; }
+.agent-conv-list { flex: 1 1 auto; overflow-y: auto; padding: 0 6px 10px; display: flex; flex-direction: column; gap: 2px; }
+.agent-conv-item {
+  display: flex; align-items: center; gap: 4px; padding: 7px 9px; border-radius: 8px;
+  cursor: pointer; font-size: 13px; color: var(--text); transition: background .12s; user-select: none;
+}
+.agent-conv-item:hover { background: var(--accent-soft); }
+.agent-conv-item.active { background: var(--accent-soft-2); font-weight: 600; }
+.agent-conv-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-conv-del {
+  flex: 0 0 auto; border: 0; background: transparent; cursor: pointer; color: var(--text);
+  opacity: .45; font-size: 15px; line-height: 1; padding: 2px 5px; border-radius: 5px;
+}
+.agent-conv-item:hover .agent-conv-del { opacity: 1; }
+.agent-conv-del:hover { background: #e2685f; color: #fff; }
+.agent-conv-empty { padding: 14px 8px; font-size: 12px; opacity: .5; text-align: center; color: var(--text-2); }
+.agent-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.agent-ctx-warn {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 7px 14px; font-size: 12.5px; line-height: 1.5; color: #8a6d1a;
+  background: rgba(240,180,41,.10); border-bottom: 1px solid rgba(240,180,41,.25);
+}
+body.dark .agent-ctx-warn { color: #f0b429; }
+#agent-ctx-warn-close {
+  flex: 0 0 auto; border: 0; background: transparent; cursor: pointer; color: inherit;
+  font-size: 15px; line-height: 1; opacity: .7; padding: 2px 6px; border-radius: 5px;
+}
+#agent-ctx-warn-close:hover { opacity: 1; background: rgba(128,128,128,.18); }
+.agent-ctx-warn.hidden { display: none; }
 
 /* ===== Agent 对话（分级写入预览/确认） ===== */
 .agent-diff-card {

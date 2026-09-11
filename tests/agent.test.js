@@ -223,4 +223,26 @@ function callTool(name, args) {
   assert.equal(fa.start, 2, '模糊起点 = 第 pos+1 个非空白字符');
   assert.equal(fa.end, 6, '模糊终点消费完整匹配');
 }
+// ===== Task 8: applyAgentWrite + 会话内撤销记录 =====
+// 注：applyAgentWrite/undoWrite 返回的 rec 与 sessionWrites 里的记录都是 vm 沙箱 realm 对象，
+// 跨 realm 数组/对象不可 deepEqual —— 只断言 primitive 字段；committed 用 JSON.stringify 转 primitive 比较
+{
+  const log = [];
+  const r = ctx.Agent.applyAgentWrite({ block: '第一章', resultText: '新文', impact: { chars: 10, lines: 1, wholeBlock: false } }, {}, log);
+  assert.equal(r.level, 'auto');
+  assert.equal(log.length, 1);
+  assert.equal(log[0].block, '第一章');
+  assert.equal(r.after, '新文');
+}
+{
+  const r = ctx.Agent.applyAgentWrite({ block: '第一章', resultText: 'x'.repeat(600), impact: { chars: 600, lines: 1, wholeBlock: false } }, {}, []);
+  assert.equal(r.level, 'preview');
+}
+{
+  ctx.Agent.sessionWrites = [{ block: 'B', before: '旧', after: '新', level: 'auto' }];
+  const committed = [];
+  ctx.Agent.undoWrite({ commit: (b, text) => committed.push([b, text]) });
+  assert.equal(JSON.stringify(committed), JSON.stringify([['B', '旧']]), 'undo 用 before 还原');
+  assert.equal(ctx.Agent.sessionWrites.length, 0, '还原后出栈');
+}
 console.log('agent.test.js OK');

@@ -110,6 +110,26 @@
       if (chars <= 500 && !impact.wholeBlock) return 'auto';
       return 'preview';
     },
+
+    // ===== Task 8: applyAgentWrite + 会话内撤销记录 =====
+    // 本模块不做实际 DOM 写入：applyAgentWrite 仅分级 + 记录到会话日志（供 UI 渲染与撤销），
+    // 返回 {block, before, after, level, impact} 让 UI（Task 15/16）决定自动落盘/预览/确认——
+    // 写入由 UI 调 deps.commit(block, after) 完成（pushHistory + setText/setBlockText）。
+    sessionWrites: [],
+    applyAgentWrite: function (w, deps, log) {
+      var level = Agent.classifyWrite(w.impact || {});
+      var rec = { block: w.block, before: w.before !== undefined ? w.before : null, after: w.resultText, level: level, impact: w.impact || {} };
+      Agent.sessionWrites.unshift(rec);
+      if (Agent.sessionWrites.length > 50) Agent.sessionWrites.pop();
+      if (log && typeof log.push === 'function') log.push(rec);
+      return rec;
+    },
+    undoWrite: function (commitDeps) {
+      var rec = Agent.sessionWrites.shift();
+      if (!rec) return null;
+      if (commitDeps && commitDeps.commit && rec.before !== null) commitDeps.commit(rec.block, rec.before);
+      return rec;
+    },
   };
 
   // ===== Task 7: 文档编辑工具纯函数 =====

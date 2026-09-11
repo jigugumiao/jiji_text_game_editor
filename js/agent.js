@@ -101,6 +101,15 @@
       msgs.push({ role: 'user', content: userText || '' });
       return msgs;
     },
+
+    // 写操作分级判定（设计 §6）：destructive → 'destructive'；小改（chars≤500 且非整块）→ 'auto'；其余 → 'preview'
+    classifyWrite: function (impact) {
+      impact = impact || {};
+      if (impact.destructive) return 'destructive';
+      var chars = impact.chars || 0;
+      if (chars <= 500 && !impact.wholeBlock) return 'auto';
+      return 'preview';
+    },
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Agent;

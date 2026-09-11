@@ -109,4 +109,14 @@ assert.ok(scen.rewrite.preload.includes('full_text'), 'rewrite 应预载全文')
   assert.equal(r.length, 2, 'ctx/userText 缺省：system + 空 user 两条');
   assert.equal(r[1].content, '', 'userText 缺省为空串');
 }
+// classifyWrite：写操作分级判定（设计 §6）
+// destructive:true → 'destructive'；chars ≤ 500 且 !wholeBlock → 'auto'；否则 'preview'
+// 返回值是 primitive string，跨 realm 无碍，直接用 ctx.Agent 模块句柄
+assert.equal(ctx.Agent.classifyWrite({ chars: 100, lines: 3, wholeBlock: false }), 'auto');
+assert.equal(ctx.Agent.classifyWrite({ chars: 500, lines: 10, wholeBlock: false }), 'auto', '500 边界算小改');
+assert.equal(ctx.Agent.classifyWrite({ chars: 501, lines: 10, wholeBlock: false }), 'preview', '超 500 算大改');
+assert.equal(ctx.Agent.classifyWrite({ chars: 10, lines: 1, wholeBlock: true }), 'preview', '整块替换强制 preview');
+assert.equal(ctx.Agent.classifyWrite({ chars: 10, lines: 1, wholeBlock: false, destructive: true }), 'destructive');
+assert.equal(ctx.Agent.classifyWrite({ destructive: true }), 'destructive', '缺字段也要判 destructive');
+
 console.log('agent.test.js OK');

@@ -7373,6 +7373,58 @@ self.onmessage = function (e) {
   function agentSaveHistory(arr) {
     try { localStorage.setItem(agentHistoryKey(), JSON.stringify(arr.slice(-50))); } catch (e) {} // 只保留最近 50 条
   }
+  // ---- §14: 早期对话摘要压缩（DSH 上下文压缩设计移植：分层摘要 + 原文归档可检索 + 活跃内容不压）----
+  function agentArchiveKey() {
+    let pid = 'default';
+    try { const id = window.Storage && window.Storage.getCurrentProjectId && window.Storage.getCurrentProjectId(); if (id) pid = id; } catch (e) {}
+    return 'agent-history-archive:' + pid;
+  }
+  function agentLoadArchive() {
+    try {
+      const raw = localStorage.getItem(agentArchiveKey());
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+  }
+  function agentSaveArchive(arr) {
+    try {
+      let list = Array.isArray(arr) ? arr : [];
+      // cap 总字符 100K：超限从最旧开始丢（归档仅用于 search_history 找回被压缩的早期细节）
+      while (list.length && list.reduce((s, it) => s + String(it && it.content || '').length, 0) > 100000) list.shift();
+      localStorage.setItem(agentArchiveKey(), JSON.stringify(list.slice(-200)));
+    } catch (e) {}
+  }
+  // 历史超阈值（30000 字符）→ 压缩最旧段：原文存档 + LLM 生成摘要；失败静默回滚（不丢历史）。
+  // 摘要写回后保持稳定（不重生成）→ 前缀缓存可命中；再次超阈值时旧摘要+更早内容一起再压（tier2 蒸馏）。
+  async function agentMaybeCompressHistory(hist) {
+    if (!window.Agent || !window.AI) return hist;
+    const plan = window.Agent.classifyHistoryCompression(hist, { maxChars: 30000 });
+    if (!plan.shouldCompress || !plan.compress.length) return hist;
+    const saved = plan.compress.length;
+    const note = agentAppendToolBubble('🧠 正在压缩早期对话（' + saved + ' 条）…');
+    try {
+      const srcText = plan.compress.map(m => '【' + (m.role === 'assistant' ? '助手' : '用户') + '】\n' + (m.content || '')).join('\n\n');
+      const sys = '你是对话摘要器。把用户与 AI 助手在剧情编辑器中的早期对话压缩成紧凑中文摘要（要点列表，200-400 字）。必须逐字保留：用户原始指令与偏好、涉及的剧情块名、变量名与数值、已确认的修改与撤销、未解决的问题。不要编造任何内容。';
+      const out = await window.AI.callDeepseek(
+        [{ role: 'system', content: sys }, { role: 'user', content: srcText }],
+        { stream: false, thinking: false, onUsage: (u) => agentAccumUsage(u) }
+      );
+      const summary = String((out && out.content) || out || '').trim();
+      if (!summary) { note.textContent = '🧠 早期对话压缩失败（空摘要），保留原文'; return hist; }
+      // 原文归档（保留时间序；与已有归档合并后整体截断）
+      const archive = agentLoadArchive();
+      plan.compress.forEach(m => archive.push({ role: m.role, content: m.content, ts: Date.now() }));
+      agentSaveArchive(archive);
+      const next = [{ role: 'summary', content: summary }].concat(plan.keep);
+      agentSaveHistory(next);
+      note.textContent = '🧠 已压缩早期对话 ' + saved + ' 条（原文已归档，可让 Agent 用 search_history 检索）';
+      return next;
+    } catch (e) {
+      note.textContent = '🧠 早期对话压缩失败（' + ((e && e.message) || '未知错误') + '），保留原文';
+      return hist;
+    }
+  }
   function agentAppendBubble(role, text) {
     const box = $('#agent-messages');
     const el = document.createElement('div');
@@ -7663,7 +7715,7 @@ self.onmessage = function (e) {
     if (!userText) return;
     ta.value = '';
     agentAppendBubble('user', userText);
-    const hist = agentLoadHistory();
+    const hist = await agentMaybeCompressHistory(agentLoadHistory()); // §14：超阈值先压缩早期对话（存档原文+摘要前置）
     hist.push({ role: 'user', content: userText });
     agentSaveHistory(hist);
     const replyBubble = agentAppendBubble('assistant', '');
@@ -7855,6 +7907,7 @@ self.onmessage = function (e) {
       settings: () => agentSettingsText(),
       getVars: () => window.Storage.getVars(),
       saveVars: (a) => window.Storage.saveVars(a),
+      searchHistoryArchives: () => agentLoadArchive(), // §14：search_history 工具的归档数据源（agent-history-archive:<pid>）
       blocksDoc: () => {
         // {块名: 文本} 块对象视图（Agent 结构组工具契约）；主剧情用 MAIN_BLOCK 键
         const doc = (window.Storage.loadBlocks ? window.Storage.loadBlocks() : null) || { main: '', blocks: {} };

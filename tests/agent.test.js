@@ -457,6 +457,53 @@ function mockBlocks() {
   assert.equal(applied[1][1], '<选项:"B",块B>');
   assert.ok(ctx.Agent.tools.generate_options({ text: '<选项:"A">' }).error, '缺块名的选项非法');
 }
+// ===== §14: 历史摘要压缩（classifyHistoryCompression / searchHistoryArchive） =====
+// 借鉴 DSH 上下文压缩：超阈值压最旧段、最后一条永不压、原文归档可被 search_history 检索。
+{
+  const A = ctx.Agent;
+  const mk = (role, content) => ({ role, content });
+  const big = '字'.repeat(12000);
+  // 未超阈值 → 不压缩
+  let p = A.classifyHistoryCompression([mk('user', '你好'), mk('assistant', '嗨')], { maxChars: 30000 });
+  assert.equal(p.shouldCompress, false);
+  // 空数组 → 不压
+  assert.equal(A.classifyHistoryCompression([], { maxChars: 100 }).shouldCompress, false);
+  // 超阈值 → 压最旧段直到剩余 ≤ 阈值
+  const h = [mk('user', '第一轮' + big), mk('assistant', '答' + big), mk('user', '第二轮' + big), mk('assistant', '又答' + big), mk('user', '当前轮')];
+  p = A.classifyHistoryCompression(h, { maxChars: 30000 });
+  assert.equal(p.shouldCompress, true);
+  assert.ok(p.compress.length >= 1 && p.compress[0] === h[0], '从最旧开始压');
+  assert.ok(p.keep.length >= 1, '保留最近内容');
+  const keepChars = p.keep.reduce((s, m) => s + m.content.length, 0);
+  assert.ok(keepChars <= 30000, '剩余保持 ≤ 阈值（' + keepChars + '）');
+  // 最后一条永不压：全部压光仍超阈值时也保留最后一条（含超大最后一条 user）
+  const h2 = [mk('user', '早' + big), mk('assistant', '答' + big), mk('user', '最新的一轮' + big + big)];
+  p = A.classifyHistoryCompression(h2, { maxChars: 100 });
+  assert.equal(p.shouldCompress, true);
+  assert.ok(p.compress.indexOf(h2[h2.length - 1]) < 0, '最后一条不压');
+  assert.equal(p.keep[p.keep.length - 1], h2[h2.length - 1], '最后一条保留');
+  // 只有一条 → 永不压
+  p = A.classifyHistoryCompression([mk('user', big)], { maxChars: 100 });
+  assert.equal(p.shouldCompress, false, '单条不压');
+  // 两条都超阈值 → 只压第一条，保留最后一条
+  p = A.classifyHistoryCompression([mk('user', '甲' + big), mk('user', '乙' + big)], { maxChars: 100 });
+  assert.equal(p.compress.length, 1, '两条都大也只压第一条');
+  assert.equal(p.keep.length, 1);
+  // searchHistoryArchive：命中/行号/大小写/空/上限
+  const arch = [{ role: 'user', content: '第一行\n变量 金币=100\n第三行' }, { role: 'assistant', content: '已确认修改《开头》' }];
+  let hits = A.searchHistoryArchive(arch, '金币');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].n, 1, '条目序号');
+  assert.equal(hits[0].role, 'user');
+  assert.equal(hits[0].lineNo, 2, '行号');
+  assert.equal(hits[0].snippet, '变量 金币=100');
+  assert.equal(A.searchHistoryArchive(arch, '不存在的词').length, 0);
+  assert.equal(A.searchHistoryArchive([], 'x').length, 0);
+  assert.equal(A.searchHistoryArchive(arch, '确认修改').length, 1, '大小写/子串命中');
+  // 命中上限 20
+  const many = [{ role: 'user', content: Array.from({ length: 40 }, (_, i) => 'a行' + i).join('\n') }];
+  assert.equal(A.searchHistoryArchive(many, 'a行').length, 20, '命中上限 20');
+}
 // ===== Task 12: 素材组工具（list_assets / rename_asset / delete_asset / export_project） =====
 // 素材记录含 name/type/tags 与 dataURL 二进制 —— list_assets 必须脱敏（只回 name/type/tags，
 // 绝不让 base64 进 LLM 上下文）。deps 按 Task 7 惯例直接赋值 toolsDeps；跨 realm 对象不可
@@ -598,12 +645,13 @@ function mockBlocks() {
     assert.equal(res.rounds, 2, '工具轮 + 答复轮');
   }
   {
-    // buildToolDefs 语义（§4.4）：polish 白名单 6 个；空白名单（general/vars）= 全量 24；__proto__ 兜底 general
+    // buildToolDefs 语义（§4.4）：polish 白名单 6 个；空白名单（general/vars）= 全量 25（含 §14 search_history）；__proto__ 兜底 general
     const polish = ctx.Agent.buildToolDefs('polish');
     assert.equal(polish.length, 6, 'polish 白名单 6 个工具');
-    assert.equal(ctx.Agent.buildToolDefs('general').length, 24, 'general 空列表 = 全部工具');
-    assert.equal(ctx.Agent.buildToolDefs('vars').length, 24, 'vars 空列表 = 全部工具');
-    assert.equal(ctx.Agent.buildToolDefs('__proto__').length, 24, '原型链键兜底 general 全量');
+    assert.equal(ctx.Agent.buildToolDefs('general').length, 25, 'general 空列表 = 全部工具');
+    assert.equal(ctx.Agent.buildToolDefs('vars').length, 25, 'vars 空列表 = 全部工具');
+    assert.equal(ctx.Agent.buildToolDefs('__proto__').length, 25, '原型链键兜底 general 全量');
+    assert.ok(ctx.Agent.buildToolDefs('general').some(d => d.function.name === 'search_history'), 'search_history 在全量工具中');
     for (const d of polish) {
       assert.equal(d.type, 'function');
       assert.ok(typeof d.function.name === 'string' && d.function.name.length > 0, 'def 有 name');

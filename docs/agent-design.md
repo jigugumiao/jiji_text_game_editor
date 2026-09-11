@@ -276,3 +276,17 @@ UI（modal）元素：消息流（含工具活动卡片：🔧 工具名+参数�
 9. 设置里打开「隐藏所有 AI」→ Agent 入口与 modal 一并隐藏
 10. `tests/agent.test.js` + 现有全部测试通过；`release-cache-bust.test.js` 通过
 11. 缓存纪律生效：同场景连续消息的 `prompt_cache_hit_tokens` 明显增长（人工抽查响应 usage）
+
+---
+
+## 14. 历史摘要压缩（Agent 早期对话，v25.4.91）
+
+借鉴 DSH 内置上下文压缩机制的设计（分层摘要、压缩后仍可检索原文、不压活跃内容）移植到 Agent 对话历史：
+
+- **触发**：agentSend 时历史（user/assistant/summary 条目文本）总字符 > 30000（约 20-30K token）→ 压缩一次。
+- **分层**：`Agent.classifyHistoryCompression(history)` 纯函数把最旧条目压掉，直到剩余 keep 段 ≤ 阈值；最后一条 user 永不压（活跃内容）。
+- **摘要生成**：compress 段 → LLM（callDeepseek 非流式、thinking:false、8192 内）压成 ≤400 字要点；提示词要求逐字保留剧情块名/变量名与数值/用户指令/已确认修改与撤销/未决问题；失败静默回滚（不压缩、不丢历史）。
+- **持久化**：压缩后 history = `[{role:'summary',content:摘要}]` + keep，写回 agent-history:<pid>；摘要稳定不重生成（保持前缀、缓存可命中）；再次超阈值时旧摘要与更早内容一起再压缩（tier 2 蒸馏，DSH 同款）。
+- **归档与检索**：被压原文存 agent-history-archive:<pid>（cap 总字符 100K，最旧先丢）；新工具 `search_history(query)` 检索归档（大小写不敏感、逐行、上限 20）——对应 DSH 的 search_context/decompress。
+- **buildMessages**：runLoop 历史注入接受 role:'summary'，作为 user 消息前置（【早期对话摘要】标记）。
+- **不压缩对象**：keep 段原文、当前 userText、preload 上下文。

@@ -461,10 +461,10 @@ const ITEM_VIEWER_WRAP = String.raw`<!DOCTYPE html>
 <div id="viewer"></div>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
-</script>
+${'</scr' + 'ipt>'}
 <script type="module">
 __VIEWER_SCRIPT__
-</script>
+${'</scr' + 'ipt>'}
 </body>
 </html>
 `;
@@ -1055,15 +1055,20 @@ __STORY_DATA__
   };
   // 初始化水印
   (function(){
-    const g = DATA.global || {};
-    const wm = g.watermark;
-    if (!wm || !wm.text) return;
-    const el = document.getElementById('watermark');
-    el.style.display = 'block';
-    el.style.opacity = (wm.opacity || 40) / 100;
-    el.textContent = wm.text;
-    const posMap = { '左上':'top:12px;left:16px', '右上':'top:12px;right:16px', '左下':'bottom:12px;left:16px', '右下':'bottom:12px;right:16px' };
-    el.style.cssText += ';' + (posMap[wm.pos] || posMap['右下']);
+    try {
+      const g = DATA.global || {};
+      const wm = g.watermark;
+      if (!wm || !wm.text) return;
+      const el = document.getElementById('watermark');
+      if (!el) return;
+      el.style.display = 'block';
+      el.style.opacity = (wm.opacity || 40) / 100;
+      el.textContent = wm.text;
+      const posMap = { '左上':'top:12px;left:16px', '右上':'top:12px;right:16px', '左下':'bottom:12px;left:16px', '右下':'bottom:12px;right:16px' };
+      el.style.cssText += ';' + (posMap[wm.pos] || posMap['右下']);
+    } catch (e) {
+      try { console.log('[runtime] 水印初始化异常（已忽略，不影响加载）：' + (e && e.message ? e.message : e)); } catch (e2) {}
+    }
   })();
 
     // 解析开场背景：支持「背景库素材名」（按名解析 src / 纯色）与旧版直链（data:/http(s)）
@@ -2487,7 +2492,7 @@ __STORY_DATA__
     scrollToBottom();
   });
 })();
-</script>
+${'</scr' + 'ipt>'}
 </body>
 </html>
 `;

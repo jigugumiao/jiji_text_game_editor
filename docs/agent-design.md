@@ -141,8 +141,8 @@
 ### 5.4 创作辅助组（复用现有 AI 管线）
 | 工具 | 参数 | 说明 |
 |---|---|---|
-| `extract_clues` | `{blockName?}` | 复用 `ai.js:1086 extractClues()` + `parseCluesOutput()`（non-stream，自身一次 AI 调用）；结果写入线索并回显 |
-| `generate_options` | `{blockName, count?, tone?}` | 模型产出 `<选项:"文字",块名,条件:表达式>` JSON → 复用 `StoryEditorApi.applyGeneratedBlocks / insertBlockOption` 写入 |
+| `extract_clues` | `{blockName?}` | 复用 `ai.js:1126 extractClues()` + `parseCluesOutput()`（non-stream，自身一次 AI 调用，async 返回 `{clues,summary}`）；接线需适配（await + 补 `ok`，blockName→该块全文作 body）；结果回显给用户，不自动改文档 |
+| `generate_options` | `{text}` | 模型产出 `<选项:"文字",块名,条件:表达式>` 文本；校验镜像引擎同行拼接规则（editor.js:125 `extractOptionLine`，Task 11 已实现 2c79a09）；接线时写入当前编辑块末尾（走撤销管线，绝不接 editor.js:7985 覆盖 MAIN_BLOCK 的 applyGeneratedBlocks） |
 
 ### 5.5 素材组（元数据管理；模型读不了图片/音频二进制内容）
 | 工具 | 参数 | 说明 |

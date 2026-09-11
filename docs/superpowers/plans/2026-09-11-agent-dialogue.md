@@ -1483,13 +1483,35 @@ git commit -m "feat(ui): agent-assistant modal skeleton + entry"
       getVars: () => window.Storage.getVars(), saveVars: (a) => window.Storage.saveVars(a),
       blocksDoc: () => { /* loadBlocks 视图 */ },
       saveBlocks: (b) => window.Storage.saveBlocks(b),
-      extractClues: (o) => window.AI.extractClues(o),
-      applyGeneratedBlocks: (lines) => StoryEditorApi.applyGeneratedBlocks ? StoryEditorApi.applyGeneratedBlocks(lines) : { ok: false },
+      // ⚠️ seam 修正（Task 11 code quality review 折叠项）：window.AI.extractClues（ai.js:1126）是 async、
+      // 返回 {clues, summary} 无 ok 字段、参数是 {outline,intro,world,style,body,existing,signal,onStatus}
+      // 而非 {blockName}。必须适配：await + 补 ok；blockName → 读该块全文作 body。
+      extractClues: async (o) => {
+        try {
+          const opts = {};
+          if (o && o.blockName) { const t = StoryEditorApi.getBlockText ? StoryEditorApi.getBlockText(o.blockName) : null; if (t != null) opts.body = t; }
+          const r = await window.AI.extractClues(opts);
+          return { ok: true, clues: (r && (r.clues || r.text)) || '' };
+        } catch (e) { return { error: (e && e.message) || '提取失败' }; }
+      },
+      // ⚠️ seam 修正：StoryEditorApi.applyGeneratedBlocks（editor.js:7985）接收「字符串全文」并覆盖 MAIN_BLOCK——
+      // 绝不能把 generate_options 的选项数组直接喂给它（会覆盖主剧情）。generate_options 契约=逐选项数组
+      // （同行拼接已拆条，Task 11 修复 2c79a09）。接线层写适配器：选项追加到当前编辑块末尾，走 commitAgentWrite
+      // （pushHistory + 保存），保证可撤销。
+      applyGeneratedBlocks: (options) => {
+        const block = (StoryEditorApi.getActiveBlock && StoryEditorApi.getActiveBlock()) || '主剧情';
+        const cur = StoryEditorApi.getBlockText ? StoryEditorApi.getBlockText(block) : null;
+        const curText = (cur != null) ? cur : storyText.value;
+        const text = options.join('\n');
+        commitAgentWrite(block, curText.endsWith('\n') ? curText + text : curText + '\n' + text);
+        return { ok: true };
+      },
       getAllAssets: () => window.Storage.getAllAssets(), renameAsset: (o, n) => window.Storage.renameAsset(o, n),
       deleteAsset: (n) => window.Storage.deleteAsset(n), exportProject: () => window.Storage.exportProject(),
     };
   }
   ```
+  （注：`insertBlockOption(name, offset)`（editor.js:3274）是生成 `<选项:"文字",块名>` 占位用的，不解析既有选项文本，不能用于写入 generate_options 的完整选项行；`extract_clues` 结果只回显给用户，不自动改文档——由模型后续用写工具决定是否落库。）
 - 提交函数：`commitAgentWrite(block, text)` = `pushHistory()` + （block 是当前块 → `storyText.value = text`（setter 自动保存，editor.js:1617）；否则 `window.Storage.setBlockText(block, text)` 后若该块在编辑器打开则刷新）
 - 分级 UI 渲染回调（`onWrite`）见 Task 16
 

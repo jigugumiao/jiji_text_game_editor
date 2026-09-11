@@ -36,6 +36,24 @@
 
   var Agent = {
     AGENT_SCENARIOS: AGENT_SCENARIOS,
+
+    // 意图轮输出解析：提取首个 {...} JSON 对象（容忍 ```json 包裹与前后闲话）
+    // 失败/未知 scenario → 兜底 general；needs 仅作提示，最终预载由场景表 preload 决定
+    intentParse: function (raw) {
+      var out = { scenario: 'general', needs: [], note: '' };
+      if (!raw || typeof raw !== 'string') return out;
+      var m = raw.match(/\{[\s\S]*\}/);
+      if (!m) return out;
+      try {
+        var j = JSON.parse(m[0]);
+        if (j && typeof j === 'object') {
+          if (AGENT_SCENARIOS[j.scenario]) out.scenario = j.scenario;
+          if (Array.isArray(j.needs)) out.needs = j.needs.filter(function (n) { return typeof n === 'string'; });
+          if (typeof j.note === 'string') out.note = j.note;
+        }
+      } catch (e) { /* 解析失败 → 兜底 general */ }
+      return out;
+    },
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Agent;

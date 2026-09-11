@@ -11,8 +11,8 @@ assert.match(agentSrc, /module\.exports/, 'agent.js 必须 module.exports（Node
 // 场景表：5 个场景，字段齐全
 const ctx = {};
 vm.createContext(ctx);
-vm.runInContext(agentSrc + '\nthis.__s = Agent.AGENT_SCENARIOS;', ctx);
-const scen = ctx.__s;
+vm.runInContext(agentSrc + '\nthis.Agent = Agent;', ctx);
+const scen = ctx.Agent.AGENT_SCENARIOS;
 assert.deepEqual(Object.keys(scen).sort(), ['design', 'general', 'polish', 'rewrite', 'vars']);
 for (const [id, s] of Object.entries(scen)) {
   assert.equal(typeof s.systemPrompt, 'string', id + ' 需要 systemPrompt');
@@ -22,4 +22,23 @@ for (const [id, s] of Object.entries(scen)) {
 }
 assert.ok(scen.polish.tools.length > 0 && !scen.polish.tools.includes('delete_block'), 'polish 白名单不应含结构组破坏性工具');
 assert.ok(scen.rewrite.preload.includes('full_text'), 'rewrite 应预载全文');
+
+// intentParse：意图轮输出 → {scenario, needs, note}
+{
+  const good = ctx.Agent.intentParse('{"scenario":"polish","needs":["current_block"],"note":"润色第二段"}');
+  assert.equal(good.scenario, 'polish');
+  assert.ok(good.needs.includes('current_block'));
+}
+{
+  const wrapped = ctx.Agent.intentParse('好的，我先分析：```json\n{"scenario":"rewrite","needs":["full_text"]}\n```');
+  assert.equal(wrapped.scenario, 'rewrite', '须容忍 markdown 代码块包裹');
+}
+{
+  const noisy = ctx.Agent.intentParse('这段剧情感觉节奏太慢了，帮我润色一下。');
+  assert.equal(noisy.scenario, 'general', '无 JSON 时兜底 general，不抛错');
+}
+{
+  const badScenario = ctx.Agent.intentParse('{"scenario":"hack","needs":[]}');
+  assert.equal(badScenario.scenario, 'general', '未知 scenario 兜底 general');
+}
 console.log('agent.test.js OK');

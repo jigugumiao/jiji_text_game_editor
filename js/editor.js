@@ -7507,9 +7507,9 @@ self.onmessage = function (e) {
     tag.textContent = '场景：' + (names[id] || id);
     tag.classList.remove('hidden');
   }
-  // 工具活动描述：read_block {blockName:"第二章"} → 「read_block（blockName="第二章"）→ 已执行」
-  function agentToolDesc(t) {
-    const name = (t && t.name) || '工具';
+  // 工具活动描述（拆成 name/args 两段，onTool 气泡把工具名加粗高亮，spec Task 16）
+  function agentToolName(t) { return (t && t.name) || '工具'; }
+  function agentToolArgs(t) {
     const args = (t && t.args) ? t.args : {};
     const parts = [];
     for (const k in args) {
@@ -7520,7 +7520,18 @@ self.onmessage = function (e) {
         parts.push(k + '=' + v);
       }
     }
-    return name + (parts.length ? '（' + parts.join(' ') + '）' : '') + ' → 已执行';
+    return (parts.length ? '（' + parts.join(' ') + '）' : '') + ' → 已执行';
+  }
+  // 工具活动气泡：🔧 + 工具名加粗 + 参数描述；瞬态提示，不落历史（复用 fta-msg tool 弱化样式）
+  function agentToolBubble(t) {
+    const el = agentAppendToolBubble('');
+    el.textContent = '';
+    el.appendChild(document.createTextNode('🔧 '));
+    const nm = document.createElement('b');
+    nm.textContent = agentToolName(t);
+    el.appendChild(nm);
+    el.appendChild(document.createTextNode(agentToolArgs(t)));
+    return el;
   }
   // 「开始对话」：显示输入区，并还原本工程历史气泡（有历史则自动进入，无历史则给一句引导）
   function agentStart() {
@@ -7627,7 +7638,7 @@ self.onmessage = function (e) {
           },
           onTool: (t) => {
             if (myGen !== agentSessionGen) return;
-            agentAppendToolBubble('🔧 ' + agentToolDesc(t));
+            agentToolBubble(t);
           },
           onWrite: (rec) => {
             if (myGen !== agentSessionGen) return;
@@ -7656,22 +7667,8 @@ self.onmessage = function (e) {
                 card.remove();
                 agentAppendToolBubble('🗑️ 已忽略对《' + rec.block + '》的修改');
               });
-              // (destructive level: 同一卡片追加红色警示 + 确认删除按钮，见下)
-              if (rec.level === 'destructive') { /* destructive 与 preview 同卡，额外警示 */ }
-            } else if (rec.level === 'destructive') {
-              // 破坏性：红色警示 + 二次确认（防御性分支——目前删除类工具不产 resultText，走 onConfirm；保留以防未来）
-              const card = agentDiffCard(rec);
-              const warn = document.createElement('div');
-              warn.className = 'agent-diff-danger';
-              warn.textContent = '⚠️ 此操作具有破坏性';
-              card.querySelector('.agent-diff-panes').appendChild(warn);
-              const confirmBtn = document.createElement('button');
-              confirmBtn.type = 'button';
-              confirmBtn.className = 'btn btn-danger agent-diff-confirm';
-              confirmBtn.textContent = '确认执行';
-              confirmBtn.addEventListener('click', () => { commitAgentWrite(rec.block, rec.after); card.remove(); agentAppendToolBubble('⚠️ 已执行破坏性修改'); });
-              card.querySelector('.agent-diff-actions').appendChild(confirmBtn);
-              (card.querySelector('.agent-diff-ignore')).textContent = '取消';
+              // 注：破坏性（destructive）语义由 onConfirm 全权处理——删除类工具不产 resultText，
+              // onWrite 永远不会收到 destructive 级别（曾经的防御分支为死代码，已删除）。
             }
           },
           onReply: (text) => {

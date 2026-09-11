@@ -13,6 +13,7 @@
 ## 功能特性
 
 - **剧情编写**：正文编辑器，支持 `{变量名}` 变量替换、`<标题:...>` 浮动标题遮罩、`<召唤X:名称>` 召唤指令（背景 / 叠层 / 物品 / 音乐 / 音效）。叠层适合透明 PNG 角色或物件，可用 `<清除叠层>` 隐藏当前叠层并继续剧情。
+- **变量系统**（`js/story-vars.js`）：变量库集中定义（数字 / 布尔 / 文本），正文用 `{名}` 读取、`<变量:名=值>` 赋值（一行可多个标签，值支持空格）、`<选项:"文字",块名,条件:表达式>` 条件选项（支持 `&& || ! ()` 与比较运算）。编辑器与导出运行时共用同一份解析实现；「修复检查」一键扫描全部剧情块的未声明赋值 / 错别字 / 坏指令等问题。
 - **右键插入素材**：在正文任意位置右键，多级菜单插入图片 / 物品 / 音乐 / 音效（或手动输入名称），自动插入召唤指令并把光标定位到名称处。
 - **素材库**：图片库（背景图 / 纯色）、物品、音乐、音效统一管理；纯色背景支持「重选颜色」再编辑；可用 AI 生成背景图。
 - **AI 助理**（`js/ai.js`）：全文助理，支持续写、大纲、重写、按备注控制行数 / 文风等（需自备大模型 API）。
@@ -26,14 +27,15 @@ index.html            入口（含版本号与缓存后缀）
 css/style.css         样式
 js/editor.js          主编辑器 / 素材库 / 审阅 / 设置 / 音频
 js/exporter.js        试玩与导出运行时
+js/story-vars.js      变量系统单一事实源（解析 / 求值 / 静态分析，编辑与导出共用）
 js/ai.js              AI 助理
 js/storage.js         本地存储（window.Storage）
 js/bbcode.js          文本标记解析
 js/generators.js      素材生成器
 js/lame.min.js        MP3 编码（音频导出）
 js/zip.js             压缩
-build_inline.py       生成内联单文件离线包
-TEST/                 基于 jsdom 的回归测试
+build_inline.py       生成内联单文件离线包（--test 生成数据隔离的测试版 dist-test/）
+tests/                Node 直跑的回归测试
 ```
 
 ## 示例项目
@@ -45,7 +47,7 @@ TEST/                 基于 jsdom 的回归测试
 - 叠层角色 `<召唤叠层:...>` / `<清除叠层>`
 - 正文内嵌图片 `@image#1:...`
 - 浮动标题 `<标题:...>`
-- 变量 `<变量:勇气=1>` / `{勇气}`
+- 变量 `<变量:勇气=1>` / `{勇气}` / 条件选项 `<选项:"文字",块名,条件:勇气>=3>`
 - 章节导航 `/// 第一章：冒险开始`
 - 点击继续 `<停顿>`
 
@@ -60,7 +62,20 @@ TEST/                 基于 jsdom 的回归测试
 ## 生成离线单文件
 
 ```bash
-python build_inline.py  # 从 index.html 生成 dist/index.html（内联，可离线打开）
+python build_inline.py          # 从 index.html 生成 dist/index.html（内联，可离线打开）
+python build_inline.py --test   # 生成测试版 dist-test/index.html：
+                                #   1) 标题与版本号带「测试版」标记
+                                #   2) 注入 window.STORY_EDITOR_NS='test'，
+                                #      localStorage 与 IndexedDB 全部隔离，
+                                #      与正式版互不共享数据（缓存/存档互不干扰）
+```
+
+## 测试
+
+```bash
+node tests/story-vars.test.js         # 变量系统单元测试
+node tests/var-conformance.test.js    # 编辑端与导出端解析一致性回归
+# 或逐个运行 tests/*.test.js（Node 直跑，无需依赖）
 ```
 
 ## 技术栈

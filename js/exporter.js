@@ -1984,66 +1984,18 @@ __STORY_DATA__
   }
   // 读档重放：按已记录的选项序列快进到存档点（不打字、不等待点击）
   // ===== 变量运行时 =====
+  // 实现由 js/story-vars.js 统一提供，构建时注入下方占位处（见 buildRuntimeHTML），
+  // 保证导出游戏与编辑器预览的解析/求值行为完全同源。
+  __STORY_VARS_RUNTIME__
   // 把 {名} / {名:是|否} 替换为当前变量值；未定义变量保留原样；{{名}} 转义保留
   function interpolateVars(s){
-    return String(s).replace(/\{\{?\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*(?::\s*([^}\s|]*)\s*\|\s*([^}]*))?\s*\}/g, function(m, name, t, f){
-      if (m.charAt(1) === '{') return m; // 双花括号转义
-      let val = vars[name];
-      if (val === undefined) return m;
-      if (t !== undefined && f !== undefined){
-        const isTrue = (val === true || val === 'true' || val === 1 || val === '1');
-        return isTrue ? t : f;
-      }
-      if (val === true) return '真';
-      if (val === false) return '假';
-      return String(val);
-    });
-  }
-  function truthy(v){ return v === true || v === 'true' || v === 1 || v === '1' || v === '是' || (typeof v === 'number' && v !== 0) || (typeof v === 'string' && v.length > 0 && v !== 'false' && v !== '否' && v !== '0'); }
-  function evalOneCond(e){
-    if (e.charAt(0) === '!') { const nm = e.slice(1).trim(); return !truthy(vars[nm]); }
-    if (/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(e)) { return truthy(vars[e]); }
-    const m = e.match(/^([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*(>=|<=|==|!=|>|<|=)\s*(.+)$/);
-    if (!m) return false;
-    const name = m[1], op = m[2], rv = m[3].trim();
-    const lv = vars[name];
-    let rvv;
-    if (rv === 'true') rvv = true; else if (rv === 'false') rvv = false;
-    else if (/^-?\d+(\.\d+)?$/.test(rv)) rvv = Number(rv);
-    else rvv = rv;
-    switch (op){
-      case '>': return Number(lv) > Number(rvv);
-      case '<': return Number(lv) < Number(rvv);
-      case '>=': return Number(lv) >= Number(rvv);
-      case '<=': return Number(lv) <= Number(rvv);
-      case '==': case '=': return lv == rvv;
-      case '!=': return lv != rvv;
-    }
-    return false;
+    return StoryVars.interpolate(s, function(n){ return vars[n]; });
   }
   function evalCond(expr){
-    if (!expr) return true;
-    if (expr.indexOf('&&') >= 0) return expr.split('&&').every(function(p){ return evalOneCond(p.trim()); });
-    if (expr.indexOf('||') >= 0) return expr.split('||').some(function(p){ return evalOneCond(p.trim()); });
-    return evalOneCond(expr.trim());
+    return StoryVars.evalCondition(expr, function(n){ return vars[n]; });
   }
   function applyVarOps(ops){
-    (ops || []).forEach(function(o){
-      const cur = vars[o.name];
-      if (o.op === '='){
-        let v = o.val;
-        if (v === 'true') vars[o.name] = true;
-        else if (v === 'false') vars[o.name] = false;
-        else if (/^-?\d+(\.\d+)?$/.test(v)) vars[o.name] = Number(v);
-        else vars[o.name] = v;
-      } else if (o.op === '+'){
-        const base = (typeof cur === 'number') ? cur : (Number(cur) || 0);
-        vars[o.name] = base + (Number(o.val) || 0);
-      } else if (o.op === '-'){
-        const base = (typeof cur === 'number') ? cur : (Number(cur) || 0);
-        vars[o.name] = base - (Number(o.val) || 0);
-      }
-    });
+    StoryVars.applyOps(vars, ops);
   }
 
   function fastReplay(choices, targetBlock, targetIdx){
@@ -2632,15 +2584,14 @@ function parseStoryForExport(src) {
     else if ((m = t.match(RE_DIVIDER))) { flush(); story.push({ type: 'divider', text: (m[1] || '').trim() }); }
     else if (t === '<停止音乐>') { flush(); story.push({ type: 'stopmusic' }); }
     else if (t === '<清除叠层>') { flush(); story.push({ type: 'clearoverlay' }); }
-    else if ((m = t.match(/^<变量:([\s\S]*)>$/))) {
+    else if (t.indexOf('<变量:') === 0 && t.charAt(t.length - 1) === '>') {
+      // 统一走 StoryVars.parseVarLine：逐标签提取（修复旧版整行贪婪匹配把
+      // <变量:a=1><变量:b=2> 解析成一个操作的 bug），值允许空格；
+      // 无法识别的行按普通文本保留（与编辑器一致，不再静默吞掉）
       flush();
-      const ops = [];
-      m[1].split(';').forEach(function (seg) {
-        seg = seg.trim(); if (!seg) return;
-        const am = seg.match(/^([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*([=+\-])\s*([^\s]+)$/);
-        if (am) ops.push({ name: am[1], op: am[2], val: am[3] });
-      });
-      if (ops.length) story.push({ type: 'varop', ops: ops });
+      const pr = window.StoryVars.parseVarLine(t);
+      if (pr.ops.length) story.push({ type: 'varop', ops: pr.ops });
+      else buf.push(line);
     }
     else if ((m = t.match(RE_PLAYER_INPUT))) { flush(); story.push({ type: 'playerinput', name: m[1], prompt: m[2] }); }
     else if ((m = t.match(RE_BLOCK))) { flush(); story.push({ type: 'block', name: m[1].trim() }); }
@@ -2826,6 +2777,12 @@ function buildRuntimeHTML(data, mode) {
   let html = RUNTIME_TEMPLATE
     .replace('__FONT_FACE__', fontFace)
     .replace('__FONT_FAMILY__', fontFamily)
+    // 变量运行时同源注入：把编辑端加载的 StoryVars 实现序列化进导出产物
+    // （用函数形式的 replacement，避免序列化源码中的 $ 字符被当作替换模式）
+    .replace('__STORY_VARS_RUNTIME__', (function () {
+      try { return (window.StoryVars && window.StoryVars.buildRuntimeSource) ? window.StoryVars.buildRuntimeSource() : ''; }
+      catch (e) { return ''; }
+    })())
     .replace('__SRC__', safe(ITEM_VIEWER_SOURCE))
     .replace('__WRAP__', safe(ITEM_VIEWER_WRAP))
     .replace('__TITLE__', data.title || '互动剧情')

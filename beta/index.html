@@ -2019,7 +2019,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.99-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.100-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -8082,7 +8082,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Exporter;
     + '1) 只陈述工具返回的确定事实。引用扫描以工具返回的 references 字段为准：references 为空 = 正文中没有任何引用，绝不使用「若存在…可能…」之类的假设性提醒；references 非空时，如实列出真实扫描到的引用位置，并主动询问用户是否要一并处理。\n'
     + '2) 没有读取过、没有执行过、不知道的事，直接说不知道，禁止编造。\n'
     + '3) 只声称真正执行成功的操作：工具返回 {ok:true} 才算完成；未执行的不得声称已做；工具返回 error 时如实转述错误内容。\n'
-    + '4) 没有权限或未接线的能力，明确说明无法执行，绝不假装有权限，也绝不假装做了某件事。';
+    + '4) 没有权限或未接线的能力，明确说明无法执行，绝不假装有权限，也绝不假装做了某件事。\n'
+    + '5) 用户已明确下达的指令（包括指出错误后的纠正指令），必须直接执行，不得反复确认或追问「要不要做、做哪几项」。只有出现用户不知道的新歧义（例如多个互斥方案、缺少必要信息）才允许询问，并且必须说明为什么需要问。\n'
+    + '6) 承认错误或道歉之后，必须立即按用户已经给出的指令继续行动，道歉不是重新谈判；不得在道歉后又把已明确的任务抛回给用户重新选择。\n'
+    + '7) 执行完毕后如实汇报：实际执行了哪些操作、每个操作的结果（以工具返回为准）、未执行或失败的部分。做了的说做了，没做的说没做，绝不补造结果。';
 
   var Agent = {
     AGENT_SCENARIOS: AGENT_SCENARIOS,

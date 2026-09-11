@@ -145,7 +145,10 @@
     saveBlocks: null,      // ({块名: 文本}) => void（结构组落盘）
     extractClues: null,          // (opts) => {ok, clues|text}（创作辅助：线索提取，UI 接 window.AI.extractClues）
     applyGeneratedBlocks: null,  // ([lines]) => {ok}（创作辅助：生成块写入，UI 接 window.StoryEditorApi.applyGeneratedBlocks）
-    // ...素材组后续加
+    getAllAssets: null,   // () => [{name, type, tags, dataURL}]（素材元数据，UI 接 window.Storage；dataURL 为二进制，工具只回元数据）
+    renameAsset: null,    // (oldName, newName) => {ok}（素材改名）
+    deleteAsset: null,    // (name) => {ok}（删除素材）
+    exportProject: null,  // () => {format, exportedAt}（整工程导出）
   };
 
   // 文本操作核心（纯函数）：findAnchor（行号/文本锚定，精确优先、模糊回退）+ applyInsert + computeImpact
@@ -524,6 +527,33 @@
       if (typeof Agent.toolsDeps.applyGeneratedBlocks !== 'function') return { error: '编辑器未就绪' };
       Agent.toolsDeps.applyGeneratedBlocks(ok);
       return { ok: true, count: ok.length, invalid: bad.length };
+    },
+    // ===== Task 12: 素材组工具（list_assets / rename_asset / delete_asset / export_project） =====
+    // list_assets 必须脱敏：素材记录含 dataURL 二进制（可能是大 base64），只回 name/type/tags，
+    // 绝不让二进制进 LLM 上下文；未接线时按只读约定降级为空数组（同 list_blocks/list_vars）。
+    // rename/delete/export 需要落盘 → 未接线报错；deps 失败 error 原样透传，falsy 兜底错误。
+    list_assets: function () {
+      var all = Agent.toolsDeps.getAllAssets ? Agent.toolsDeps.getAllAssets() : [];
+      return all.map(function (a) {
+        var out = { name: a.name, type: a.type };
+        if (a.tags) out.tags = a.tags;
+        return out;
+      });
+    },
+    rename_asset: function (a) {
+      if (!Agent.toolsDeps.renameAsset) return { error: '素材系统未接线' };
+      var r = Agent.toolsDeps.renameAsset(a.name, a.newName);
+      return r && r.ok ? { ok: true, name: a.name, newName: a.newName } : { error: (r && r.error) || '改名失败' };
+    },
+    delete_asset: function (a) {
+      if (!Agent.toolsDeps.deleteAsset) return { error: '素材系统未接线' };
+      var r = Agent.toolsDeps.deleteAsset(a.name);
+      return r && r.ok ? { ok: true, name: a.name, destructive: true } : { error: (r && r.error) || '删除失败' };
+    },
+    export_project: function () {
+      if (!Agent.toolsDeps.exportProject) return { error: '导出未接线' };
+      var r = Agent.toolsDeps.exportProject();
+      return r ? { ok: true, format: r.format, exportedAt: r.exportedAt } : { error: '导出失败' };
     },
   };
   Agent.tools = tools;

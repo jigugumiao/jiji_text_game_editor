@@ -457,4 +457,60 @@ function mockBlocks() {
   assert.equal(applied[1][1], '<选项:"B",块B>');
   assert.ok(ctx.Agent.tools.generate_options({ text: '<选项:"A">' }).error, '缺块名的选项非法');
 }
+// ===== Task 12: 素材组工具（list_assets / rename_asset / delete_asset / export_project） =====
+// 素材记录含 name/type/tags 与 dataURL 二进制 —— list_assets 必须脱敏（只回 name/type/tags，
+// 绝不让 base64 进 LLM 上下文）。deps 按 Task 7 惯例直接赋值 toolsDeps；跨 realm 对象不可
+// deepEqual → 只断言 primitive 字段，数组用 join 转 primitive 比较。
+{
+  const assets = [{ name: 'bg1', type: 'image', tags: ['背景'], dataURL: 'data:image/png;base64,AAAA' }];
+  ctx.Agent.toolsDeps.getAllAssets = () => assets;
+  ctx.Agent.toolsDeps.renameAsset = (o, n) => { assets[0].name = n; return { ok: true }; };
+  ctx.Agent.toolsDeps.deleteAsset = () => ({ ok: true });
+  ctx.Agent.toolsDeps.exportProject = () => ({ format: 'story-editor-project', exportedAt: '2026-01-01' });
+  const l = ctx.Agent.tools.list_assets({});
+  assert.ok(Array.isArray(l));
+  assert.equal(l[0].name, 'bg1');
+  assert.equal(l[0].type, 'image');
+  assert.equal(l[0].dataURL, undefined, 'list_assets 必须脱敏，不含 dataURL');
+  assert.equal(l[0].tags.join(','), '背景', 'tags 原样返回');
+  assert.ok(ctx.Agent.tools.rename_asset({ name: 'bg1', newName: '夜晚森林' }).ok);
+  assert.equal(assets[0].name, '夜晚森林', 'rename_asset 透传改名到 deps');
+  assert.ok(ctx.Agent.tools.delete_asset({ name: '夜晚森林' }).destructive, '删素材必须 destructive');
+  assert.equal(ctx.Agent.tools.export_project({}).format, 'story-editor-project');
+  assert.equal(ctx.Agent.tools.export_project({}).exportedAt, '2026-01-01', 'export 透传 exportedAt');
+}
+{
+  // 脱敏边界：tags 缺省 → 输出不含 tags 键；多个素材逐条脱敏，dataURL 一律不得外泄
+  ctx.Agent.toolsDeps.getAllAssets = () => [
+    { name: 'bg2', type: 'image', dataURL: 'data:image/png;base64,BBBB' },
+    { name: 'music1', type: 'audio', tags: ['BGM'], dataURL: 'data:audio/mpeg;base64,CCCC' },
+  ];
+  const l = ctx.Agent.tools.list_assets({});
+  assert.equal(l.length, 2);
+  assert.ok(!('tags' in l[0]), 'tags 缺省时输出不含 tags 键');
+  assert.equal(l[1].tags.join(','), 'BGM');
+  assert.equal(l[0].dataURL, undefined, '大 base64 不得进入输出');
+}
+{
+  // 未接线：rename/delete 报「素材系统未接线」、export 报「导出未接线」；
+  // list_assets 按只读约定降级为空数组（同 list_blocks/list_vars），不抛错
+  ctx.Agent.toolsDeps = {};
+  assert.ok(String(ctx.Agent.tools.rename_asset({ name: 'x', newName: 'y' }).error).indexOf('素材系统未接线') >= 0);
+  assert.ok(String(ctx.Agent.tools.delete_asset({ name: 'x' }).error).indexOf('素材系统未接线') >= 0);
+  assert.ok(String(ctx.Agent.tools.export_project({}).error).indexOf('导出未接线') >= 0);
+  assert.equal(JSON.stringify(ctx.Agent.tools.list_assets({})), '[]', 'list_assets 未接线时降级为空数组');
+}
+{
+  // deps 失败透传：rename/delete 失败带 error 原样返回；deps 返回 falsy → 兜底错误；export falsy → 导出失败
+  ctx.Agent.toolsDeps.renameAsset = () => ({ ok: false, error: '改名冲突' });
+  ctx.Agent.toolsDeps.deleteAsset = () => ({ ok: false, error: '素材不存在' });
+  ctx.Agent.toolsDeps.exportProject = () => null;
+  assert.ok(String(ctx.Agent.tools.rename_asset({ name: 'a', newName: 'b' }).error).indexOf('改名冲突') >= 0, 'rename deps 失败透传 error');
+  assert.ok(String(ctx.Agent.tools.delete_asset({ name: 'a' }).error).indexOf('素材不存在') >= 0, 'delete deps 失败透传 error');
+  assert.ok(String(ctx.Agent.tools.export_project({}).error).indexOf('导出失败') >= 0, 'export deps 返回 falsy → 导出失败');
+  ctx.Agent.toolsDeps.renameAsset = () => null;
+  assert.ok(String(ctx.Agent.tools.rename_asset({ name: 'a', newName: 'b' }).error).indexOf('改名失败') >= 0, 'rename deps 返回 falsy 兜底「改名失败」');
+  ctx.Agent.toolsDeps.deleteAsset = () => null;
+  assert.ok(String(ctx.Agent.tools.delete_asset({ name: 'a' }).error).indexOf('删除失败') >= 0, 'delete deps 返回 falsy 兜底「删除失败」');
+}
 console.log('agent.test.js OK');

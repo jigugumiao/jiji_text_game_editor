@@ -1,6 +1,7 @@
 // 防回归断言：dist-test/index.html 中 String.raw 模板未被 build_inline 破坏
 const fs = require('fs');
-const html = fs.readFileSync('dist-test/index.html', 'utf8');
+const path = require('path');
+const html = fs.readFileSync(path.join(__dirname, '..', 'dist-test/index.html'), 'utf8');
 
 // 逐行统计代码里的模板插值（跳过 // 注释行，避免注释字面量干扰）
 const interpRe = /\$\{'<\/scr' \+ 'ipt>'\}/g;

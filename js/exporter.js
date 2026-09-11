@@ -445,6 +445,11 @@ loadModel();
 
 // ============ 物品查看器外壳 ============
 // 占位符：__VIEWER_SCRIPT__ __MODEL_NAME_ESC__ __BODY_BG__
+// ⚠ 陷阱：本模板（及 RUNTIME_TEMPLATE）是 String.raw 模板，其中所有 script 结束标签
+// 必须写成 ${'</scr' + 'ipt>'} 插值形式，禁止改回裸 </script> 或 \<\/script>：
+// build_inline.py 会把 </script> 替换成 <\/script>，普通字符串会还原，但 String.raw
+// 不处理转义会保留字面反斜杠 → 生成的试玩/导出 HTML 缺真结束标签 → 整个脚本语法
+// 错误一行不执行 → 永久卡「加载：0.00 / 0.00 MB」（历史复发两次，详见 AGENTS.md 已知陷阱）。
 const ITEM_VIEWER_WRAP = String.raw`<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -471,6 +476,8 @@ ${'</scr' + 'ipt>'}
 
 // ============ 运行时模板（玩家看到的成品页） ============
 // 占位符：__SRC__ __WRAP__ __STORY_DATA__ __STORY_SCRIPT_TAG__ __TITLE__
+// ⚠ String.raw 陷阱：结尾 script 结束标签必须保持 ${'</scr' + 'ipt>'} 插值形式，
+// 禁止改回裸 </script>（build_inline 替换 + String.raw 不还原转义 → 卡加载，见上）。
 const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
 <html lang="zh-CN">
 <head>

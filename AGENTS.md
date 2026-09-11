@@ -49,3 +49,27 @@
 - `dist/`、`dist-test/` 是构建产物，已 gitignore；要更新线上 beta 页面时把 dist-test 内容拷贝到 `beta/` 提交推送即可。
 - tests/*.test.js 用 Node 直跑，无依赖；改动 js 后跑一遍全部测试 + 更新 index.html 的 `?v=` 缓存标识与 app-version（tests/release-cache-bust.test.js 断言精确版本串）。
 - 测试清单：agent / ai-tools / clearoverlay-editor / clearoverlay-runtime / no-blocking-google-fonts / option-condition / release-cache-bust / story-vars / var-conformance。
+
+## 已知陷阱（踩过的坑，防复发）
+
+### String.raw 模板内禁止裸写 `</script>`（v25.4.109 修复，2026-09-13）
+
+**症状**：beta 试玩/导出永久卡「加载：0.00 / 0.00 MB」，下载的导出 HTML 用浏览器/Node 解析报 `Unexpected token '<'`，整个运行时脚本一行不执行（preloadAll 从未运行）。
+
+**根因链**：
+1. `build_inline.py` 内联 JS 时执行 `js.replace("</script>", "<\\/script>")`（build_inline.py:59），防 HTML 解析器提前截断外层 `<script>` 块。
+2. 普通 JS 字符串字面量里 `"<\/script>"` 会被 JS 引擎还原为 `</script>`，**无碍**。
+3. 但 `js/exporter.js` 的 `RUNTIME_TEMPLATE` / `ITEM_VIEWER_WRAP` 是 **`String.raw` 模板——不处理转义**，`<\/script>` 变成字面反斜杠保留下来。
+4. 云端用被替换坏的模板生成试玩/导出 HTML → 输出 `<\/script>` 而非 `</script>` → HTML 解析器不认（只认精确 `</script`）→ `<script>` 块吞到文件尾 → 语法错误 → 脚本全废。
+
+**已修复**（exporter.js 三处，L464/L467/L2495）：模板内结束标签必须写成模板插值 `${'</scr' + 'ipt>'}`（运行时求值得回 `</script>`，且 build_inline 的字符串替换不会命中它）。**禁止改回裸 `</script>` 或 `\<\/script>`**。
+
+**历史复发**：v25.4.81（9337397）曾在 beta/index.html 手工补丁同样位置，但补丁只打在构建产物、未进源码；v25.4.95 改用 build_inline.py 自动构建后补丁被覆盖丢失，坑复发（v25.4.108→v25.4.109 才在源码层修复）。**教训：这类模板转义修复必须改源码 + 加防回归断言，不能只打产物补丁。**
+
+**防回归**：改 exporter.js 模板时，构建后用 `node -e` 或脚本断言 dist-test/index.html 中 `String.raw` 模板内不存在字面 `<\\/script>`，且 `${'</scr' + 'ipt>'}` 恰好 3 处。
+
+### 云 beta 构建产物 ≠ 源码（手工补丁会被覆盖）
+
+- master 分支 `beta/` 是 `build_inline.py --test` 的构建产物（dist-test/），**每次重新构建都会从源码重新生成**。
+- 任何只改 `beta/index.html` 的修复，下次构建即丢失——**修复必须落在 `js/*.js`、`index.html`、`build_inline.py` 源码**，再重新构建发布。
+- 云端 beta 与本地源码分叉检测：下载 `https://jigugumiao.github.io/jiji_text_game_editor/beta/` 检查版本号与关键修复特征（如 `${'</scr' + 'ipt>'}` 数量）。

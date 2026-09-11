@@ -1624,6 +1624,7 @@ body.dark .fta-messages { background: var(--bg-sunken); }
 .agent-undo:hover { filter: brightness(1.1); background: var(--accent-soft); }
 .agent-confirm-bar { display: flex; gap: 8px; margin-top: 8px; }
 .agent-confirm-refs { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
+.agent-confirm-danger { font-size: 12px; color: #e2685f; margin-top: 6px; line-height: 1.5; font-weight: 600; }
 .btn-danger { background: #d23b3b; border-color: #d23b3b; color: #fff; }
 .btn-danger:hover { background: #b83232; border-color: #b83232; }
 body.dark .btn-danger { background: #e04848; border-color: #e04848; }

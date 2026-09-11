@@ -172,9 +172,8 @@
       return rec;
     },
 
-    // 破坏性操作确认后的真删执行（C1）：delete_block 工具只报告引用（不落盘），
-    // 由 runLoop 确认门（onConfirm=true）后调用本方法执行真删。
-    // delete_var/delete_asset 是「立即型」——确认门挡在工具执行前，工具内即删，不走这里。
+    // 破坏性操作确认后的真删执行（C1 + 用户安全阀要求）：delete_block / delete_var / delete_asset
+    // 工具一律只报告影响面（不落盘），由 runLoop 确认门（onConfirm=true）后调用本方法执行真删。
     confirmDelete: function (kind, args) {
       if (kind === 'delete_block') {
         var bname = String(args && args.blockName || '').trim();
@@ -185,6 +184,29 @@
         delete doc[bname];
         Agent.toolsDeps.saveBlocks(doc);
         return { ok: true, blockName: bname, deleted: true };
+      }
+      if (kind === 'delete_var') {
+        var vname = String(args && args.name || '');
+        var arr = getVarsArr();
+        var found = -1;
+        for (var i = 0; i < arr.length; i++) {
+          if (arr[i].name === vname) { found = i; break; }
+        }
+        if (found < 0) return { error: '未找到变量「' + vname + '」' };
+        if (typeof Agent.toolsDeps.saveVars !== 'function') return { error: '编辑器未就绪' };
+        var next = arr.slice();
+        next.splice(found, 1);
+        Agent.toolsDeps.saveVars(next);
+        return { ok: true, name: vname, deleted: true };
+      }
+      if (kind === 'delete_asset') {
+        if (typeof Agent.toolsDeps.deleteAsset !== 'function') return { error: '素材系统未接线' };
+        // deps 可能是同步或 async（真实接线走 IndexedDB）——Promise.resolve 归一，失败透传/兜底同原工具保护
+        return Promise.resolve(Agent.toolsDeps.deleteAsset(String(args && args.name || ''))).then(function (r) {
+          return r && r.ok ? { ok: true, name: String(args && args.name || ''), deleted: true } : { error: (r && r.error) || '删除失败' };
+        }).catch(function (e) {
+          return { error: '删除异常：' + ((e && e.message) || e) };
+        });
       }
       return { error: '未知的删除目标：' + kind };
     },
@@ -276,8 +298,10 @@
             else {
               var isDestructive = TOOL_DEFS[name] && TOOL_DEFS[name].destructive === true;
               var confirmed = true;
-              if (name === 'delete_block') {
-                // 报告型破坏性：先执行工具拿引用报告（delete_block 不落盘），再确认，确认后真删
+              if (isDestructive) {
+                // 报告型破坏性（delete_block/delete_var/delete_asset 工具一律只报告影响面不落盘）：
+                // 先执行工具拿引用报告 → onConfirm（带 result 供 UI 展示影响面）→ 确认后 confirmDelete 真删。
+                // 用户安全阀要求：任何删除都要先明确「删掉哪些部分、影响哪些部分」——影响面必须在确认前拿到。
                 try { result = await impl(args); }
                 catch (e) { result = { error: '工具执行异常：' + (e && e.message) }; }
                 if (result && result.destructive) {
@@ -285,25 +309,20 @@
                     try { confirmed = !!(await cb.onConfirm({ name: name, args: args, result: result })); }
                     catch (e) { confirmed = false; }
                   }
-                  if (confirmed) result = Agent.confirmDelete('delete_block', args);
-                  else result = { error: '用户取消了操作：' + name };
+                  if (confirmed) {
+                    try { result = await Agent.confirmDelete(name, args); }
+                    catch (e) { result = { error: '删除执行异常：' + (e && e.message) }; }
+                  } else {
+                    result = { error: '用户取消了操作：' + name };
+                  }
                 }
+              } else if (args.blockName && writtenBlocks[args.blockName]) {
+                result = { error: '同一剧情块「' + args.blockName + '」在本轮已被修改，请先 read_block 重新读取后再操作' };
               } else {
-                // 立即型破坏性（delete_var/delete_asset 工具内即删）：确认门必须在工具执行前
-                if (isDestructive && typeof cb.onConfirm === 'function') {
-                  try { confirmed = !!(await cb.onConfirm({ name: name, args: args })); }
-                  catch (e) { confirmed = false; }
-                }
-                if (!confirmed) {
-                  result = { error: '用户取消了操作：' + name };
-                } else if (args.blockName && writtenBlocks[args.blockName]) {
-                  result = { error: '同一剧情块「' + args.blockName + '」在本轮已被修改，请先 read_block 重新读取后再操作' };
-                } else {
-                  // I2：单个工具抛错不得炸掉整轮（转 error 回填，模型可换招）
-                  try { result = await impl(args); }
-                  catch (e) { result = { error: '工具执行异常：' + (e && e.message) }; }
-                  if (result && result.ok && result.resultText && args.blockName) writtenBlocks[args.blockName] = true;
-                }
+                // I2：单个工具抛错不得炸掉整轮（转 error 回填，模型可换招）
+                try { result = await impl(args); }
+                catch (e) { result = { error: '工具执行异常：' + (e && e.message) }; }
+                if (result && result.ok && result.resultText && args.blockName) writtenBlocks[args.blockName] = true;
               }
             }
             // onTool 在工具执行后上报（含 result）：UI 渲染可折叠工具行（一行摘要，展开看参数与结果）
@@ -446,6 +465,44 @@
       out[names[i]] = t == null ? '' : t;
     }
     return out;
+  }
+
+  // 删除安全阀影响面扫描（设计 §6.4）：在块对象视图 {块名:文本} 中扫描对「变量名 / 素材名」的正文引用。
+  // 返回 [{block, lineNo, snippet}]（cap 20，同 search_in_doc）；snippet 为行前 60 字符。
+  // 变量引用语法：{名} / {名:真|假} 读、<变量:名=值> / <变量:名+n> 写、<玩家输入变量:名,"引导">、
+  // <选项:"文字",块名,条件:表达式> 条件表达式中的名（行内含「条件:」且名以边界出现）。
+  function scanVarReferences(doc, name) {
+    var esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var reRead = new RegExp('(^|[^\\{])\\{' + esc + '(?=[}:])'); // {名} / {名:真|假}；{{名}} 转义不算引用（前字符非 {）
+    var reWrite = new RegExp('<变量:' + esc + '(?=[=+\\->])');   // <变量:名= / <变量:名+ / <变量:名- / <变量:名>
+    var reInput = new RegExp('<玩家输入变量:' + esc + '(?=[,">])');
+    var reCond = new RegExp('(^|[^A-Za-z0-9_\\u4e00-\\u9fa5])' + esc + '(?![A-Za-z0-9_\\u4e00-\\u9fa5])'); // 条件表达式内名（边界出现）
+    var refs = [];
+    for (var k in doc) {
+      if (!Object.prototype.hasOwnProperty.call(doc, k)) continue;
+      var lines = String(doc[k] == null ? '' : doc[k]).split('\n');
+      for (var i = 0; i < lines.length && refs.length < 20; i++) {
+        if (reRead.test(lines[i]) || reWrite.test(lines[i]) || reInput.test(lines[i])
+          || (lines[i].indexOf('条件:') >= 0 && reCond.test(lines[i]))) {
+          refs.push({ block: k, lineNo: i + 1, snippet: lines[i].slice(0, 60) });
+        }
+      }
+    }
+    return refs;
+  }
+  // 素材召唤引用：<召唤背景:名> / <召唤物品:名,"提示">（名后为 , 或 >）/ <召唤叠层:名> / <召唤音乐:名> / <召唤音效:名>
+  function scanAssetReferences(doc, name) {
+    var esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var re = new RegExp('<召唤(?:背景|物品|叠层|音乐|音效):\\s*' + esc + '(?=[,">])');
+    var refs = [];
+    for (var k in doc) {
+      if (!Object.prototype.hasOwnProperty.call(doc, k)) continue;
+      var lines = String(doc[k] == null ? '' : doc[k]).split('\n');
+      for (var i = 0; i < lines.length && refs.length < 20; i++) {
+        if (re.test(lines[i])) refs.push({ block: k, lineNo: i + 1, snippet: lines[i].slice(0, 60) });
+      }
+    }
+    return refs;
   }
 
   // 镜像引擎 extractOptionLine（editor.js:125）：一行内所有 <选项:"文字",块名[,条件:…]> 的 body 段。
@@ -628,11 +685,9 @@
         if (arr[i].name === name) { found = i; break; }
       }
       if (found < 0) return { error: '未找到变量「' + name + '」' };
-      var next = arr.slice();
-      next.splice(found, 1);
-      if (!Agent.toolsDeps.saveVars) return { error: '编辑器未就绪' };
-      Agent.toolsDeps.saveVars(next);
-      return { ok: true, name: name, destructive: true };
+      // 安全阀（用户要求：任何删除都要先明确影响面）：不落盘，只报告正文引用；
+      // 真删由 runLoop 确认后 confirmDelete('delete_var') 执行。
+      return { ok: true, name: name, destructive: true, references: scanVarReferences(blocksDocObj(), name) };
     },
     set_var: function (a) {
       var name = a && a.name;
@@ -806,11 +861,28 @@
       } catch (e) { return { error: '改名异常：' + ((e && e.message) || e) }; }
     },
     delete_asset: async function (a) {
-      if (!Agent.toolsDeps.deleteAsset) return { error: '素材系统未接线' };
-      try {
-        var r = await Agent.toolsDeps.deleteAsset(a.name);
-        return r && r.ok ? { ok: true, name: a.name, destructive: true } : { error: (r && r.error) || '删除失败' };
-      } catch (e) { return { error: '删除异常：' + ((e && e.message) || e) }; }
+      var name = a && a.name;
+      // 安全阀（用户要求：任何删除都要先明确影响面）：不落盘，只报告正文召唤 + 开场设置引用；
+      // 真删由 runLoop 确认后 confirmDelete('delete_asset') 执行。
+      var exists = null; // null=素材系统未接线（无法确认存在性），true/false=确认结果
+      if (typeof Agent.toolsDeps.getAllAssets === 'function') {
+        try {
+          var all = await Agent.toolsDeps.getAllAssets();
+          exists = Array.isArray(all) && all.some(function (x) { return x && x.name === name; });
+        } catch (e) { exists = null; }
+      }
+      if (exists === false) return { error: '素材不存在' };
+      var refs = scanAssetReferences(blocksDocObj(), name);
+      // 开场设置（开场背景/开场音乐）也按名称引用素材——并入影响面报告
+      if (typeof Agent.toolsDeps.openingRefs === 'function') {
+        try {
+          var opening = Agent.toolsDeps.openingRefs() || [];
+          for (var i = 0; i < opening.length; i++) {
+            if (opening[i] && opening[i].name === name) refs.push({ block: '开场设置', lineNo: 0, snippet: opening[i].setting });
+          }
+        } catch (e) {}
+      }
+      return { ok: true, name: name, destructive: true, references: refs };
     },
     export_project: async function () {
       if (!Agent.toolsDeps.exportProject) return { error: '导出未接线' };
@@ -839,7 +911,7 @@
     list_vars: { type: 'function', function: { name: 'list_vars', description: '列出全部变量（名称/类型/值）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
     read_var: { type: 'function', function: { name: 'read_var', description: '读取单个变量的名称/类型/值。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' } }, required: ['name'] } } },
     create_var: { type: 'function', function: { name: 'create_var', description: '新建变量（number/text/boolean，命名：字母/下划线/中文开头）。修改变量库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' }, type: { type: 'string', enum: ['number', 'text', 'boolean'], description: '变量类型' }, value: { type: 'string', description: '初始值（缺省按类型取默认，数值/布尔由工具按类型转换）' } }, required: ['name', 'type'] } } },
-    delete_var: { destructive: true, type: 'function', function: { name: 'delete_var', description: '删除变量定义（正文中的引用不清理）。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' } }, required: ['name'] } } },
+    delete_var: { destructive: true, type: 'function', function: { name: 'delete_var', description: '删除变量定义（先报告正文中所有引用位置与影响面，确认后才删；正文中的 {名} 等引用不会被改写）。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' } }, required: ['name'] } } },
     set_var: { type: 'function', function: { name: 'set_var', description: '修改已有变量的值（number 类型须数值）。修改变量库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' }, value: { type: 'string', description: '新值（数值/布尔由工具按类型转换）' } }, required: ['name', 'value'] } } },
     update_var: { type: 'function', function: { name: 'update_var', description: '对 number 类型变量做加减运算。修改变量库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' }, op: { type: 'string', enum: ['+', '-'], description: '运算（缺省 +）' }, delta: { type: 'number', description: '增减量' } }, required: ['name', 'delta'] } } },
     create_block: { type: 'function', function: { name: 'create_block', description: '新建空剧情块（命名校验 + 重名拒绝）。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '新块名称' } }, required: ['blockName'] } } },
@@ -849,7 +921,7 @@
     generate_options: { type: 'function', function: { name: 'generate_options', description: '校验并写入合法选项行（<选项:"文字",块名,条件>）。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { text: { type: 'string', description: '要解析的选项行文本' } }, required: ['text'] } } },
     list_assets: { type: 'function', function: { name: 'list_assets', description: '列出素材元数据（名称/类型/标签，不含二进制内容）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
     rename_asset: { type: 'function', function: { name: 'rename_asset', description: '重命名素材。修改素材库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '原素材名' }, newName: { type: 'string', description: '新素材名' } }, required: ['name', 'newName'] } } },
-    delete_asset: { destructive: true, type: 'function', function: { name: 'delete_asset', description: '删除素材。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '素材名' } }, required: ['name'] } } },
+    delete_asset: { destructive: true, type: 'function', function: { name: 'delete_asset', description: '删除素材（先报告正文中所有召唤指令与开场设置引用等影响面，确认后才删；正文中的 <召唤…> 引用不会被改写）。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '素材名' } }, required: ['name'] } } },
     export_project: { type: 'function', function: { name: 'export_project', description: '导出当前工程备份（含素材/变量/线索，不含 AI Key）。导出当前工程。', parameters: { type: 'object', properties: {} } } },
     read_appearance: { type: 'function', function: { name: 'read_appearance', description: '读取当前游戏外观设置（正文字号/标题·正文·分割线字体/标题默认颜色/Galgame 底框色）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
     update_appearance: { type: 'function', function: { name: 'update_appearance', description: '修改游戏外观设置（patch 对象，键可为 fontSize/titleFont/bodyFont/dividerFont/galBoxColor/titleColor）。立即生效，覆盖试玩与导出成品，用户可手动改回。', parameters: { type: 'object', properties: { patch: { type: 'object', description: '外观字段键值，如 {fontSize:22}' } }, required: ['patch'] } } },

@@ -280,8 +280,14 @@ function mockVars(initial) {
   assert.ok(ctx.Agent.tools.set_var({ name: '金币', value: 'abc' }).error, 'number 类型拒绝非数值');
   ctx.Agent.tools.update_var({ name: '金币', op: '+', delta: 10 });
   assert.equal(m()[0].value, 60, 'update_var 加');
-  ctx.Agent.tools.delete_var({ name: '金币' });
-  assert.equal(m().length, 0, 'delete_var 删除');
+  // 安全阀（报告型）：delete_var 只报告影响面不落盘；真删须经 confirmDelete（runLoop 确认后调用）
+  const dr = ctx.Agent.tools.delete_var({ name: '金币' });
+  assert.equal(dr.destructive, true, 'delete_var 标记 destructive');
+  assert.equal(m().length, 1, '报告型不落盘：变量仍在');
+  assert.ok(Array.isArray(dr.references), 'delete_var 报告引用影响面');
+  const dd = ctx.Agent.confirmDelete('delete_var', { name: '金币' });
+  assert.ok(dd && dd.ok && dd.deleted, 'confirmDelete(delete_var) 真删');
+  assert.equal(m().length, 0, '真删后变量消失');
 }
 // Task 9 边界健壮性：空名拒绝 / boolean·text 强制 / 缺省初值 / update_var 分支 / saveVars 守卫
 {
@@ -307,6 +313,7 @@ function mockVars(initial) {
   assert.ok(ctx.Agent.tools.update_var({ name: '没有', op: '+', delta: 1 }).error, 'update 不存在的变量报错');
   assert.ok(ctx.Agent.tools.set_var({ name: '没有', value: 1 }).error, 'set 不存在的变量报错');
   assert.ok(ctx.Agent.tools.delete_var({ name: '没有' }).error, 'delete 不存在的变量报错');
+  assert.ok(ctx.Agent.confirmDelete('delete_var', { name: '没有' }).error, 'confirmDelete 不存在的变量报错');
 }
 {
   ctx.Agent.toolsDeps = { getVars: () => [{ name: '金币', type: 'number', value: 1 }] };
@@ -524,7 +531,13 @@ function mockBlocks() {
     assert.equal(l[0].tags.join(','), '背景', 'tags 原样返回');
     assert.ok((await ctx.Agent.tools.rename_asset({ name: 'bg1', newName: '夜晚森林' })).ok);
     assert.equal(assets[0].name, '夜晚森林', 'rename_asset 透传改名到 deps');
-    assert.ok((await ctx.Agent.tools.delete_asset({ name: '夜晚森林' })).destructive, '删素材必须 destructive');
+    // 安全阀（报告型）：delete_asset 只报告影响面不落盘；真删须经 confirmDelete（runLoop 确认后调用）
+    const da = await ctx.Agent.tools.delete_asset({ name: '夜晚森林' });
+    assert.equal(da.destructive, true, '删素材必须 destructive');
+    assert.ok(Array.isArray(da.references), 'delete_asset 报告引用影响面');
+    assert.equal(assets.length, 1, '报告型不落盘：素材仍在');
+    const cd = await ctx.Agent.confirmDelete('delete_asset', { name: '夜晚森林' });
+    assert.ok(cd && cd.ok && cd.deleted, 'confirmDelete(delete_asset) 真删');
     assert.equal((await ctx.Agent.tools.export_project({})).format, 'story-editor-project');
     assert.equal((await ctx.Agent.tools.export_project({})).exportedAt, '2026-01-01', 'export 透传 exportedAt');
   }
@@ -545,22 +558,26 @@ function mockBlocks() {
     // list_assets 按只读约定降级为空数组（同 list_blocks/list_vars），不抛错
     ctx.Agent.toolsDeps = {};
     assert.ok(String((await ctx.Agent.tools.rename_asset({ name: 'x', newName: 'y' })).error).indexOf('素材系统未接线') >= 0);
-    assert.ok(String((await ctx.Agent.tools.delete_asset({ name: 'x' })).error).indexOf('素材系统未接线') >= 0);
+    // 安全阀（报告型）：delete_asset 是只读扫描（不依赖删除能力）→ 未接线时仍返回报告；真删 confirmDelete 才报「素材系统未接线」
+    const da2 = await ctx.Agent.tools.delete_asset({ name: 'x' });
+    assert.equal(da2.destructive, true, '未接线时 delete_asset 仍可报告影响面');
+    assert.ok(Array.isArray(da2.references) && da2.references.length === 0, '未接线时引用列表为空');
+    assert.ok(String((await ctx.Agent.confirmDelete('delete_asset', { name: 'x' })).error).indexOf('素材系统未接线') >= 0, 'confirmDelete 未接线报「素材系统未接线」');
     assert.ok(String((await ctx.Agent.tools.export_project({})).error).indexOf('导出未接线') >= 0);
     assert.equal(JSON.stringify(await ctx.Agent.tools.list_assets({})), '[]', 'list_assets 未接线时降级为空数组');
   }
   {
-    // deps 失败透传：rename/delete 失败带 error 原样返回；deps 返回 falsy → 兜底错误；export falsy → 导出失败
+    // deps 失败透传：rename 失败带 error 原样返回；confirmDelete(delete_asset) 失败透传/兜底；export falsy → 导出失败
     ctx.Agent.toolsDeps.renameAsset = () => ({ ok: false, error: '改名冲突' });
     ctx.Agent.toolsDeps.deleteAsset = () => ({ ok: false, error: '素材不存在' });
     ctx.Agent.toolsDeps.exportProject = () => null;
     assert.ok(String((await ctx.Agent.tools.rename_asset({ name: 'a', newName: 'b' })).error).indexOf('改名冲突') >= 0, 'rename deps 失败透传 error');
-    assert.ok(String((await ctx.Agent.tools.delete_asset({ name: 'a' })).error).indexOf('素材不存在') >= 0, 'delete deps 失败透传 error');
+    assert.ok(String((await ctx.Agent.confirmDelete('delete_asset', { name: 'a' })).error).indexOf('素材不存在') >= 0, 'confirmDelete deps 失败透传 error');
     assert.ok(String((await ctx.Agent.tools.export_project({})).error).indexOf('导出失败') >= 0, 'export deps 返回 falsy → 导出失败');
     ctx.Agent.toolsDeps.renameAsset = () => null;
     assert.ok(String((await ctx.Agent.tools.rename_asset({ name: 'a', newName: 'b' })).error).indexOf('改名失败') >= 0, 'rename deps 返回 falsy 兜底「改名失败」');
     ctx.Agent.toolsDeps.deleteAsset = () => null;
-    assert.ok(String((await ctx.Agent.tools.delete_asset({ name: 'a' })).error).indexOf('删除失败') >= 0, 'delete deps 返回 falsy 兜底「删除失败」');
+    assert.ok(String((await ctx.Agent.confirmDelete('delete_asset', { name: 'a' })).error).indexOf('删除失败') >= 0, 'confirmDelete deps 返回 falsy 兜底「删除失败」');
   }
   {
     // async deps（真实 Storage 形态，storage.js:331/372/377/613）：工具 await deps 的 Promise；
@@ -570,7 +587,10 @@ function mockBlocks() {
     assert.equal(l.length, 1);
     assert.equal(l[0].name, 'async1', 'await async deps');
     ctx.Agent.toolsDeps.deleteAsset = () => Promise.resolve({ ok: true });
-    assert.ok((await ctx.Agent.tools.delete_asset({ name: 'async1' })).destructive, 'async deps 的 ok 正常判定');
+    const da3 = await ctx.Agent.confirmDelete('delete_asset', { name: 'async1' });
+    assert.ok(da3 && da3.ok && da3.deleted, 'confirmDelete async deps 的 ok 正常判定');
+    ctx.Agent.toolsDeps.deleteAsset = () => Promise.reject(new Error('素材不存在'));
+    assert.ok(String((await ctx.Agent.confirmDelete('delete_asset', { name: 'a' })).error).indexOf('素材不存在') >= 0, 'confirmDelete deps reject 转 error');
     ctx.Agent.toolsDeps.renameAsset = () => Promise.reject(new Error('素材不存在'));
     assert.ok(String((await ctx.Agent.tools.rename_asset({ name: 'a', newName: 'b' })).error).indexOf('素材不存在') >= 0, 'deps reject 转 error');
     ctx.Agent.toolsDeps.exportProject = () => Promise.reject(new Error('导出失败'));
@@ -765,6 +785,7 @@ function mockBlocks() {
   {
     // C1：破坏性确认门——onConfirm 返回 false → 不执行删除，模型收到取消说明
     let deleted = 0;
+    ctx.Agent.toolsDeps.getAllAssets = () => [{ name: 'bg1', type: 'image' }];
     ctx.Agent.toolsDeps.deleteAsset = async () => { deleted++; return { ok: true }; };
     const toolContents = [];
     const req = (messages) => {
@@ -782,6 +803,7 @@ function mockBlocks() {
   {
     // C1：onConfirm 返回 true → 执行删除
     let deleted = 0;
+    ctx.Agent.toolsDeps.getAllAssets = () => [{ name: 'bg1', type: 'image' }];
     ctx.Agent.toolsDeps.deleteAsset = async () => { deleted++; return { ok: true }; };
     const req = (messages) => {
       const last = messages[messages.length - 1];
@@ -993,6 +1015,55 @@ function mockBlocks() {
       ctx.Agent.toolsDeps = {};
       assert.equal(ctx.Agent.tools.update_creation_setting({ field: 'outline', value: 'x' }).error, '编辑器未就绪', 'update_creation_setting 缺 deps 报错');
     }
+  }
+  // ===== §17: 删除安全阀——影响面扫描（用户要求：任何删除都须明确「删掉哪些部分、影响哪些部分」） =====
+  {
+    // 变量引用影响面：{名} / {名:真|假} 读、<变量:名=值> / <变量:名+n> 写、<玩家输入变量:名,"">、
+    // <选项:"",块,条件:表达式含名> 条件引用——全部命中并带块/行号；无引用时为空数组
+    ctx.Agent.toolsDeps = mockDeps();
+    ctx.Agent.toolsDeps.getVars = () => [{ name: '金币', type: 'number', value: 1 }];
+    ctx.Agent.toolsDeps.blocksDoc = () => ({
+      '第一章': '他捡起一枚{金币}。\n<变量:金币=5>\n<选项:"买",杂货铺,条件:金币>3>',
+      '第二章': '<玩家输入变量:金币,"给了多少">\n无引用行',
+      '第三章': '{{金币}}转义不读值',
+    });
+    const r = ctx.Agent.tools.delete_var({ name: '金币' });
+    assert.equal(r.destructive, true);
+    assert.equal(r.references.length, 4, '四类引用全部命中');
+    const flat = r.references.map(x => x.block + ':' + x.lineNo).join(',');
+    assert.equal(flat, '第一章:1,第一章:2,第一章:3,第二章:1', '块与行号正确');
+    assert.ok(r.references[0].snippet.indexOf('金币') >= 0, 'snippet 含引用行片段');
+  }
+  {
+    // 素材召唤影响面：<召唤背景:名> / <召唤物品:名,"提示">（名后 , 或 > 才算命中，防前缀误报）+ 开场设置引用
+    ctx.Agent.toolsDeps = mockDeps();
+    ctx.Agent.toolsDeps.getAllAssets = () => [{ name: '森林', type: 'image' }, { name: '森林2', type: 'image' }];
+    ctx.Agent.toolsDeps.blocksDoc = () => ({
+      '第一章': '<召唤背景:森林>\n<召唤物品:森林,"提示">\n<召唤背景:森林2>',
+      '第二章': '文字提到森林但不召唤',
+    });
+    ctx.Agent.toolsDeps.openingRefs = () => [{ name: '森林', setting: '开场背景：森林' }];
+    const r = await ctx.Agent.tools.delete_asset({ name: '森林' });
+    assert.equal(r.destructive, true);
+    assert.equal(r.references.length, 3, '召唤×2 + 开场设置×1（森林2 不误报、纯文字不误报）');
+    assert.equal(r.references[0].block, '第一章');
+    assert.equal(r.references[0].lineNo, 1);
+    assert.ok(r.references.some(x => x.block === '开场设置' && x.lineNo === 0), '开场设置引用并入报告');
+  }
+  {
+    // 素材不存在：delete_asset 报告型先校验存在性 → 素材库无此名 → 报「素材不存在」（不落盘）
+    ctx.Agent.toolsDeps = mockDeps();
+    ctx.Agent.toolsDeps.getAllAssets = () => [{ name: '森林', type: 'image' }];
+    const r = await ctx.Agent.tools.delete_asset({ name: '不存在的东西' });
+    assert.ok(String(r.error).indexOf('素材不存在') >= 0, '素材不存在时报错');
+  }
+  {
+    // confirmDelete 保护：delete_var/delete_asset 真删路径的守卫（saveVars / deleteAsset 缺失 → 明确报错）
+    ctx.Agent.toolsDeps = mockDeps();
+    ctx.Agent.toolsDeps.getVars = () => [{ name: '金币', type: 'number', value: 1 }];
+    assert.ok(ctx.Agent.confirmDelete('delete_var', { name: '金币' }).error, 'confirmDelete(delete_var) 缺 saveVars 报错');
+    assert.ok((await ctx.Agent.confirmDelete('delete_asset', { name: 'x' })).error, 'confirmDelete(delete_asset) 缺 deleteAsset 报错');
+    assert.ok(ctx.Agent.confirmDelete('delete_other', {}).error, '未知删除目标报错');
   }
   console.log('agent.test.js OK');
 })().catch(e => { console.error(e); process.exit(1); });

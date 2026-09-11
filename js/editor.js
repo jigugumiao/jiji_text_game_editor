@@ -7940,16 +7940,31 @@ self.onmessage = function (e) {
             const result = (info && info.result) || {};
             const el = agentAppendBubble('assistant', '');
             el.className = 'fta-msg assistant'; // 确认卡片样式
+            // 影响面引用列表渲染（用户安全阀要求：任何删除都须明确「删掉哪些部分、影响哪些部分」）
+            const refLines = (refs) => {
+              if (!Array.isArray(refs) || !refs.length) return '';
+              return '<div class="agent-confirm-refs">' + refs.map((r) =>
+                '· ' + escapeHtml(r.block === '__MAIN__' ? '主剧情' : (r.block || '')) +
+                (r.lineNo ? ' 第' + escapeHtml(r.lineNo) + '行' : '') +
+                '：' + escapeHtml((r.snippet || '').slice(0, 60))
+              ).join('<br>') + '</div>';
+            };
+            const refs = Array.isArray(result.references) ? result.references : [];
             let html = '';
             if (name === 'delete_block') {
-              const refs = Array.isArray(result.references) ? result.references : [];
               html = '⚠️ 确认删除剧情块《' + escapeHtml(args.blockName || '') + '》？' +
-                (refs.length ? '<div class="agent-confirm-refs">其他块 ' + refs.length + ' 处跳转引用：<br>' +
-                  refs.map(r => '· ' + escapeHtml(r.block) + ' 第' + escapeHtml(r.lineNo) + '行：' + escapeHtml((r.snippet || '').slice(0, 60))).join('<br>') + '</div>' : '');
+                '<div class="agent-confirm-danger">此操作不可撤销。删除后，其他块中对它的跳转引用将失效。</div>' +
+                refLines(refs);
             } else if (name === 'delete_var') {
-              html = '⚠️ 确认删除变量「' + escapeHtml(args.name || '') + '」？';
+              html = '⚠️ 确认删除变量「' + escapeHtml(args.name || '') + '」？' +
+                '<div class="agent-confirm-danger">此操作不可撤销。删除后正文中对该变量的引用将不再生效。</div>' +
+                (refs.length ? '<div class="agent-confirm-refs">正文 ' + refs.length + ' 处引用：<br>' +
+                  refs.map((r) => '· ' + escapeHtml(r.block === '__MAIN__' ? '主剧情' : (r.block || '')) + ' 第' + escapeHtml(r.lineNo) + '行：' + escapeHtml((r.snippet || '').slice(0, 60))).join('<br>') + '</div>' : '<div class="agent-confirm-refs">正文中未发现直接引用</div>');
             } else if (name === 'delete_asset') {
-              html = '⚠️ 确认删除素材「' + escapeHtml(args.name || '') + '」？';
+              html = '⚠️ 确认删除素材「' + escapeHtml(args.name || '') + '」？' +
+                '<div class="agent-confirm-danger">此操作不可撤销。删除后正文中的召唤指令将失效，素材库中将移除该素材。</div>' +
+                (refs.length ? '<div class="agent-confirm-refs">' + refs.length + ' 处引用：<br>' +
+                  refs.map((r) => '· ' + escapeHtml(r.block === '__MAIN__' ? '主剧情' : (r.block || '')) + (r.lineNo ? ' 第' + escapeHtml(r.lineNo) + '行' : '') + '：' + escapeHtml((r.snippet || '').slice(0, 60))).join('<br>') + '</div>' : '<div class="agent-confirm-refs">正文中未发现召唤引用</div>');
             } else {
               html = '⚠️ 确认执行 ' + escapeHtml(name || '') + '？';
             }
@@ -8139,6 +8154,15 @@ self.onmessage = function (e) {
           if (rec) { await window.Storage.deleteAsset(lib, rec.id); return { ok: true }; }
         }
         return { error: '素材不存在' };
+      },
+      // 开场设置按名称引用素材（开场背景/开场音乐）——delete_asset 影响面报告的一部分
+      openingRefs: () => {
+        const out = [];
+        try {
+          if (globalSettings.openingBg) out.push({ name: globalSettings.openingBg, setting: '开场背景：' + globalSettings.openingBg });
+          if (globalSettings.openingMusic) out.push({ name: globalSettings.openingMusic, setting: '开场音乐：' + globalSettings.openingMusic });
+        } catch (e) { /* 读取失败则忽略开场设置引用 */ }
+        return out;
       },
       exportProject: async () => await window.Storage.exportProject(window.Storage.getCurrentProjectId()),
     };

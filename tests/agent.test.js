@@ -64,4 +64,26 @@ assert.ok(scen.rewrite.preload.includes('full_text'), 'rewrite 应预载全文')
   assert.equal(ctx.Agent.intentParse('{"scenario":"__proto__"}').scenario, 'general', '原型链键不算合法场景');
   assert.equal(ctx.Agent.intentParse('{"scenario":"constructor"}').scenario, 'general', '原型链键不算合法场景');
 }
+// buildMessages：前缀构造（§4.3 缓存纪律）— system 提示词 → settings system → 预载 user → 用户 user
+// 注意：本地上下文变量命名为 sctx，避免遮蔽外层 vm 沙箱 ctx（ctx.Agent 是模块句柄）
+{
+  const sctx = { outline: '大纲A', settings: '世界观：魔都', currentBlock: { name: '第一章', text: '正文…' }, fullText: '全文…', vars: [{ name: '金币', type: 'number', value: 10 }] };
+  const msgs = ctx.Agent.buildMessages('general', sctx, '润色第二段');
+  assert.equal(msgs[0].role, 'system');
+  assert.ok(msgs[0].content.indexOf('全能助理') >= 0, '首条=场景 system 提示词');
+  assert.equal(msgs[1].role, 'system');
+  assert.ok(msgs[1].content.indexOf('世界观：魔都') >= 0, '第二条=创作设定（settings）');
+  assert.ok(msgs[2].role === 'user' && msgs[2].content.indexOf('大纲A') >= 0, '预载上下文在第三条 user');
+  assert.ok(msgs[2].content.indexOf('当前编辑块《第一章》') >= 0, '预载按场景顺序含大纲+当前块');
+  assert.equal(msgs[3].role, 'user');
+  assert.equal(msgs[3].content, '润色第二段', '用户消息必须在最后');
+}
+{
+  // 缓存纪律：同场景同工程两次构建，前缀逐字符相同（稳定前缀在可变内容之前）
+  const sctx = { outline: '大纲A', settings: '世界观：魔都', currentBlock: { name: '第一章', text: '正文…' }, fullText: '全文…' };
+  const a = ctx.Agent.buildMessages('general', sctx, '第一个问题');
+  const b = ctx.Agent.buildMessages('general', sctx, '第二个问题');
+  const prefixLen = Math.min(a[2].content.length, b[2].content.length);
+  assert.equal(a[2].content.slice(0, prefixLen), b[2].content.slice(0, prefixLen), '预载 user 消息是稳定前缀');
+}
 console.log('agent.test.js OK');

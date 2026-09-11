@@ -69,6 +69,37 @@
       }
       return out;
     },
+
+    // 消息前缀构造（设计 §4.3 缓存纪律）：
+    // [system: 场景 system 提示词] → [system: 创作设定] → [user: 预载上下文] → [user: 用户最新消息]
+    // 预载内容按场景表 preload 固定顺序拼装、同场景同工程不变 → 前缀稳定可命中缓存；
+    // 可变内容（用户消息/工具往返）只 append 在末尾，绝不插入中段。
+    buildMessages: function (scenario, ctx, userText, opts) {
+      var sc = AGENT_SCENARIOS[scenario] || AGENT_SCENARIOS.general;
+      ctx = ctx || {};
+      var msgs = [];
+      msgs.push({ role: 'system', content: sc.systemPrompt });
+      var settings = ctx.settings;
+      if (settings && String(settings).trim()) {
+        msgs.push({ role: 'system', content: '【创作设定】\n' + settings });
+      }
+      // 预载上下文（固定顺序，保证前缀稳定）
+      var pre = [];
+      var want = sc.preload || [];
+      for (var i = 0; i < want.length; i++) {
+        var k = want[i];
+        if (k === 'full_text' && ctx.fullText) pre.push('【全文】\n' + ctx.fullText);
+        else if (k === 'outline' && ctx.outline) pre.push('【大纲】\n' + ctx.outline);
+        else if (k === 'current_block' && ctx.currentBlock && ctx.currentBlock.text) pre.push('【当前编辑块《' + ctx.currentBlock.name + '》】\n' + ctx.currentBlock.text);
+        else if (k === 'settings' && settings && String(settings).trim()) pre.push('【创作设定】\n' + settings);
+        else if (k === 'vars' && ctx.vars && ctx.vars.length) {
+          pre.push('【变量库】\n' + ctx.vars.map(function (v) { return v.name + ' (' + v.type + ') = ' + v.value; }).join('\n'));
+        }
+      }
+      if (pre.length) msgs.push({ role: 'user', content: pre.join('\n\n') });
+      msgs.push({ role: 'user', content: userText || '' });
+      return msgs;
+    },
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = Agent;

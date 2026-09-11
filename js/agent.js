@@ -37,21 +37,36 @@
   var Agent = {
     AGENT_SCENARIOS: AGENT_SCENARIOS,
 
-    // 意图轮输出解析：提取首个 {...} JSON 对象（容忍 ```json 包裹与前后闲话）
+    // 意图轮输出解析：提取「首个平衡的 {…} 对象」（容忍 ```json 包裹与前后闲话）
     // 失败/未知 scenario → 兜底 general；needs 仅作提示，最终预载由场景表 preload 决定
     intentParse: function (raw) {
       var out = { scenario: 'general', needs: [], note: '' };
       if (!raw || typeof raw !== 'string') return out;
-      var m = raw.match(/\{[\s\S]*\}/);
-      if (!m) return out;
-      try {
-        var j = JSON.parse(m[0]);
-        if (j && typeof j === 'object') {
-          if (AGENT_SCENARIOS[j.scenario]) out.scenario = j.scenario;
-          if (Array.isArray(j.needs)) out.needs = j.needs.filter(function (n) { return typeof n === 'string'; });
-          if (typeof j.note === 'string') out.note = j.note;
+      // 从每个 '{' 起按深度匹配到其闭合 '}'，能 JSON.parse 且是对象即用；
+      // 尾随闲聊里的花括号（如变量语法 {名}）不会吞掉前面的合法 JSON，前置的 decoy 花括号也会被跳过
+      var start = raw.indexOf('{');
+      while (start >= 0) {
+        var depth = 0, end = -1;
+        for (var i = start; i < raw.length; i++) {
+          if (raw[i] === '{') depth++;
+          else if (raw[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
         }
-      } catch (e) { /* 解析失败 → 兜底 general */ }
+        if (end < 0) break; // 剩余部分没有闭合的花括号，放弃
+        var slice = raw.slice(start, end + 1);
+        try {
+          var j = JSON.parse(slice);
+          if (j && typeof j === 'object') {
+            // 只认场景表自有键（防 __proto__/constructor 等原型链键混入）
+            if (Object.prototype.hasOwnProperty.call(AGENT_SCENARIOS, j.scenario)) out.scenario = j.scenario;
+            if (Array.isArray(j.needs)) out.needs = j.needs.filter(function (n) { return typeof n === 'string'; });
+            if (typeof j.note === 'string') out.note = j.note;
+          }
+          return out;
+        } catch (e) {
+          // 该段不是合法 JSON（如 {名} 变量语法），跳到下一个 '{' 继续找
+          start = raw.indexOf('{', start + 1);
+        }
+      }
       return out;
     },
   };

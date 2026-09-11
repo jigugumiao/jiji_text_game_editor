@@ -41,4 +41,27 @@ assert.ok(scen.rewrite.preload.includes('full_text'), 'rewrite 应预载全文')
   const badScenario = ctx.Agent.intentParse('{"scenario":"hack","needs":[]}');
   assert.equal(badScenario.scenario, 'general', '未知 scenario 兜底 general');
 }
+// intentParse 健壮性：边界输入 + 花括号闲聊不吞合法 JSON + 原型链键防绕过
+{
+  assert.equal(ctx.Agent.intentParse('').scenario, 'general', '空串兜底 general');
+  assert.equal(ctx.Agent.intentParse(null).scenario, 'general', 'null 兜底 general');
+  assert.equal(ctx.Agent.intentParse(123).scenario, 'general', '非字符串兜底 general');
+}
+{
+  // 注意：intentParse 在 vm 沙箱 realm 运行，返回的数组跨 realm（prototype 不同），deepStrictEqual 会误报 —— 用 join 转 primitive 比较
+  const r = ctx.Agent.intentParse('{"scenario":"polish","needs":[42,"current_block"]}');
+  assert.equal(r.needs.join(','), 'current_block', 'needs 只保留字符串项');
+}
+{
+  const r = ctx.Agent.intentParse('好的 {"scenario":"rewrite","needs":[]}（参考 {选项} 语法）');
+  assert.equal(r.scenario, 'rewrite', '尾随花括号闲聊不得吞掉合法 JSON');
+}
+{
+  const r = ctx.Agent.intentParse('保留 {名} 语法 {"scenario":"vars","needs":[]}');
+  assert.equal(r.scenario, 'vars', '前置 decoy 花括号应被跳过、继续找合法 JSON');
+}
+{
+  assert.equal(ctx.Agent.intentParse('{"scenario":"__proto__"}').scenario, 'general', '原型链键不算合法场景');
+  assert.equal(ctx.Agent.intentParse('{"scenario":"constructor"}').scenario, 'general', '原型链键不算合法场景');
+}
 console.log('agent.test.js OK');

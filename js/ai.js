@@ -808,6 +808,9 @@
     } else {
       body.thinking = { type: 'disabled' };
     }
+    // Agent 工具调用（OpenAI function calling 兼容）：tools = functions 数组，tool_choice 可选 'auto'/'none'/'required' 或指定函数对象
+    if (opts.tools) body.tools = opts.tools;
+    if (opts.tool_choice) body.tool_choice = opts.tool_choice;
     // 瞬时错误（服务端过载 5xx / 限流 429 / 网络抖动）自动重试：503 这类 “Server Overloaded” 多数重试一次即成功
     const MAX_RETRY = 2;
     let lastErr = null;
@@ -842,7 +845,10 @@
     if (!opts.stream) {
       const j = await res.json();
       if (opts && j.choices && j.choices[0]) opts._finishReason = j.choices[0].finish_reason || null;
-      return (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
+      // 有 tool_calls 时返回 { content, toolCalls }（供 Agent 工具循环）；否则保持原行为：直接返回 content 字符串
+      const msg = (j.choices && j.choices[0] && j.choices[0].message) || {};
+      if (msg.tool_calls) return { content: msg.content, toolCalls: msg.tool_calls };
+      return msg.content || '';
     }
     // 若服务端未真正流式（某些 OpenAI 兼容中转会忽略 stream、返回单块 JSON），按 JSON 解析，避免内容丢失变成空
     const ct = (res.headers && res.headers.get) ? res.headers.get('content-type') : '';
@@ -850,7 +856,9 @@
       try {
         const j = await res.json();
         if (opts && j.choices && j.choices[0]) opts._finishReason = j.choices[0].finish_reason || null;
-        return (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
+        const fmsg = (j.choices && j.choices[0] && j.choices[0].message) || {};
+        if (fmsg.tool_calls && opts.onToolCalls) opts.onToolCalls(fmsg.tool_calls);
+        return fmsg.content || '';
       } catch (e) { /* 解析失败则继续按 SSE 处理 */ }
     }
     // SSE 解析
@@ -858,6 +866,7 @@
     const decoder = new TextDecoder();
     let buf = '';
     let full = '';
+    let toolCallSlots = []; // 按 delta.tool_calls 的 index 存放增量拼接中的工具调用
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -873,10 +882,35 @@
           const j = JSON.parse(data);
           const delta = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
           if (delta) { full += delta; if (opts.onToken) opts.onToken(delta, full); }
+          // Agent 工具调用流式：delta.tool_calls 按 index 增量下发，id/type/name 通常首个 chunk 给全，arguments 分片拼接
+          const tcs = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.tool_calls;
+          if (tcs) {
+            for (const tc of tcs) {
+              if (!tc) continue;
+              const idx = (tc.index == null) ? 0 : tc.index;
+              let slot = toolCallSlots[idx];
+              if (!slot) {
+                slot = { index: idx, id: tc.id || null, type: tc.type || 'function', function: { name: '', arguments: '' } };
+                toolCallSlots[idx] = slot;
+              }
+              if (tc.id) slot.id = tc.id;
+              if (tc.type) slot.type = tc.type;
+              if (tc.function) {
+                if (tc.function.name) slot.function.name += tc.function.name;
+                if (tc.function.arguments) slot.function.arguments += tc.function.arguments;
+              }
+            }
+          }
           const fr = j.choices && j.choices[0] && j.choices[0].finish_reason;
           if (fr && opts) opts._finishReason = fr;
         } catch (e) { /* 忽略不完整片段 */ }
       }
+    }
+    // 流式结束：有 tool_calls 且调用方给了 onToolCalls 回调时，回传拼好的完整数组（剥离内部 index，与非流式 message.tool_calls 形状一致）
+    if (toolCallSlots.length && opts.onToolCalls) {
+      const calls = toolCallSlots.filter(Boolean).sort((a, b) => a.index - b.index)
+        .map(s => ({ id: s.id, type: s.type, function: s.function }));
+      opts.onToolCalls(calls);
     }
       return full;
     } // end retry loop

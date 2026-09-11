@@ -241,6 +241,27 @@
     return out;
   }
 
+  // 镜像引擎 extractOptionLine（editor.js:125）：一行内所有 <选项:"文字",块名[,条件:…]> 的 body 段。
+  // 闭合 > 取下一个 <选项: 之前（或行尾前）的最后一个 > ——条件表达式里的 >（如 金币>5）不算闭合。
+  // 支持同行拼接（引擎强制格式，editor.js:3280：同决策点多选项同行 <选项:"A",块A><选项:"B",块B>）。
+  function extractAgentOptions(line) {
+    var TAG = '<选项:';
+    var out = [];
+    var from = 0;
+    while (from <= line.length) {
+      var start = line.indexOf(TAG, from);
+      if (start < 0) break;
+      var next = line.indexOf(TAG, start + TAG.length);
+      var endB = next < 0 ? line.length : next;
+      var close = -1;
+      for (var k = start + TAG.length; k < endB; k++) { if (line[k] === '>') close = k; }
+      from = start + TAG.length;
+      if (close < 0) continue;
+      out.push(line.slice(start + TAG.length, close));
+    }
+    return out;
+  }
+
   var tools = {
     get_current_block: function () {
       if (!Agent.toolsDeps.getActiveBlock) return { error: '编辑器未就绪' };
@@ -489,9 +510,15 @@
       var lines = String(a.text).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
       var ok = [], bad = [];
       for (var i = 0; i < lines.length; i++) {
-        // 块名段 [^>]+ 贪心后回溯：条件段可含任意字符（如 金币>5），行尾 > 为闭合符
-        if (/^<选项:"[^"]*",\s*[^>]+(?:,\s*条件:[\s\S]*)?>$/.test(lines[i])) ok.push(lines[i]);
-        else bad.push(lines[i]);
+        // 按引擎闭合规则提取一行内全部选项（同行拼接 → 多个 body）
+        var bodies = extractAgentOptions(lines[i]);
+        if (!bodies.length) { bad.push(lines[i]); continue; }
+        for (var j = 0; j < bodies.length; j++) {
+          var m = bodies[j].match(/^\s*"([^"]*)"\s*(?:,\s*([\s\S]*))?$/);
+          // 必须有块名（m[2] 非空）；文字可为空串（<选项:""> 纯推进，引擎允许）
+          if (m && m[1] !== undefined && m[2] && String(m[2]).trim()) ok.push('<选项:' + bodies[j] + '>');
+          else bad.push(lines[i]);
+        }
       }
       if (!ok.length) return { error: '没有合法的 <选项:"文字",块名[,条件:…]> 行' };
       if (typeof Agent.toolsDeps.applyGeneratedBlocks !== 'function') return { error: '编辑器未就绪' };

@@ -441,4 +441,20 @@ function mockBlocks() {
   ctx.Agent.toolsDeps = {};
   assert.ok(ctx.Agent.tools.generate_options({ text: '<选项:"A",块A>' }).error, '未接线时报错而非静默 ok');
 }
+{
+  // 同行拼接（引擎强制格式：同决策点多选项同行，editor.js:125 extractOptionLine 闭合规则——
+  // 闭合 > 取下一个 <选项: 前最后一个 >，条件表达式里的 > 不算闭合）
+  const applied = [];
+  ctx.Agent.toolsDeps = { applyGeneratedBlocks: (blocks) => { applied.push(blocks); return { ok: true }; } };
+  const r = ctx.Agent.tools.generate_options({ text: '<选项:"A",块A><选项:"B",块B>' });
+  assert.ok(r.ok, '同行拼接的多个选项全部合法');
+  assert.equal(r.count, 2);
+  assert.equal(r.invalid, 0);
+  const c = ctx.Agent.tools.generate_options({ text: '<选项:"A",块A,条件:金币>5><选项:"B",块B>' });
+  assert.ok(c.ok && c.count === 2, '同行拼接+条件段里的 > 不算闭合');
+  assert.equal(applied[1].length, 2, '逐选项写入（同行拆成 2 条）');
+  assert.equal(applied[1][0], '<选项:"A",块A,条件:金币>5>', '条件段原样保留');
+  assert.equal(applied[1][1], '<选项:"B",块B>');
+  assert.ok(ctx.Agent.tools.generate_options({ text: '<选项:"A">' }).error, '缺块名的选项非法');
+}
 console.log('agent.test.js OK');

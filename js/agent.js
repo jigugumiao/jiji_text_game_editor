@@ -341,6 +341,12 @@
     renameAsset: null,    // (oldName, newName) => {ok}（素材改名）
     deleteAsset: null,    // (name) => {ok}（删除素材）
     exportProject: null,  // () => {format, exportedAt}（整工程导出）
+    // §16: 创作设定 + 外观读写（Agent 写回 meta.creation / meta.appearance，UI 接 loadCreation/saveCreation/getAppearance/saveAppearance）
+    getCreation: null,        // () => creation 对象（{outline,intro,world,style,clues}）
+    saveCreation: null,       // (creation) => void
+    getAppearance: null,      // () => appearance 对象
+    saveAppearance: null,     // (patch) => void（合并保存）
+    appearanceFields: null,   // [string] 外观字段白名单（UI 注入 Object.keys(DEFAULT_APPEARANCE)）
   };
 
   // 文本操作核心（纯函数）：findAnchor（行号/文本锚定，精确优先、模糊回退）+ applyInsert + computeImpact
@@ -496,6 +502,47 @@
       var archive = (Agent.toolsDeps && typeof Agent.toolsDeps.searchHistoryArchives === 'function') ? Agent.toolsDeps.searchHistoryArchives() : [];
       var hits = Agent.searchHistoryArchive(archive, q);
       return { ok: true, query: q, hits: hits, archivedEntries: Array.isArray(archive) ? archive.length : 0 };
+    },
+    // §16: 创作设定 + 外观（Agent 全面辅助：可读可写 meta.creation 创作设定与 meta.appearance 外观）
+    read_appearance: function () {
+      if (typeof Agent.toolsDeps.getAppearance !== 'function') return { error: '编辑器未就绪' };
+      return { appearance: Object.assign({}, Agent.toolsDeps.getAppearance()) };
+    },
+    update_appearance: function (a) {
+      if (typeof Agent.toolsDeps.getAppearance !== 'function' || typeof Agent.toolsDeps.saveAppearance !== 'function') return { error: '编辑器未就绪' };
+      var patch = a && a.patch;
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return { error: 'patch 必须是对象，如 {fontSize:22}' };
+      var fields = Agent.toolsDeps.appearanceFields || ['fontSize', 'titleFont', 'bodyFont', 'dividerFont', 'galBoxColor', 'titleColor'];
+      var next = {};
+      var keys = Object.keys(patch);
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (fields.indexOf(k) === -1) return { error: '未知外观字段：' + k + '（可用 ' + fields.join('/') + '）' };
+        var v = patch[k];
+        if (k === 'fontSize') {
+          var n = Number(v);
+          if (isNaN(n) || n < 14 || n > 32) return { error: 'fontSize 须为 14-32 的数值（当前值 ' + v + '）' };
+          next[k] = n;
+        } else if (typeof v !== 'string') {
+          return { error: '字段 ' + k + ' 须为字符串（当前值 ' + String(v) + '）' };
+        } else {
+          next[k] = v;
+        }
+      }
+      Agent.toolsDeps.saveAppearance(next); // 立即生效（覆盖试玩与导出），可手动改回
+      return { ok: true, applied: Object.assign({}, Agent.toolsDeps.getAppearance()), changed: keys, note: '外观已立即生效，覆盖试玩与导出成品' };
+    },
+    update_creation_setting: function (a) {
+      if (typeof Agent.toolsDeps.getCreation !== 'function' || typeof Agent.toolsDeps.saveCreation !== 'function') return { error: '编辑器未就绪' };
+      var field = String(a && a.field || '');
+      var value = a && a.value;
+      var FIELDS = ['outline', 'intro', 'world', 'style', 'clues'];
+      if (FIELDS.indexOf(field) === -1) return { error: '未知创作设定字段：' + (field || '（空）') + '（可用 ' + FIELDS.join('/') + '）' };
+      if (typeof value !== 'string') return { error: 'value 必须是字符串' };
+      var c = Agent.toolsDeps.getCreation() || {};
+      var before = (c[field] !== undefined && c[field] !== null) ? String(c[field]) : '';
+      // 不落盘：返回 block='creation:<field>' + resultText，经 applyAgentWrite → classifyWrite（wholeBlock → preview 确认）→ commitAgentWrite 写回
+      return { ok: true, block: 'creation:' + field, before: before, resultText: value, impact: { chars: Math.abs(value.length - before.length), wholeBlock: true }, note: '整字段替换，预览确认后写入' };
     },
     read_full_text: function () {
       var t = Agent.toolsDeps.fullText ? Agent.toolsDeps.fullText() : '';
@@ -798,6 +845,9 @@
     rename_asset: { type: 'function', function: { name: 'rename_asset', description: '重命名素材。修改素材库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '原素材名' }, newName: { type: 'string', description: '新素材名' } }, required: ['name', 'newName'] } } },
     delete_asset: { destructive: true, type: 'function', function: { name: 'delete_asset', description: '删除素材。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '素材名' } }, required: ['name'] } } },
     export_project: { type: 'function', function: { name: 'export_project', description: '导出当前工程备份（含素材/变量/线索，不含 AI Key）。导出当前工程。', parameters: { type: 'object', properties: {} } } },
+    read_appearance: { type: 'function', function: { name: 'read_appearance', description: '读取当前游戏外观设置（正文字号/标题·正文·分割线字体/标题默认颜色/Galgame 底框色）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    update_appearance: { type: 'function', function: { name: 'update_appearance', description: '修改游戏外观设置（patch 对象，键可为 fontSize/titleFont/bodyFont/dividerFont/galBoxColor/titleColor）。立即生效，覆盖试玩与导出成品，用户可手动改回。', parameters: { type: 'object', properties: { patch: { type: 'object', description: '外观字段键值，如 {fontSize:22}' } }, required: ['patch'] } } },
+    update_creation_setting: { type: 'function', function: { name: 'update_creation_setting', description: '写入/更新创作设定字段（大纲 outline/简介 intro/世界观 world/文风 style/关键线索 clues）。整字段替换，大改走预览确认；影响后续所有 AI 生成与导出的上下文。', parameters: { type: 'object', properties: { field: { type: 'string', enum: ['outline', 'intro', 'world', 'style', 'clues'], description: '创作设定字段' }, value: { type: 'string', description: '新内容' } }, required: ['field', 'value'] } } },
   };
   Agent.TOOL_DEFS = TOOL_DEFS;
   // 暴露 textOps 纯函数（供测试直测 & 后续 applyAgentWrite 复用）

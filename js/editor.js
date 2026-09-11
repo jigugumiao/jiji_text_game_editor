@@ -7883,6 +7883,19 @@ self.onmessage = function (e) {
   }
   // Agent 写回唯一入口：程序化改文统一走 pushHistory + commitEdit，保证可撤销、可落盘
   function commitAgentWrite(block, text) {
+    // 创作设定字段写回（Agent update_creation_setting 工具：block='creation:outline' 等；复用 preview/撤销管线）
+    if (block && block.indexOf('creation:') === 0) {
+      const CREATION_FIELDS = ['outline', 'intro', 'world', 'style', 'clues'];
+      const CREATION_FIELD_NAMES = { outline: '大纲', intro: '简介', world: '世界观', style: '文风', clues: '关键线索' };
+      const field = block.slice(9);
+      if (CREATION_FIELDS.indexOf(field) === -1) return;
+      const c = loadCreation();
+      if (c[field] === text) return; // 无变化不动作（也不提示）
+      c[field] = text;
+      saveCreation(c);
+      toast('已更新创作设定「' + (CREATION_FIELD_NAMES[field] || field) + '」');
+      return;
+    }
     const curBlock = (StoryEditorApi.getActiveBlock && StoryEditorApi.getActiveBlock()) || '主剧情';
     if (block === curBlock) {
       if (storyText.value === text) return; // 无变化不动作（也不入撤销栈）
@@ -7908,6 +7921,11 @@ self.onmessage = function (e) {
       getVars: () => window.Storage.getVars(),
       saveVars: (a) => window.Storage.saveVars(a),
       searchHistoryArchives: () => agentLoadArchive(), // §14：search_history 工具的归档数据源（agent-history-archive:<pid>）
+      getCreation: () => loadCreation(),        // §16：update_creation_setting 读取（meta.creation）
+      saveCreation: (c) => saveCreation(c),     // §16：update_creation_setting 落盘
+      getAppearance: () => getAppearance(),     // §16：read_appearance / update_appearance 读取
+      saveAppearance: (p) => saveAppearance(p), // §16：update_appearance 落盘（立即生效）
+      appearanceFields: Object.keys(DEFAULT_APPEARANCE), // §16：外观字段白名单（fontSize/titleFont/bodyFont/dividerFont/galBoxColor/titleColor）
       blocksDoc: () => {
         // {块名: 文本} 块对象视图（Agent 结构组工具契约）；主剧情用 MAIN_BLOCK 键
         const doc = (window.Storage.loadBlocks ? window.Storage.loadBlocks() : null) || { main: '', blocks: {} };

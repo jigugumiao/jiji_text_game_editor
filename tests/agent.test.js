@@ -648,10 +648,13 @@ function mockBlocks() {
     // buildToolDefs 语义（§4.4）：polish 白名单 6 个；空白名单（general/vars）= 全量 25（含 §14 search_history）；__proto__ 兜底 general
     const polish = ctx.Agent.buildToolDefs('polish');
     assert.equal(polish.length, 6, 'polish 白名单 6 个工具');
-    assert.equal(ctx.Agent.buildToolDefs('general').length, 25, 'general 空列表 = 全部工具');
-    assert.equal(ctx.Agent.buildToolDefs('vars').length, 25, 'vars 空列表 = 全部工具');
-    assert.equal(ctx.Agent.buildToolDefs('__proto__').length, 25, '原型链键兜底 general 全量');
+    assert.equal(ctx.Agent.buildToolDefs('general').length, 28, 'general 空列表 = 全部工具');
+    assert.equal(ctx.Agent.buildToolDefs('vars').length, 28, 'vars 空列表 = 全部工具');
+    assert.equal(ctx.Agent.buildToolDefs('__proto__').length, 28, '原型链键兜底 general 全量');
     assert.ok(ctx.Agent.buildToolDefs('general').some(d => d.function.name === 'search_history'), 'search_history 在全量工具中');
+    assert.ok(ctx.Agent.buildToolDefs('general').some(d => d.function.name === 'update_creation_setting'), 'update_creation_setting 在全量工具中');
+    assert.ok(ctx.Agent.buildToolDefs('general').some(d => d.function.name === 'update_appearance'), 'update_appearance 在全量工具中');
+    assert.ok(ctx.Agent.buildToolDefs('general').some(d => d.function.name === 'read_appearance'), 'read_appearance 在全量工具中');
     for (const d of polish) {
       assert.equal(d.type, 'function');
       assert.ok(typeof d.function.name === 'string' && d.function.name.length > 0, 'def 有 name');
@@ -929,6 +932,63 @@ function mockBlocks() {
     const userCount = msgs.filter(m => m.indexOf('user:继续写') >= 0).length;
     assert.equal(userCount, 1, '当前 userText 不得重复出现在请求中');
     assert.equal(msgs[msgs.length - 1], 'user:继续写', '当前 userText 仍在最后');
+  }
+  {
+    // ===== §16: 创作设定 + 外观工具（Agent 全面辅助：可写 meta.creation / meta.appearance） =====
+    // read_appearance：返回外观对象；缺 deps 报错
+    {
+      const deps = mockDeps();
+      deps.getAppearance = () => ({ fontSize: 20, titleFont: '', bodyFont: '', dividerFont: '', galBoxColor: 'rgba(0,0,0,0.55)', titleColor: '' });
+      deps.appearanceFields = ['fontSize', 'titleFont', 'bodyFont', 'dividerFont', 'galBoxColor', 'titleColor'];
+      ctx.Agent.toolsDeps = deps;
+      const r = ctx.Agent.tools.read_appearance();
+      assert.ok(r.appearance && r.appearance.fontSize === 20, 'read_appearance 返回外观对象');
+      ctx.Agent.toolsDeps = {};
+      assert.equal(ctx.Agent.tools.read_appearance().error, '编辑器未就绪', 'read_appearance 缺 deps 报错');
+    }
+    // update_appearance：合并保存 + 字段/数值校验 + 缺 deps
+    {
+      const deps = mockDeps();
+      deps._cur = { fontSize: 20, titleFont: '', bodyFont: '', dividerFont: '', galBoxColor: 'rgba(0,0,0,0.55)', titleColor: '' };
+      deps.getAppearance = () => Object.assign({}, deps._cur); // 模拟编辑器：saveAppearance 合并后 getAppearance 返回新值
+      deps.saveAppearance = (p) => { deps._cur = Object.assign({}, deps._cur, p); };
+      deps.appearanceFields = ['fontSize', 'titleFont', 'bodyFont', 'dividerFont', 'galBoxColor', 'titleColor'];
+      ctx.Agent.toolsDeps = deps;
+      const r = ctx.Agent.tools.update_appearance({ patch: { fontSize: 22, titleColor: '#ff0000' } });
+      assert.equal(r.ok, true);
+      assert.equal(deps._cur.fontSize, 22, 'saveAppearance 收到 patch');
+      assert.equal(deps._cur.titleColor, '#ff0000');
+      assert.equal(r.applied.fontSize, 22, 'applied 返回当前外观');
+      assert.equal(r.applied.titleColor, '#ff0000');
+      assert.ok(ctx.Agent.tools.update_appearance({ patch: { fontSize: 99 } }).error.indexOf('14-32') >= 0, 'fontSize 越界拒绝');
+      assert.ok(ctx.Agent.tools.update_appearance({ patch: { fontSize: 'abc' } }).error, 'fontSize 非数值拒绝');
+      assert.ok(ctx.Agent.tools.update_appearance({ patch: { noSuchField: 'x' } }).error.indexOf('未知外观字段') >= 0, '未知字段拒绝');
+      assert.ok(ctx.Agent.tools.update_appearance({ patch: 'nope' }).error, 'patch 非对象拒绝');
+      assert.ok(ctx.Agent.tools.update_appearance({ patch: { fontSize: 18 } }).ok, '合法 patch 应用');
+      ctx.Agent.toolsDeps = {};
+      assert.equal(ctx.Agent.tools.update_appearance({ patch: { fontSize: 18 } }).error, '编辑器未就绪', 'update_appearance 缺 deps 报错');
+    }
+    // update_creation_setting：block 编码字段 + preview 分级 + 校验
+    {
+      const deps = mockDeps();
+      deps.getCreation = () => ({ outline: '旧大纲', intro: '', world: '', style: '', clues: '' });
+      deps.saveCreation = (c) => { deps._saved = c; };
+      ctx.Agent.toolsDeps = deps;
+      const r = ctx.Agent.tools.update_creation_setting({ field: 'outline', value: '新大纲很长' });
+      assert.equal(r.ok, true);
+      assert.equal(r.block, 'creation:outline', 'block 编码字段名');
+      assert.equal(r.before, '旧大纲');
+      assert.equal(r.resultText, '新大纲很长');
+      assert.equal(r.impact.wholeBlock, true, '整字段替换 → preview 确认');
+      assert.equal(r.impact.chars, 2, '变更量 = |新-旧| 长度差');
+      const rec = ctx.Agent.applyAgentWrite({ block: r.block, before: r.before, resultText: r.resultText, impact: r.impact }, deps, []);
+      assert.equal(rec.level, 'preview', '创作设定写入走 preview 分级');
+      assert.ok(ctx.Agent.tools.update_creation_setting({ field: 'noSuchField', value: 'x' }).error.indexOf('未知创作设定字段') >= 0, '未知字段拒绝');
+      assert.ok(ctx.Agent.tools.update_creation_setting({ field: 'intro', value: 42 }).error, 'value 非字符串拒绝');
+      assert.ok(ctx.Agent.tools.update_creation_setting({ field: '', value: 'x' }).error, '空字段拒绝');
+      ctx.Agent.toolsDeps = {};
+      assert.equal(ctx.Agent.tools.update_creation_setting({ field: 'outline', value: 'x' }).error, '编辑器未就绪', 'update_creation_setting 缺 deps 报错');
+    }
   }
   console.log('agent.test.js OK');
 })().catch(e => { console.error(e); process.exit(1); });

@@ -143,6 +143,8 @@
     getVars: null, saveVars: null,
     blocksDoc: null,       // () => {块名: 文本}（块对象视图，结构组 rename/delete 同步引用用）
     saveBlocks: null,      // ({块名: 文本}) => void（结构组落盘）
+    extractClues: null,          // (opts) => {ok, clues|text}（创作辅助：线索提取，UI 接 window.AI.extractClues）
+    applyGeneratedBlocks: null,  // ([lines]) => {ok}（创作辅助：生成块写入，UI 接 window.StoryEditorApi.applyGeneratedBlocks）
     // ...素材组后续加
   };
 
@@ -469,6 +471,32 @@
         }
       }
       return { ok: true, blockName: name, destructive: true, references: refs };
+    },
+    // ===== Task 11: 创作辅助组工具（extract_clues / generate_options） =====
+    // 只调 toolsDeps + 校验结果/语法，不直接碰 AI 或文档（UI 接线：extractClues→window.AI.extractClues，
+    // applyGeneratedBlocks→window.StoryEditorApi.applyGeneratedBlocks）。
+    extract_clues: function (a) {
+      if (!Agent.toolsDeps.extractClues) return { error: '线索提取管线未接线' };
+      try {
+        var r = Agent.toolsDeps.extractClues(a && a.blockName ? { blockName: a.blockName } : {});
+        return r && r.ok ? { ok: true, clues: r.clues || r.text || '' } : { error: (r && r.error) || '提取失败' };
+      } catch (e) {
+        return { error: '提取异常：' + e.message };
+      }
+    },
+    generate_options: function (a) {
+      if (!a || !a.text) return { error: '缺少 text' };
+      var lines = String(a.text).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+      var ok = [], bad = [];
+      for (var i = 0; i < lines.length; i++) {
+        // 块名段 [^>]+ 贪心后回溯：条件段可含任意字符（如 金币>5），行尾 > 为闭合符
+        if (/^<选项:"[^"]*",\s*[^>]+(?:,\s*条件:[\s\S]*)?>$/.test(lines[i])) ok.push(lines[i]);
+        else bad.push(lines[i]);
+      }
+      if (!ok.length) return { error: '没有合法的 <选项:"文字",块名[,条件:…]> 行' };
+      if (typeof Agent.toolsDeps.applyGeneratedBlocks !== 'function') return { error: '编辑器未就绪' };
+      Agent.toolsDeps.applyGeneratedBlocks(ok);
+      return { ok: true, count: ok.length, invalid: bad.length };
     },
   };
   Agent.tools = tools;

@@ -393,4 +393,52 @@ function mockBlocks() {
   assert.ok(ctx.Agent.tools.rename_block({ oldName: '第一章', newName: '__MAIN__' }).error, '不能改名为主剧情');
   assert.ok(ctx.Agent.tools.delete_block({ blockName: '__MAIN__' }).error, '主剧情不可删除');
 }
+// ===== Task 11: 创作辅助组工具（extract_clues / generate_options） =====
+// 工具只调 toolsDeps + 校验结果/语法，不直接碰 AI 或文档（UI 接线：extractClues→window.AI.extractClues，
+// applyGeneratedBlocks→window.StoryEditorApi.applyGeneratedBlocks）。deps 按 Task 7 惯例直接赋值 toolsDeps；
+// 跨 realm 对象不可 deepEqual → calls[0]/applied[0] 是沙箱对象/数组，只断言 primitive 字段或 join 转 primitive。
+{
+  const calls = [];
+  ctx.Agent.toolsDeps = { extractClues: (opts) => { calls.push(opts); return { ok: true, clues: '线索A' }; } };
+  const r = ctx.Agent.tools.extract_clues({ blockName: '第一章' });
+  assert.ok(r.ok && r.clues === '线索A', 'extract_clues 返回 deps 的 {ok, clues}');
+  assert.equal(calls.length, 1, '恰好调用一次 deps');
+  assert.equal(calls[0].blockName, '第一章', 'blockName 原样透传');
+}
+{
+  // 未接线 / deps 失败 / deps 抛异常 → 一律返回 error，不抛异常
+  ctx.Agent.toolsDeps = {};
+  assert.ok(ctx.Agent.tools.extract_clues({}).error, '未接线时报错');
+  ctx.Agent.toolsDeps = { extractClues: () => ({ ok: false, error: '管线超时' }) };
+  assert.ok(String(ctx.Agent.tools.extract_clues({}).error).indexOf('管线超时') >= 0, 'deps 失败透传 error');
+  ctx.Agent.toolsDeps = { extractClues: () => { throw new Error('boom'); } };
+  assert.ok(String(ctx.Agent.tools.extract_clues({}).error).indexOf('boom') >= 0, 'deps 抛异常转 error');
+}
+{
+  // 两行都合法（条件段可含 >，如 金币>5）→ count=2，合法行原样交给 applyGeneratedBlocks
+  const applied = [];
+  ctx.Agent.toolsDeps = { applyGeneratedBlocks: (blocks) => { applied.push(blocks); return { ok: true }; } };
+  const r = ctx.Agent.tools.generate_options({ text: '<选项:"A",块A>\n<选项:"B",块B,条件:金币>5>' });
+  assert.ok(r.ok, '两行都合法');
+  assert.equal(r.count, 2, '合法行计数');
+  assert.equal(r.invalid, 0);
+  assert.equal(applied.length, 1, '合法时调用一次 applyGeneratedBlocks');
+  assert.equal(applied[0].join('\n'), '<选项:"A",块A>\n<选项:"B",块B,条件:金币>5>', '合法行原样写入');
+}
+{
+  // 全非法 → 报错；混行 → 只写合法行 + invalid 计数；缺/空 text、未接线 → 报错
+  assert.ok(ctx.Agent.tools.generate_options({ text: '这不是选项' }).error, '全非法行报错');
+  const applied = [];
+  ctx.Agent.toolsDeps = { applyGeneratedBlocks: (blocks) => { applied.push(blocks); return { ok: true }; } };
+  const mix = ctx.Agent.tools.generate_options({ text: '<选项:"A",块A>\n垃圾行' });
+  assert.ok(mix.ok, '有合法行即 ok');
+  assert.equal(mix.count, 1);
+  assert.equal(mix.invalid, 1, '非法行计数');
+  assert.equal(applied.length, 1);
+  assert.equal(applied[0].join('\n'), '<选项:"A",块A>', '只写合法行');
+  assert.ok(ctx.Agent.tools.generate_options({}).error, '缺 text 报错');
+  assert.ok(ctx.Agent.tools.generate_options({ text: '' }).error, '空 text 报错');
+  ctx.Agent.toolsDeps = {};
+  assert.ok(ctx.Agent.tools.generate_options({ text: '<选项:"A",块A>' }).error, '未接线时报错而非静默 ok');
+}
 console.log('agent.test.js OK');

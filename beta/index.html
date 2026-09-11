@@ -1982,7 +1982,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.95-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.96-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -8258,6 +8258,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Exporter;
             cb.onReply && cb.onReply(text);
             return { scenario: scenario, rounds: rounds, finalText: text };
           }
+          // 工具轮判定成立后立即通知 UI：本轮是工具调用轮。模型在 tool_calls 前吐的过程性 content
+          // （如"好的，我先查看当前剧情块"）已流进回复气泡（editor.js request 封装 onToken 无条件渲染），
+          // UI 收到此信号应移除该气泡——否则出现"先文本后工具"的视觉错序；最终答复轮会重新创建气泡。
+          cb.onStatus && cb.onStatus('turn:tool');
           // C2：白名单执行门——只允许本场景下发的工具（防注入工具名执行未下发工具）
           var allowed = {};
           for (var di = 0; di < toolDefs.length; di++) allowed[toolDefs[di].function.name] = true;
@@ -17061,6 +17065,9 @@ self.onmessage = function (e) {
             // 'thinking' 每轮 request 前发出；意图轮已非流式、工具轮 content 为空，轮间不再有残留文本进回复气泡——
             // 回复气泡只在最终答复开始流式时才创建（ensureReplyBubble），此分支现为防御性保留
             if (s === 'thinking' && replyBubble) { replyBubble.textContent = ''; replyBubble._streamNode = null; }
+            // 工具轮结束信号：本轮模型在 tool_calls 前吐的过程性文本（如"好的，我先查看当前块"）已流进回复气泡，
+            // 立即移除并置空——最终答复轮会惰性重建（ensureReplyBubble），消除"先文本后工具"的视觉错序
+            if (s === 'turn:tool' && replyBubble) { replyBubble.remove(); replyBubble = null; }
             // 'loop_limit'/'error' 由 onReply 收尾
           },
           onTool: (t) => {

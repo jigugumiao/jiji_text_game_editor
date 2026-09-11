@@ -212,6 +212,16 @@
     return { chars: delta, lines: lines, wholeBlock: !!wholeBlock, block: blockName };
   }
 
+  // ===== Task 9: 变量工具辅助 =====
+  // 变量格式 {name, type:'number'|'text'|'boolean', value}（storage.js:602）；
+  // 命名规则同 editor.js:2886：字母/数字/下划线/中文，不得数字开头。
+  function validVarName(name) {
+    return /^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(String(name));
+  }
+  function getVarsArr() {
+    return Agent.toolsDeps.getVars ? Agent.toolsDeps.getVars() : [];
+  }
+
   var tools = {
     get_current_block: function () {
       if (!Agent.toolsDeps.getActiveBlock) return { error: '编辑器未就绪' };
@@ -275,6 +285,92 @@
     apply_review_marker: function (a) {
       // 占位：复用审阅标记管线（Task 10 关联创作辅助时接通 editor 侧 applyGeneratedBlocks/审阅写入）
       return { error: 'apply_review_marker 待 UI 接线' };
+    },
+    // ===== Task 9: 变量工具（直接读写 master 现有格式，经 toolsDeps.getVars/saveVars 注入） =====
+    // 直接变更注入的变量数组；destructive 仅 delete_var 标记（变量写入不走 sessionWrites 撤销）
+    list_vars: function () {
+      return getVarsArr();
+    },
+    read_var: function (a) {
+      var name = a && a.name;
+      var arr = getVarsArr();
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i].name === name) return { name: arr[i].name, type: arr[i].type, value: arr[i].value };
+      }
+      return { error: '未找到变量「' + name + '」' };
+    },
+    create_var: function (a) {
+      var name = a && a.name;
+      if (!validVarName(name)) return { error: '变量名只能 字母/数字/下划线/中文 且不能数字开头' };
+      var type = (a && a.type === 'text') || (a && a.type === 'boolean') ? a.type : 'number';
+      var arr = getVarsArr();
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i].name === name) return { error: '已存在同名变量「' + name + '」' };
+      }
+      var value = a && a.value !== undefined ? a.value : (type === 'number' ? 0 : type === 'boolean' ? false : '');
+      if (type === 'number') {
+        value = Number(value);
+        if (isNaN(value)) return { error: '初始值必须是数值' };
+      } else if (type === 'boolean') {
+        value = (value === true || value === 'true' || value === 1 || value === '1');
+      } else {
+        value = String(value);
+      }
+      var created = { name: name, type: type, value: value };
+      var next = arr.slice();
+      next.push(created);
+      if (Agent.toolsDeps.saveVars) Agent.toolsDeps.saveVars(next);
+      return { ok: true, name: created.name, type: created.type, value: created.value };
+    },
+    delete_var: function (a) {
+      var name = a && a.name;
+      var arr = getVarsArr();
+      var found = -1;
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i].name === name) { found = i; break; }
+      }
+      if (found < 0) return { error: '未找到变量「' + name + '」' };
+      var next = arr.slice();
+      next.splice(found, 1);
+      if (Agent.toolsDeps.saveVars) Agent.toolsDeps.saveVars(next);
+      return { ok: true, name: name, destructive: true };
+    },
+    set_var: function (a) {
+      var name = a && a.name;
+      var arr = getVarsArr();
+      var v = null;
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i].name === name) { v = arr[i]; break; }
+      }
+      if (!v) return { error: '未找到变量「' + name + '」' };
+      var val = a && a.value;
+      if (v.type === 'number') {
+        // 先算后验：失败路径不得把 NaN 写进变量库（否则后续 update_var 会带着 NaN 继续）
+        var n = Number(val);
+        if (isNaN(n)) return { error: 'number 类型变量必须赋数值' };
+        v.value = n;
+      } else if (v.type === 'boolean') {
+        v.value = (val === true || val === 'true' || val === 1 || val === '1');
+      } else {
+        v.value = String(val);
+      }
+      if (Agent.toolsDeps.saveVars) Agent.toolsDeps.saveVars(arr);
+      return { ok: true, name: v.name, value: v.value };
+    },
+    update_var: function (a) {
+      var name = a && a.name;
+      var arr = getVarsArr();
+      var v = null;
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i].name === name) { v = arr[i]; break; }
+      }
+      if (!v) return { error: '未找到变量「' + name + '」' };
+      if (v.type !== 'number') return { error: '只有 number 类型支持加减' };
+      var d = Number(a && a.delta);
+      if (isNaN(d)) return { error: 'delta 必须是数值' };
+      v.value = (a && a.op === '-') ? v.value - d : v.value + d;
+      if (Agent.toolsDeps.saveVars) Agent.toolsDeps.saveVars(arr);
+      return { ok: true, name: v.name, value: v.value };
     },
   };
   Agent.tools = tools;

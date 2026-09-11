@@ -245,4 +245,42 @@ function callTool(name, args) {
   assert.equal(JSON.stringify(committed), JSON.stringify([['B', '旧']]), 'undo 用 before 还原');
   assert.equal(ctx.Agent.sessionWrites.length, 0, '还原后出栈');
 }
+// ===== Task 9: 变量工具（直接读写 master 现有格式） =====
+// 变量格式 {name, type:'number'|'text'|'boolean', value}；命名 /^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/（不得数字开头）
+// 注：变量工具直接经 toolsDeps.getVars/saveVars 读写（Task 7 风格直接赋值 toolsDeps）；
+// 跨 realm 数组/对象不可 deepEqual，用 JSON.stringify / 取值 primitive 比较。
+function mockVars(initial) {
+  let vars = initial || [];
+  ctx.Agent.toolsDeps = {
+    getVars: () => vars,
+    saveVars: (arr) => { vars = arr; },
+  };
+  return () => vars;
+}
+{
+  const m = mockVars([{ name: '金币', type: 'number', value: 10 }]);
+  const lv = JSON.stringify(ctx.Agent.tools.list_vars());
+  assert.ok(lv.indexOf('金币') >= 0 && lv.indexOf('10') >= 0, 'list_vars 返回全部变量');
+  const rv = ctx.Agent.tools.read_var({ name: '金币' });
+  assert.equal(rv.name, '金币', 'read_var 命中');
+  assert.ok(ctx.Agent.tools.read_var({ name: '没有' }).error, '不存在的变量报错');
+}
+{
+  const m = mockVars([]);
+  const r = ctx.Agent.tools.create_var({ name: '金币', type: 'number', value: 100 });
+  assert.ok(r.ok);
+  assert.equal(m()[0].name, '金币', 'create_var 写入');
+  assert.ok(ctx.Agent.tools.create_var({ name: '1bad', type: 'number', value: 1 }).error, '数字开头拒绝');
+  assert.ok(ctx.Agent.tools.create_var({ name: '金币', type: 'number', value: 1 }).error, '重名拒绝');
+}
+{
+  const m = mockVars([{ name: '金币', type: 'number', value: 10 }]);
+  ctx.Agent.tools.set_var({ name: '金币', value: 50 });
+  assert.equal(m()[0].value, 50, 'set_var 更新');
+  assert.ok(ctx.Agent.tools.set_var({ name: '金币', value: 'abc' }).error, 'number 类型拒绝非数值');
+  ctx.Agent.tools.update_var({ name: '金币', op: '+', delta: 10 });
+  assert.equal(m()[0].value, 60, 'update_var 加');
+  ctx.Agent.tools.delete_var({ name: '金币' });
+  assert.equal(m().length, 0, 'delete_var 删除');
+}
 console.log('agent.test.js OK');

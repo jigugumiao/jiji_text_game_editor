@@ -7482,6 +7482,8 @@ self.onmessage = function (e) {
     agentStopping = false;
     agentStarted = false;
     agentBusy = false;
+    // 清空跨工程遗留的会话写入记录（sessionWrites 是 Agent 模块级，切工程必须重置，否则撤销/忽略会污染新工程）
+    if (window.Agent && window.Agent.sessionWrites) window.Agent.sessionWrites.length = 0;
     const box = $('#agent-messages');
     if (box) box.innerHTML = '';
     const startWrap = $('#agent-start-wrap');
@@ -7512,9 +7514,10 @@ self.onmessage = function (e) {
     const parts = [];
     for (const k in args) {
       if (Object.prototype.hasOwnProperty.call(args, k)) {
-        let v = args[k];
-        if (typeof v === 'string' && v.length > 40) v = v.slice(0, 40) + '…';
-        parts.push(k + '=' + JSON.stringify(v));
+        // 统一先序列化再截断（对象/数组等非字符串参数也可能超长，不能只截字符串）
+        let v = JSON.stringify(args[k]);
+        if (typeof v === 'string' && v.length > 80) v = v.slice(0, 80) + '…';
+        parts.push(k + '=' + v);
       }
     }
     return name + (parts.length ? '（' + parts.join(' ') + '）' : '') + ' → 已执行';
@@ -7612,7 +7615,7 @@ self.onmessage = function (e) {
     try {
       await window.Agent.runLoop({
         userText: userText,
-        history: hist,
+        history: hist.slice(0, -1), // hist 已含刚 push 的当前 userText（:7606），runLoop 还会把 userText 拼到历史末尾——去掉末条避免当前请求重复发两次
         activeScenario: undefined, // 每轮都走意图识别（polish/rewrite/design/vars/general）
         callbacks: {
           onStatus: (s) => {
@@ -7646,9 +7649,12 @@ self.onmessage = function (e) {
                 card.remove();
               });
               card.querySelector('.agent-diff-ignore').addEventListener('click', () => {
-                const shifted = window.Agent.sessionWrites.shift();
+                // 多张 diff 卡待定时，sessionWrites[0] 未必是这张卡的 rec——按引用定位移除，不能 shift 顶部
+                const list = window.Agent.sessionWrites;
+                const idx = list.indexOf(rec);
+                if (idx >= 0) list.splice(idx, 1);
                 card.remove();
-                agentAppendToolBubble(shifted && shifted.block === rec.block ? '🗑️ 已忽略对《' + rec.block + '》的修改' : '🗑️ 已忽略');
+                agentAppendToolBubble('🗑️ 已忽略对《' + rec.block + '》的修改');
               });
               // (destructive level: 同一卡片追加红色警示 + 确认删除按钮，见下)
               if (rec.level === 'destructive') { /* destructive 与 preview 同卡，额外警示 */ }
@@ -7673,9 +7679,11 @@ self.onmessage = function (e) {
             let shown = text;
             if (agentStopping && String(text || '').indexOf('出错了：') === 0) shown = '已停止';
             replyBubble.textContent = shown; // 覆盖流式内容（同 FTA 收尾语义），工具气泡留在 DOM 原位
-            const h = agentLoadHistory();
-            h.push({ role: 'assistant', content: shown });
-            agentSaveHistory(h);
+            if (shown !== '已停止') { // 停止/中止提示不入历史，避免下轮当正文回喂模型
+              const h = agentLoadHistory();
+              h.push({ role: 'assistant', content: shown });
+              agentSaveHistory(h);
+            }
             agentStopping = false;
           },
           onConfirm: async (info) => {
@@ -7709,11 +7717,17 @@ self.onmessage = function (e) {
             const decision = new Promise((resolve) => {
               ok.addEventListener('click', () => { resolve(true); el.remove(); }, { once: true });
               no.addEventListener('click', () => { resolve(false); el.remove(); }, { once: true });
+              // 用户点「停止」/关闭面板 → abort → 立即视为取消；否则停止后卡片仍存活，之后点确认会真的执行删除
+              if (agentAbort && agentAbort.signal) {
+                const onAbort = () => { resolve(false); el.remove(); };
+                if (agentAbort.signal.aborted) onAbort();
+                else agentAbort.signal.addEventListener('abort', onAbort, { once: true });
+              }
+              // 120s 超时视为取消：timer 必须在 executor 内定义（executor 外引用 resolve 会 ReferenceError、promise 悬挂）；句柄存 el 供外层 clearTimeout
+              el._agentTimer = setTimeout(() => { resolve(false); el.remove(); }, 120000);
             });
-            // 会话已切换（gen 变化）或用户点了停止 → 视为取消
-            const timer = setTimeout(() => { if (myGen === agentSessionGen) { resolve(false); el.remove(); } }, 120000);
             const v = await decision;
-            clearTimeout(timer);
+            clearTimeout(el._agentTimer);
             return v;
           },
         },
@@ -7764,12 +7778,15 @@ self.onmessage = function (e) {
   }
   // Agent 写回唯一入口：程序化改文统一走 pushHistory + commitEdit，保证可撤销、可落盘
   function commitAgentWrite(block, text) {
-    pushHistory(); // 程序化改文前必须入栈，否则不可撤销
     const curBlock = (StoryEditorApi.getActiveBlock && StoryEditorApi.getActiveBlock()) || '主剧情';
     if (block === curBlock) {
+      if (storyText.value === text) return; // 无变化不动作（也不入撤销栈）
+      pushHistory(); // 程序化改文前必须入栈，否则不可撤销
       storyText.value = text; // 触发 value 钩子（刷新行号 editor.js:1617）
       commitEdit(); // deviation from plan snippet：.value 赋值不会触发 input 事件，必须手动 commit 才会保存当前块
     } else {
+      // 非当前块：不入编辑器 undo 栈（pushHistory 的快照是当前块文本，会污染 Ctrl+Z 恢复目标）；
+      // 该写入的撤销由 Agent.sessionWrites 覆盖（agentAttachUndo → undoWrite）
       window.Storage.setBlockText(block, text);
       // 若该块当前在编辑器打开则刷新（按需，最小实现：不强制刷新其它块）
     }

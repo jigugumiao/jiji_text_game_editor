@@ -859,5 +859,28 @@ function mockBlocks() {
     assert.equal(last.role, 'user');
     assert.equal(last.content, '润色');
   }
+  {
+    // Important 1（Task 15 review 修复）：生产调用形状——agentSend 先 push 当前 userText 到历史再整体传入，
+    // history 最后一条与 opts.userText 相同。runLoop 不得让当前 userText 重复出现在请求中（重复=token 浪费）。
+    const captured = [];
+    const req = (messages) => {
+      captured.push(messages.map(m => m.role + ':' + String(m.content)));
+      return { content: '好', toolCalls: null };
+    };
+    await ctx.Agent.runLoop({
+      userText: '继续写',
+      activeScenario: 'polish',
+      history: [
+        { role: 'user', content: '第一轮' },
+        { role: 'assistant', content: '答' },
+        { role: 'user', content: '继续写' }, // 最后一条与 userText 相同（agentSend 形状）
+      ],
+      callbacks: { onReply: () => {} },
+    }, { request: req, buildCtx: () => ({}) });
+    const msgs = captured[0];
+    const userCount = msgs.filter(m => m.indexOf('user:继续写') >= 0).length;
+    assert.equal(userCount, 1, '当前 userText 不得重复出现在请求中');
+    assert.equal(msgs[msgs.length - 1], 'user:继续写', '当前 userText 仍在最后');
+  }
   console.log('agent.test.js OK');
 })().catch(e => { console.error(e); process.exit(1); });

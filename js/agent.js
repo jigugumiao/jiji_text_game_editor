@@ -189,6 +189,10 @@
             }
           }
           if (histMsgs.length) {
+            // 去重兜底：调用方（editor.js agentSend）先 push 当前 userText 到历史再整体传入（agentSend 习惯形状），
+            // 末条 user 消息与 opts.userText 相同属同一内容——去掉，避免当前请求把 userText 重复发两次（token 浪费）。
+            var lastHist = histMsgs[histMsgs.length - 1];
+            if (lastHist.role === 'user' && lastHist.content === opts.userText) histMsgs.pop();
             messages.splice.apply(messages, [messages.length - 1, 0].concat(histMsgs));
           }
         }

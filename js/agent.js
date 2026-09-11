@@ -112,6 +112,133 @@
     },
   };
 
+  // ===== Task 7: 文档编辑工具纯函数 =====
+  // 工具不碰 DOM/localStorage，所有外部依赖经 toolsDeps 由 UI/runLoop 运行时注入
+  Agent.toolsDeps = {
+    getActiveBlock: null,   // () => {name, text}
+    listBlocks: null,       // () => [names]
+    getBlockText: null,     // (name) => text|null
+    fullText: null,         // () => 全文
+    settings: null,         // () => 创作设定文本
+    getVars: null, saveVars: null,
+    // ...结构/素材组后续加
+  };
+
+  // 文本操作核心（纯函数）：findAnchor（行号/文本锚定，精确优先、模糊回退）+ applyInsert + computeImpact
+  // 注（Task 7 实现时修正的计划代码缺陷）：before/after 语义为「在锚点行前/后插入一整行」——
+  // 因此 findAnchor 的 end 一律为锚点内容的末尾（不含行尾换行），并返回锚点所在行号 lineNo；
+  // applyInsert 的 before/after 按行拼接（split/splice/join），replace 仍按字符区间精确替换。
+  function findAnchor(text, anchor, anchorType) {
+    if (anchorType === 'line') {
+      var lines = text.split('\n');
+      var idx = (typeof anchor === 'number' ? anchor : parseInt(anchor, 10)) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= lines.length) return { error: '行号超出范围（共 ' + lines.length + ' 行）' };
+      var start = 0;
+      for (var i = 0; i < idx; i++) { start += lines[i].length + 1; }
+      var end = start + lines[idx].length;
+      return { start: start, end: end, line: lines[idx], lineNo: idx + 1 };
+    }
+    var q = String(anchor);
+    var idxExact = text.indexOf(q);
+    if (idxExact >= 0) {
+      return { start: idxExact, end: idxExact + q.length, lineNo: text.slice(0, idxExact).split('\n').length };
+    }
+    // 模糊回退：去空白后包含匹配（取首个）
+    var qTrim = q.replace(/\s+/g, '');
+    var tTrim = text.replace(/\s+/g, '');
+    var pos = tTrim.indexOf(qTrim);
+    if (pos >= 0) {
+      // 把压缩串里的偏移映射回原文本偏移：逐步累加原字符，跳过空白
+      var cursor = 0, mapped = 0;
+      while (cursor < qTrim.length) {
+        while (text[mapped] && /\s/.test(text[mapped])) mapped++;
+        if (text[mapped] !== qTrim[cursor]) { mapped++; continue; }
+        cursor++; mapped++;
+      }
+      var s = mapped - qTrim.length;
+      return { start: s, end: mapped, lineNo: text.slice(0, s).split('\n').length, fuzzy: true };
+    }
+    return { error: '未找到锚点「' + q.slice(0, 40) + '」' };
+  }
+
+  function applyInsert(text, pos, ins, mode) {
+    if (mode === 'replace') return text.slice(0, pos.start) + ins + text.slice(pos.end);
+    // before/after：在锚点所在行（lineNo，1 起）之前/之后插入一整行
+    var lines = text.split('\n');
+    if (mode === 'after') lines.splice(pos.lineNo, 0, ins);
+    else lines.splice(pos.lineNo - 1, 0, ins); // before 默认
+    return lines.join('\n');
+  }
+
+  function computeImpact(blockName, resultText, wholeBlock) {
+    var lines = resultText.split('\n').length;
+    return { chars: resultText.length, lines: lines, wholeBlock: !!wholeBlock, block: blockName };
+  }
+
+  var tools = {
+    get_current_block: function () {
+      if (!Agent.toolsDeps.getActiveBlock) return { error: '编辑器未就绪' };
+      var b = Agent.toolsDeps.getActiveBlock();
+      return { blockName: b.name, text: b.text };
+    },
+    list_blocks: function () {
+      return Agent.toolsDeps.listBlocks ? Agent.toolsDeps.listBlocks() : [];
+    },
+    read_block: function (a) {
+      var t = Agent.toolsDeps.getBlockText && Agent.toolsDeps.getBlockText(a.blockName);
+      if (t === null || t === undefined) {
+        var names = (Agent.toolsDeps.listBlocks ? Agent.toolsDeps.listBlocks() : []).join('、');
+        return { error: '未找到剧情块「' + a.blockName + '」，可用块：' + names };
+      }
+      return { blockName: a.blockName, text: t };
+    },
+    search_in_doc: function (a) {
+      var q = String(a.query || '');
+      if (!q) return { error: 'query 不能为空' };
+      var out = [];
+      var names = Agent.toolsDeps.listBlocks ? Agent.toolsDeps.listBlocks() : [];
+      for (var i = 0; i < names.length && out.length < 20; i++) {
+        var t = Agent.toolsDeps.getBlockText(names[i]);
+        if (!t) continue;
+        var lines = t.split('\n');
+        for (var j = 0; j < lines.length && out.length < 20; j++) {
+          if (lines[j].indexOf(q) >= 0) out.push({ block: names[i], lineNo: j + 1, snippet: lines[j] });
+        }
+      }
+      return out;
+    },
+    read_full_text: function () {
+      var t = Agent.toolsDeps.fullText ? Agent.toolsDeps.fullText() : '';
+      if (t.length > 50000) return { error: '全文过长（' + t.length + ' 字符），建议用 read_block 按块读取' };
+      return { text: t };
+    },
+    read_settings: function () {
+      return { settings: Agent.toolsDeps.settings ? Agent.toolsDeps.settings() : '' };
+    },
+    append_to_block: function (a) {
+      if (!a.blockName || a.text === undefined) return { error: '缺少 blockName 或 text' };
+      var t = Agent.toolsDeps.getBlockText && Agent.toolsDeps.getBlockText(a.blockName);
+      if (t === null || t === undefined) return { error: '未找到剧情块「' + a.blockName + '」' };
+      var result = t + (t && !t.endsWith('\n') && !String(a.text).startsWith('\n') ? '\n' : '') + String(a.text);
+      return { ok: true, block: a.blockName, resultText: result, impact: computeImpact(a.blockName, result, false) };
+    },
+    insert_at: function (a) {
+      if (!a.blockName || a.anchor === undefined || a.text === undefined) return { error: '缺少 blockName/anchor/text' };
+      var t = Agent.toolsDeps.getBlockText && Agent.toolsDeps.getBlockText(a.blockName);
+      if (t === null || t === undefined) return { error: '未找到剧情块「' + a.blockName + '」' };
+      var mode = a.mode || 'before';
+      var pos = findAnchor(t, a.anchor, a.anchorType || 'text');
+      if (pos.error) return { error: pos.error };
+      var result = applyInsert(t, pos, String(a.text), mode);
+      return { ok: true, block: a.blockName, resultText: result, impact: computeImpact(a.blockName, result, false) };
+    },
+    apply_review_marker: function (a) {
+      // 占位：复用审阅标记管线（Task 10 关联创作辅助时接通 editor 侧 applyGeneratedBlocks/审阅写入）
+      return { error: 'apply_review_marker 待 UI 接线' };
+    },
+  };
+  Agent.tools = tools;
+
   if (typeof module !== 'undefined' && module.exports) module.exports = Agent;
   if (typeof window !== 'undefined') window.Agent = Agent;
   // vm 测试沙箱（Node 无 window / module）下挂到 globalThis，供 runInContext 提取场景表

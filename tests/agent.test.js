@@ -119,4 +119,63 @@ assert.equal(ctx.Agent.classifyWrite({ chars: 10, lines: 1, wholeBlock: true }),
 assert.equal(ctx.Agent.classifyWrite({ chars: 10, lines: 1, wholeBlock: false, destructive: true }), 'destructive');
 assert.equal(ctx.Agent.classifyWrite({ destructive: true }), 'destructive', '缺字段也要判 destructive');
 
+// ===== Task 7: 文档编辑工具纯函数（Agent.tools / toolsDeps / textOps） =====
+// 注：tools 返回的对象/数组都来自 vm 沙箱 realm，数组/对象不能 deepEqual，用 join 转 primitive 比较
+function mockDeps() {
+  return {
+    getActiveBlock: () => ({ name: '第一章', text: '第一行\n第二行\n第三行' }),
+    listBlocks: () => ['第一章', '第二章'],
+    getBlockText: (n) => n === '第一章' ? '第一行\n第二行\n第三行' : n === '第二章' ? '甲\n乙' : null,
+    fullText: () => '第一章:第一行\n第二行\n第三行\n第二章:甲\n乙',
+    settings: () => '世界观：魔都',
+  };
+}
+function callTool(name, args) {
+  const deps = mockDeps();
+  ctx.Agent.toolsDeps = deps;
+  return ctx.Agent.tools[name](args || {});
+}
+
+// 只读
+{
+  const r = callTool('get_current_block', {});
+  assert.equal(r.blockName, '第一章');
+  assert.equal(r.text, '第一行\n第二行\n第三行');
+}
+{
+  // 跨 realm 数组不可 deepEqual → join 转 primitive
+  assert.equal(callTool('list_blocks', {}).join(','), '第一章,第二章');
+  assert.equal(callTool('read_block', { blockName: '第二章' }).text, '甲\n乙');
+  assert.ok(String(callTool('read_block', { blockName: '不存在' }).error).indexOf('不存在') >= 0);
+}
+{
+  const hits = callTool('search_in_doc', { query: '第二行' });
+  assert.ok(Array.isArray(hits) && hits.length >= 1 && hits[0].snippet.indexOf('第二行') >= 0);
+}
+
+// 写：文本操作 + impact
+{
+  const r = callTool('append_to_block', { blockName: '第一章', text: '第四行' });
+  assert.ok(r.ok);
+  assert.equal(r.impact.wholeBlock, false);
+  assert.ok(r.impact.chars > 0);
+}
+{
+  const r = callTool('insert_at', { blockName: '第一章', anchor: 2, text: '插入行', mode: 'after', anchorType: 'line' });
+  assert.equal(r.resultText, '第一行\n第二行\n插入行\n第三行', '按行号 after 插入');
+}
+{
+  const r = callTool('insert_at', { blockName: '第一章', anchor: '第二行', text: 'X', mode: 'replace', anchorType: 'text' });
+  assert.equal(r.resultText, '第一行\nX\n第三行', '原文精确匹配替换');
+}
+{
+  const r = callTool('insert_at', { blockName: '第二章', anchor: '甲', text: '替换', mode: 'before', anchorType: 'text' });
+  assert.equal(r.resultText, '替换\n甲\n乙');
+}
+{
+  // 模糊回退：空白差异也能定位
+  const r = callTool('insert_at', { blockName: '第一章', anchor: '第二行 ', text: 'Y', mode: 'after', anchorType: 'text' });
+  assert.equal(r.resultText, '第一行\n第二行\nY\n第三行', '去空白模糊匹配');
+}
+
 console.log('agent.test.js OK');

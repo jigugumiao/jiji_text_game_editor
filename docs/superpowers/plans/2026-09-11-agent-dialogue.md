@@ -1268,7 +1268,16 @@ git commit -m "feat(agent): asset metadata tools (list/rename/delete/export)"
 5. 工具结果中含 `resultText` 的写操作 → `applyAgentWrite` → `onWrite(rec)`（UI 据此分级渲染）
 6. 任何一步抛错 → onStatus('error', msg)
 
-工具定义（functions 数组）由场景白名单过滤生成：`buildToolDefs(scenario)` 从固定 `TOOL_DEFS` 常量取（name/description/parameters），白名单为 `['*']` 时全量。
+工具定义（functions 数组）由场景白名单过滤生成：`buildToolDefs(scenario)` 从固定 `TOOL_DEFS` 常量取（name/description/parameters）。
+**tools 语义（§4.4 已定，Task 3 open item 关闭）**：场景表 `tools` 空数组 = 全部工具可用（默认全量，rewrite/design/vars/general）；非空 = 仅白名单（硬裁剪，polish 唯一显式白名单）。
+```js
+buildToolDefs: function (scenario) {
+  var sc = Object.prototype.hasOwnProperty.call(AGENT_SCENARIOS, scenario) ? AGENT_SCENARIOS[scenario] : AGENT_SCENARIOS.general;
+  var allow = sc.tools || [];
+  var names = (!allow.length || allow.indexOf('*') >= 0) ? Object.keys(Agent.tools) : allow;
+  return names.filter(function (n) { return TOOL_DEFS[n]; }).map(function (n) { return TOOL_DEFS[n]; });
+},
+```
 
 - [ ] **Step 1: 追加失败测试**
 

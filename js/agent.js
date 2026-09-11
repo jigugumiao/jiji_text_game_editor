@@ -253,6 +253,10 @@
             cb.onReply && cb.onReply(text);
             return { scenario: scenario, rounds: rounds, finalText: text };
           }
+          // 工具轮判定成立后立即通知 UI：本轮是工具调用轮。模型在 tool_calls 前吐的过程性 content
+          // （如"好的，我先查看当前剧情块"）已流进回复气泡（editor.js request 封装 onToken 无条件渲染），
+          // UI 收到此信号应移除该气泡——否则出现"先文本后工具"的视觉错序；最终答复轮会重新创建气泡。
+          cb.onStatus && cb.onStatus('turn:tool');
           // C2：白名单执行门——只允许本场景下发的工具（防注入工具名执行未下发工具）
           var allowed = {};
           for (var di = 0; di < toolDefs.length; di++) allowed[toolDefs[di].function.name] = true;

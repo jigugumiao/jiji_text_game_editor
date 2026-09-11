@@ -7878,6 +7878,9 @@ self.onmessage = function (e) {
             // 'thinking' 每轮 request 前发出；意图轮已非流式、工具轮 content 为空，轮间不再有残留文本进回复气泡——
             // 回复气泡只在最终答复开始流式时才创建（ensureReplyBubble），此分支现为防御性保留
             if (s === 'thinking' && replyBubble) { replyBubble.textContent = ''; replyBubble._streamNode = null; }
+            // 工具轮结束信号：本轮模型在 tool_calls 前吐的过程性文本（如"好的，我先查看当前块"）已流进回复气泡，
+            // 立即移除并置空——最终答复轮会惰性重建（ensureReplyBubble），消除"先文本后工具"的视觉错序
+            if (s === 'turn:tool' && replyBubble) { replyBubble.remove(); replyBubble = null; }
             // 'loop_limit'/'error' 由 onReply 收尾
           },
           onTool: (t) => {

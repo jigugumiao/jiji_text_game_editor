@@ -603,6 +603,7 @@ function mockBlocks() {
     assert.ok(calls.length >= 3, '至少 intent + tool + answer 三轮');
     assert.equal(calls[0].length, 2, '意图轮消息最简（system + user）');
     assert.ok(statuses.indexOf('scenario:polish') >= 0, '发出 scenario:polish 状态');
+    assert.ok(statuses.indexOf('turn:tool') >= 0, '工具轮发出 turn:tool 信号（UI 据此移除工具轮废话气泡）');
     assert.ok(toolEvents.indexOf('get_current_block') >= 0, 'onTool 上报工具名');
     assert.ok(toolResults.some((r) => r && r.blockName === '第一章'), 'onTool 在工具执行后上报并携带 result（含真实返回数据）');
     assert.equal(replies.join(','), '最终答复', '最终答复回调 onReply');
@@ -621,6 +622,7 @@ function mockBlocks() {
     }, { request: fakeRequest, buildCtx: () => ({}) });
     assert.ok(calls[0][0].content.indexOf('局部改稿') >= 0, '首轮即 polish 场景提示词（无意图轮）');
     assert.ok(statuses.indexOf('intent') < 0, '延续语不触发意图轮');
+    assert.ok(statuses.indexOf('turn:tool') < 0, '纯答复轮不发 turn:tool');
     assert.equal(res.scenario, 'polish', '场景沿用 polish');
     assert.equal(replies.join(','), '好的，继续写。');
   }

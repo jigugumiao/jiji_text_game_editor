@@ -1098,6 +1098,9 @@ __STORY_DATA__
 
   // 初始化开始界面
   (function(){
+    // 标题屏初始化整体兜底：任何异常（如 openingMusic/authorId 等元数据非字符串导致 .trim() 抛错）
+    // 只记录日志，绝不阻断下方 preloadAll —— 否则加载层会永久停在初始文本「加载：0.00 / 0.00 MB」。
+    try {
     const g = DATA.global || {};
     const title = g.gameName || '';
     document.getElementById('start-title').textContent = title;
@@ -1125,7 +1128,7 @@ __STORY_DATA__
     // 开场标题界面音乐：循环播放，直到点「开始游戏」时停止
     function startOpeningMusic() {
       if (openingAudio) return;
-      const name = (g.openingMusic || '').trim();
+      const name = String(g.openingMusic || '').trim();
       if (!name) return;
       const a = findAsset('music', { name: name });
       if (a && a.src) {
@@ -1158,10 +1161,13 @@ __STORY_DATA__
     startOpeningMusic();
     if (!openingAudio) document.addEventListener('pointerdown', onFirstGesture, true);
     // 作者信息：仅以文字展示在开始游戏下方（不再提供跳转个人空间的按钮）
-    const authorId = (g.authorId || '').trim();
+    const authorId = String(g.authorId || '').trim();
     if (authorId) {
       const aEl = document.getElementById('start-author');
       if (aEl) aEl.textContent = '作者：' + authorId;
+    }
+    } catch (e) {
+      try { console.log('[runtime] 标题屏初始化异常（已忽略，不影响加载）：' + (e && e.message ? e.message : e)); } catch (e2) {}
     }
     // 估算 dataURL 解码后的字节数（用于加载进度 MB 显示）；外置相对路径无法估算返回 0
     function b64Bytes(url){

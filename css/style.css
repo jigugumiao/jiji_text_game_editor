@@ -1589,6 +1589,13 @@ body.dark #fta-send.fta-stop:hover { background: #c93c3c; border-color: #c93c3c;
 .fta-actions .btn .ico { width: 15px; height: 15px; }
 body.dark .fta-messages { background: var(--bg-sunken); }
 .fta-box.hidden, #fulltext-assistant.hidden { display: none; }
+/* Agent 对话与全文助理同构，必须补齐等尺寸规则：通用 .modal-box 仅 380px 且无高度限制，
+   会导致窗口过小、消息区无滚动、内容撑破整页出界 */
+#agent-assistant { align-items: center; justify-content: center; }
+#agent-assistant .fta-box {
+  width: 720px; max-width: 94vw; height: 82vh; max-height: 820px;
+  display: flex; flex-direction: column; padding: 0; overflow: hidden;
+}
 
 /* ===== Agent 对话（分级写入预览/确认） ===== */
 .agent-diff-card {

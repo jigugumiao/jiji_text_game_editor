@@ -1654,10 +1654,13 @@
         if (k === 's') { e.preventDefault(); saveNow(); toast('已保存'); return; }
       }
       if (e.key === 'F12') { e.preventDefault(); openPreview(); }
-      // 右侧 Ctrl：按住=预览，松开=编辑
-      if (e.code === 'ControlRight' && !e.repeat) { setPreviewMode(true); }
+      // 右侧 Ctrl：按住=预览，松开=编辑（焦点在 AI 对话框内时忽略——Agent/全文助理输入不应触发画布预览）
+      const inAiDialog = (t) => t && t.closest && !!(t.closest('#agent-assistant') || t.closest('#fulltext-assistant'));
+      if (e.code === 'ControlRight' && !e.repeat && !inAiDialog(e.target)) { setPreviewMode(true); }
     });
     document.addEventListener('keyup', (e) => {
+      // keyup 不做对话框内判断：即使在对话框内按下（keydown 已忽略），无条件解除预览也安全（关闭无副作用，
+      // 且避免"框外按下→焦点移入框内→keyup 被忽略"导致预览卡在按住态）
       if (e.code === 'ControlRight') { setPreviewMode(false); }
     });
     // 窗口失焦时强制松开，避免卡在预览态

@@ -4,9 +4,9 @@ const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 
-assert.match(html, /id="app-version">v25\.4\.93</, '界面版本必须标记本次修复');
+assert.match(html, /id="app-version">v25\.4\.94</, '界面版本必须标记本次修复');
 assert.match(html, /js\/exporter\.js\?v=20260819-02/, '修复运行时后必须刷新 exporter.js 缓存标识');
-assert.match(html, /js\/editor\.js\?v=20260911-05/, 'Agent 工具显示顺序修复后必须刷新 editor.js 缓存标识');
+assert.match(html, /js\/editor\.js\?v=20260911-06/, 'Agent 对话框右 Ctrl 预览误触修复后必须刷新 editor.js 缓存标识');
 assert.match(html, /js\/storage\.js\?v=20260819-02/, '修改 storage.js 后必须刷新 storage.js 缓存标识');
 assert.match(html, /css\/style\.css\?v=20260911-03/, 'Agent 工具行可折叠样式后必须刷新 style.css 缓存标识');
 assert.match(html, /js\/ai\.js\?v=20260911-02/, 'callDeepseek 加 usage 透出后必须刷新 ai.js 缓存标识（旧缓存无 onUsage/stream_options）');

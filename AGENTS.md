@@ -44,11 +44,18 @@
 - 修改 Agent 逻辑后必跑：`node tests/agent.test.js` + `node tests/ai-tools.test.js`（agent.js 工具的 localStorage stub 约定见测试文件头）。
 - 文档：docs/agent-design.md（完整设计 14 节）。
 
+## 可视化剧情状态编辑器（2026-08-27 开发，codex/visual-story-state 分支；2026-09-13 并入 feature/agent）
+
+- 入口：编辑器顶部「可视化编辑 / 源码模式」切换按钮。选项语法唯一事实源是 `js/story-options.js`；`editor.js` 与 `exporter.js` 只能调用它。导出运行时由 `StoryOptions.buildRuntimeSource()` 注入。
+- 可视化模式必须通过 `StoryVisualDoc` 的原始 span 局部替换；切换模式和未编辑内容不得格式化或丢弃未知字段。
+- 旧项目转换（「转换为可视化项目」）只能复制到临时项目、校验、最后登记；源项目和当前项目指针不得在失败或成功前被改写。新项目写入 `visualEditorVersion:1` 与 `convertedFrom`。`js/project-converter.js` 是转换服务。
+- 变更选项/可视化 UI/转换逻辑后至少运行对应 focused test（story-options / story-visual-doc / visual-story-ui / project-converter / visual-options-runtime / story-state-management / context-menu-variable）、`tests/release-cache-bust.test.js` 与完整 `tests/*.test.js`；改动前端资源必须同步更新 `?v=` 与两个版本展示。
+
 ## 注意
 
 - `dist/`、`dist-test/` 是构建产物，已 gitignore；要更新线上 beta 页面时把 dist-test 内容拷贝到 `beta/` 提交推送即可。
 - tests/*.test.js 用 Node 直跑，无依赖；改动 js 后跑一遍全部测试 + 更新 index.html 的 `?v=` 缓存标识与 app-version（tests/release-cache-bust.test.js 断言精确版本串）。
-- 测试清单：agent / ai-tools / clearoverlay-editor / clearoverlay-runtime / no-blocking-google-fonts / option-condition / release-cache-bust / regression-string-raw-template / story-vars / var-conformance。
+- 测试清单：agent / ai-tools / clearoverlay-editor / clearoverlay-runtime / no-blocking-google-fonts / option-condition / project-converter / regression-string-raw-template / release-cache-bust / story-options / story-state-management / story-vars / story-visual-doc / var-conformance / visual-options-runtime / visual-story-ui。
 
 ## 已知陷阱（踩过的坑，防复发）
 
@@ -73,3 +80,8 @@
 - master 分支 `beta/` 是 `build_inline.py --test` 的构建产物（dist-test/），**每次重新构建都会从源码重新生成**。
 - 任何只改 `beta/index.html` 的修复，下次构建即丢失——**修复必须落在 `js/*.js`、`index.html`、`build_inline.py` 源码**，再重新构建发布。
 - 云端 beta 与本地源码分叉检测：下载 `https://jigugumiao.github.io/jiji_text_game_editor/beta/` 检查版本号与关键修复特征（如 `${'</scr' + 'ipt>'}` 数量）。
+
+### 多工具并行开发分叉（2026-09-13 约定，防再分叉）
+
+- 教训：Codex 在 codex/* 分支开发可视化编辑、DSH 在 feature/agent 开发 Agent 对话，两线从 v25.4.60 起长期并行，可视化功能从未合入主线，v25.4.88 发布 Agent 版 beta 时把可视化构建产物覆盖掉，功能"消失"半年（实为从未进主线）。
+- **约定：所有新功能无论哪个 AI 工具（Codex/DSH/其他）开发，统一以 `feature/agent` 为共同主线，开发分支完成即合并进 feature/agent，不得长期分叉；发布 beta 只从 feature/agent 构建。**

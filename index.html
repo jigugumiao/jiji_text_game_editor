@@ -19,7 +19,6 @@
   <symbol id="ic-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
   <symbol id="ic-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9h11a5 5 0 0 1 0 10h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="ic-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 9H9a5 5 0 0 0 0 10h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-  <symbol id="ic-split" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="4" x2="12" y2="20" stroke="currentColor" stroke-width="2"/></symbol>
   <symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
   <symbol id="ic-type" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="9" y1="20" x2="15" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="4" x2="12" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
   <symbol id="ic-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
@@ -112,11 +111,15 @@
         <span class="col-head-left">
           <button id="outline-reopen" class="mini-btn hidden" title="展开导航"><svg class="ico" aria-hidden="true"><use href="#ic-compass"/></svg>导航</button>
           <span id="current-block-chip" class="block-chip" title="当前正在编辑的剧情块，点击在右侧仓库切换">主剧情</span>
+          <span class="editor-mode-switch" role="group" aria-label="编辑器模式">
+            <button id="editor-mode-visual" type="button">可视化编辑</button>
+            <button id="editor-mode-source" type="button">源码模式</button>
+          </span>
+          <button id="visual-insert-menu" class="mini-btn" type="button" hidden>插入</button>
           <button id="btn-undo" class="icon-btn" title="撤销 (Ctrl+Z)" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-undo"/></svg></button>
           <button id="btn-redo" class="icon-btn" title="重做 (Ctrl+Y)" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-redo"/></svg></button>
         </span>
         <span class="col-head-right">
-          <button id="btn-split" class="mini-btn" title="左写右渲分屏预览" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-split"/></svg>分屏</button>
           <button id="btn-bbcode-preview" class="mini-btn" title="切换 BBCode 预览模式" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>预览</button>
           <button id="btn-bbcode-toggle" class="mini-btn" title="显示/隐藏文字工具栏"><svg class="ico" aria-hidden="true"><use href="#ic-type"/></svg>文字工具</button>
           <button id="btn-ai-quick" class="mini-btn" title="AI 编剧：点击展开 AI 菜单（含全文助理、续写、扩写、润色等）" type="button"><svg class="ico" aria-hidden="true"><use href="#ic-sparkles"/></svg>AI</button>
@@ -136,6 +139,7 @@
         <div id="word-count" class="word-count">总字数：0</div>
         <div id="block-review-line" class="block-review-line"></div>
       </div>
+      <div id="story-visual-editor" class="story-visual-editor" hidden></div>
       <div id="story-preview" class="story-preview hidden"></div>
       <button id="todo-fab" class="todo-fab" type="button" title="素材待办：查看文字里召唤、但素材库还没有的素材"><svg class="ico" aria-hidden="true"><use href="#ic-clipboard"/></svg><span class="todo-fab-txt">待办</span><span id="todo-badge" class="todo-badge" hidden>0</span></button>
       <div id="todo-panel" class="todo-panel hidden">
@@ -260,6 +264,17 @@
       <button id="new-project-cancel" class="btn btn-ghost">取消</button>
       <button id="new-project-create" class="btn btn-primary">创建</button>
     </div>
+  </div>
+</div>
+
+<!-- 旧项目转换：始终复制到新项目，不会修改原项目 -->
+<div id="project-convert-modal" class="modal hidden">
+  <div class="modal-box project-convert-box">
+    <div class="new-project-head"><span class="new-project-title">转换为可视化项目</span><button class="modal-x" id="project-convert-x" title="关闭">✕</button></div>
+    <p class="project-convert-copy">将创建一份独立副本；原项目和素材不会被修改。</p>
+    <div class="new-project-field"><label class="new-project-label">新项目名称</label><input id="project-convert-name" class="new-project-input" maxlength="60"></div>
+    <div id="project-convert-status" class="project-convert-status" aria-live="polite"></div>
+    <div class="modal-box-actions"><button id="project-convert-cancel" class="btn btn-ghost">取消</button><button id="project-convert-run" class="btn btn-primary">开始转换</button></div>
   </div>
 </div>
 
@@ -406,7 +421,11 @@
 
 <script src="js/zip.js?v=20260722-60"></script>
 <script src="js/storage.js?v=20260912-01"></script>
+<script src="js/project-converter.js?v=20260827-02"></script>
 <script src="js/story-vars.js?v=20260912-01"></script>
+<script src="js/story-options.js?v=20260827-03"></script>
+<script src="js/story-visual-doc.js?v=20260829-01"></script>
+<script src="js/story-visual-ui.js?v=20260827-12"></script>
 <script src="js/generators.js?v=20260722-60"></script>
 <script src="js/bbcode.js?v=20260722-60"></script>
 <script src="js/exporter.js?v=20260912-03"></script>
@@ -562,7 +581,7 @@
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.54</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.86</span></div>
         </div>
       </div>
     </div>
@@ -572,6 +591,7 @@
 
 <!-- 编辑器列头 🤖 快捷菜单 -->
 <div id="ai-quick-menu" class="ai-quick-menu hidden"></div>
+<div id="visual-insert-popover" class="ai-quick-menu hidden" hidden></div>
 
 <!-- AI 生成结果审阅窗 -->
 <div id="ai-review-modal" class="modal hidden">

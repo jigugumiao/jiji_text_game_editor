@@ -30,7 +30,7 @@
   // playMode: 'longform' 长文模式（默认，文字累积成长卷）| 'galgame' galgame模式（底部黑色文本框，逐段显示）
   let globalSettings = { gameName: '', subtitle: '', authorId: '', icon: '', font: null, openingBg: '', openingMusic: '', textContrast: 'auto', playMode: 'longform', watermark: { text: '', pos: '右下', url: '', opacity: 40 }, appearance: null, toy: null };
   // 外观默认设置（设置页「外观」标签可覆盖）。字体走系统默认字体栈，不读本地字体文件。
-  const DEFAULT_APPEARANCE = { fontSize: 20, titleFont: '', bodyFont: '', dividerFont: '', galBoxColor: 'rgba(0,0,0,0.55)', titleColor: '' };
+  const DEFAULT_APPEARANCE = { fontSize: 20, titleFont: '', bodyFont: '', dividerFont: '', galBoxColor: 'rgba(0,0,0,0.55)', titleColor: '', galPanel: null };
   function getAppearance() { return Object.assign({}, DEFAULT_APPEARANCE, globalSettings.appearance || {}); }
   function saveAppearance(patch) { globalSettings.appearance = Object.assign({}, getAppearance(), patch); saveGlobal(); }
   // 把 meta 里的创作设定统一同步进 globalSettings（开场背景/音乐/图标等所有字段，避免 openProject 漏字段导致刷新后丢失）
@@ -2630,7 +2630,7 @@
     if (_varPopOutside) { document.removeEventListener('mousedown', _varPopOutside); _varPopOutside = null; }
     if (_varPopEsc) { document.removeEventListener('keydown', _varPopEsc); _varPopEsc = null; }
   }
-  function escapeHtml(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function replaceVarChoiceRange(choice, range) {
     const ta = storyText;
     const scrollTop = ta.scrollTop;
@@ -3944,6 +3944,211 @@
     return { r: parseInt(h.slice(1,3),16), g: parseInt(h.slice(3,5),16), b: parseInt(h.slice(5,7),16), a: 0.55 };
   }
 
+  // ===== Galgame 图片对话框预设（草稿始终只在弹窗内；点击「应用」才写入项目） =====
+  let galPresetDragCleanup = null;
+  let galPresetSession = 0;
+  function cloneGalPreset(value) { return value ? JSON.parse(JSON.stringify(value)) : null; }
+  function isSafeGalImageSrc(src) { return typeof src === 'string' && /^data:image\/(?:png|jpeg|webp|svg\+xml)(?:;[^,]*)?,/i.test(src) && !/[\r\n\f\\"]/.test(src); }
+  function galPanelBorder(panel) {
+    if (!panel || !isSafeGalImageSrc(panel.imageSrc) || !panel.slices) return '';
+    const s = panel.slices;
+    return 'url("' + panel.imageSrc.replace(/"/g, '%22') + '") ' + s.top + ' ' + s.right + ' ' + s.bottom + ' ' + s.left + ' fill / 1 / 0 stretch';
+  }
+  function closeGalPresetManager() {
+    if (galPresetDragCleanup) galPresetDragCleanup();
+    galPresetSession++;
+    const modal = $('#gal-preset-manager');
+    if (modal) modal.classList.add('hidden');
+  }
+  function applyGalPanelPreview(el, panel, fallback, forceEnabled) {
+    if (!el) return;
+    if (panel && isSafeGalImageSrc(panel.imageSrc) && (forceEnabled || panel.enabled)) {
+      el.style.background = 'transparent';
+      el.style.borderImage = galPanelBorder(panel);
+      el.style.borderStyle = 'solid';
+      const s = panel.slices;
+      el.style.borderWidth = s.top + 'px ' + s.right + 'px ' + s.bottom + 'px ' + s.left + 'px';
+    } else {
+      el.style.borderImage = '';
+      el.style.borderStyle = '';
+      el.style.borderWidth = '';
+      el.style.background = fallback;
+    }
+  }
+  function applyGalPresetToProject(draft) {
+    if (!draft) return;
+    if (!isSafeGalImageSrc(draft.imageSrc)) { toast('对话框图片无效，未应用'); return; }
+    let snapshot;
+    try { snapshot = window.GalgameDialogue.createSnapshot(draft); }
+    catch (error) { toast(error.message || '预设无效'); return; }
+    saveAppearance({ galPanel: snapshot });
+    closeGalPresetManager();
+    renderAppearance();
+    toast('已应用对话框图片：' + snapshot.name);
+  }
+  async function openGalPresetManager() {
+    const modal = $('#gal-preset-manager');
+    const body = $('#gal-preset-manager-body');
+    if (!modal || !body || !window.GalgameDialogue || !window.Storage) return;
+    if (galPresetDragCleanup) galPresetDragCleanup();
+    const session = ++galPresetSession;
+    const builtins = window.GalgameDialogue.BUILTIN_PRESETS.map(cloneGalPreset);
+    let personal;
+    try { personal = await window.Storage.getAllDialoguePresets(); if (session !== galPresetSession) return; }
+    catch (error) { toast(error.message || '读取个人预设失败'); return; }
+    const project = getAppearance().galPanel ? [cloneGalPreset(getAppearance().galPanel)] : [];
+    let selectedScope = project.length ? 'project' : 'built-in';
+    let selected = project[0] || builtins[0] || null;
+    let draft = cloneGalPreset(selected);
+    let draftRevision = 0;
+    function replaceDraft(value) { draft = cloneGalPreset(value); draftRevision++; }
+    function selectedTargetId() { return selected ? (selected.id || selected.name || null) : null; }
+    function isCurrentGalPresetOperation(revision, targetId) { return session === galPresetSession && revision === draftRevision && selectedTargetId() === targetId; }
+    const safeName = value => escapeHtml(value || '未命名预设');
+    const selectedId = () => selected && (selected.id || selected.name);
+    function items(scope, list) {
+      return '<section class="gal-preset-scope" data-gal-preset-scope="' + scope + '"><h4>' + ({ 'built-in': '内置', personal: '我的预设', project: '当前项目' })[scope] + '</h4>' +
+        (list.length ? list.map(function(item) { const on = scope === selectedScope && selectedId() === (item.id || item.name); return '<button type="button" class="gal-preset-item' + (on ? ' active' : '') + '" data-gal-select="' + scope + '" data-gal-id="' + escapeHtml(item.id || item.name) + '">' + safeName(item.name) + '</button>'; }).join('') : '<p class="gal-preset-empty">暂无</p>') + '</section>';
+    }
+    function render() {
+      const draftSrc = draft && isSafeGalImageSrc(draft.imageSrc) ? draft.imageSrc : '';
+      body.innerHTML = '<div class="gal-preset-layout"><aside class="gal-preset-rail">' + items('built-in', builtins) + items('personal', personal) + items('project', project) +
+        '<button class="btn" type="button" id="gal-new-personal">新建个人预设</button></aside><main class="gal-preset-editor">' +
+        '<div class="gal-preset-toolbar"><input id="gal-preset-name" value="' + safeName(draft && draft.name) + '" aria-label="预设名称"><button class="btn" type="button" id="gal-copy-personal">复制为个人预设</button><button class="btn" type="button" id="gal-save-personal">保存个人预设</button><button class="btn" type="button" id="gal-rename-personal">重命名</button><button class="btn btn-ghost" type="button" id="gal-delete-personal">删除</button></div>' +
+        '<div class="gal-image-editor"><div class="gal-image-stage" id="gal-image-stage"><img id="gal-draft-image" src="' + escapeHtml(draftSrc) + '" alt="对话框图片切片编辑预览"></div><div class="gal-slice-inputs">' +
+          ['top','right','bottom','left'].map(function(side) { return '<label>' + side + '<input id="gal-slice-' + side + '" type="number" min="0" value="' + (draft ? draft.slices[side] : 0) + '"></label>'; }).join('') +
+        '</div></div><div class="gal-preview-pair"><div><small>桌面预览</small><div id="gal-preview-desktop" class="gal-stretch-preview gal-stretch-desktop">示例对话文字</div></div><div><small>手机预览</small><div id="gal-preview-mobile" class="gal-stretch-preview gal-stretch-mobile">示例对话文字</div></div></div>' +
+        '<div class="gal-preset-actions"><label class="btn">上传图片<input id="gal-upload-image" type="file" accept="image/png,image/jpeg,image/webp" hidden></label><label class="btn">导入 .jgpreset<input id="gal-import-preset" type="file" accept=".jgpreset,application/json" hidden></label><button class="btn" type="button" id="gal-export-preset">导出 .jgpreset</button><button class="btn btn-primary" type="button" id="gal-apply-preset">应用到本项目</button></div>' +
+        '<p class="gal-preset-hint">拖动图片上的四条线，或输入像素数调整九宫格切片。内置和个人预设只会成为草稿；应用后，项目保存独立快照。</p></main></div>';
+      bind(); updateDraftUI();
+    }
+    function normalize(active) {
+      if (!draft) return;
+      draft.slices = window.GalgameDialogue.normalizeSlices(draft.slices, draft.imageWidth, draft.imageHeight, active);
+    }
+    function updateDraftUI() {
+      if (!draft) return;
+      const name = $('#gal-preset-name'); if (name && document.activeElement !== name) name.value = draft.name || '';
+      ['top','right','bottom','left'].forEach(function(side) { const input = $('#gal-slice-' + side); if (input) input.value = draft.slices[side]; });
+      ['#gal-preview-desktop', '#gal-preview-mobile'].forEach(function(sel) { const el = $(sel); if (el) applyGalPanelPreview(el, draft, 'rgba(0,0,0,.55)', true); });
+      const stage = $('#gal-image-stage'); const image = $('#gal-draft-image');
+      if (!stage || !image) return;
+      stage.querySelectorAll('.gal-slice-guide').forEach(function(el) { el.remove(); });
+      if (!image.complete || !image.naturalWidth) return;
+      const rect = image.getBoundingClientRect(), sx = rect.width / draft.imageWidth, sy = rect.height / draft.imageHeight;
+      [['top', draft.slices.top * sy, 'y'], ['bottom', rect.height - draft.slices.bottom * sy, 'y'], ['left', draft.slices.left * sx, 'x'], ['right', rect.width - draft.slices.right * sx, 'x']].forEach(function(info) {
+        const guide = document.createElement('button'); guide.type = 'button'; guide.className = 'gal-slice-guide gal-slice-' + info[0]; guide.dataset.side = info[0];
+        if (info[2] === 'y') guide.style.top = info[1] + 'px'; else guide.style.left = info[1] + 'px';
+        stage.appendChild(guide);
+      });
+      stage.querySelectorAll('.gal-slice-guide').forEach(function(guide) { guide.addEventListener('pointerdown', startDrag); });
+    }
+    function startDrag(event) {
+      const side = event.currentTarget.dataset.side, image = $('#gal-draft-image'); if (!image || !draft) return;
+      if (galPresetDragCleanup) galPresetDragCleanup();
+      const pointerId = event.pointerId;
+      event.preventDefault(); event.currentTarget.setPointerCapture && event.currentTarget.setPointerCapture(event.pointerId);
+      const move = function(e) { if (e.pointerId !== pointerId) return; const rect = image.getBoundingClientRect(); let value;
+        if (side === 'top') value = (e.clientY - rect.top) / rect.height * draft.imageHeight;
+        else if (side === 'bottom') value = (rect.bottom - e.clientY) / rect.height * draft.imageHeight;
+        else if (side === 'left') value = (e.clientX - rect.left) / rect.width * draft.imageWidth;
+        else value = (rect.right - e.clientX) / rect.width * draft.imageWidth;
+        draft.slices[side] = Math.round(value); normalize(side); updateDraftUI(); };
+      const end = function(e) { if (e && e.pointerId !== pointerId) return; document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', end); document.removeEventListener('pointercancel', end); galPresetDragCleanup = null; };
+      galPresetDragCleanup = end; document.addEventListener('pointermove', move); document.addEventListener('pointerup', end); document.addEventListener('pointercancel', end);
+    }
+    async function savePersonal(forceNew) {
+      if (!draft) return;
+      draft.name = ($('#gal-preset-name').value || '').trim() || '未命名预设';
+      const next = cloneGalPreset(draft); if (forceNew || selectedScope !== 'personal') delete next.id;
+      const revision = draftRevision;
+      const targetId = selected ? (selected.id || selected.name || null) : null;
+      try {
+        const id = await window.Storage.saveDialoguePreset(next);
+        if (!isCurrentGalPresetOperation(revision, targetId)) return;
+        personal = await window.Storage.getAllDialoguePresets();
+        if (!isCurrentGalPresetOperation(revision, targetId)) return;
+        selectedScope = 'personal'; selected = personal.find(function(p) { return p.id === id; }) || Object.assign({}, next, { id: id }); replaceDraft(selected); render(); toast('个人预设已保存');
+      }
+      catch (error) { toast(error.message || '保存失败'); }
+    }
+    function decodeImage(src) { return new Promise(function(resolve, reject) { const img = new Image(); img.onload = function() { resolve({ width: img.naturalWidth, height: img.naturalHeight }); }; img.onerror = reject; img.src = src; }); }
+    function bind() {
+      body.querySelectorAll('[data-gal-select]').forEach(function(button) { button.addEventListener('click', function() { const scope = this.dataset.galSelect, id = this.dataset.galId; const source = (scope === 'built-in' ? builtins : scope === 'personal' ? personal : project).find(function(p) { return String(p.id || p.name) === id; }); if (source) { selectedScope = scope; selected = source; replaceDraft(source); render(); } }); });
+      $('#gal-preset-name').addEventListener('input', function() { if (draft) { draft.name = this.value; draftRevision++; } });
+      ['top','right','bottom','left'].forEach(function(side) { $('#gal-slice-' + side).addEventListener('input', function() { if (!draft) return; draft.slices[side] = this.value; normalize(side); draftRevision++; updateDraftUI(); }); });
+      $('#gal-draft-image').addEventListener('load', updateDraftUI);
+      $('#gal-new-personal').addEventListener('click', function() { const base = cloneGalPreset(builtins[0]); base.name = '新建对话框'; delete base.id; selectedScope = 'personal'; selected = null; replaceDraft(base); render(); });
+      $('#gal-copy-personal').addEventListener('click', function() { savePersonal(true); });
+      $('#gal-save-personal').addEventListener('click', function() { savePersonal(false); });
+      $('#gal-rename-personal').addEventListener('click', async function() {
+        if (selectedScope !== 'personal' || !selected || !selected.id) { toast('请选择个人预设'); return; }
+        const name = window.prompt('预设名称', draft.name || ''); if (name == null) return;
+        const revision = draftRevision;
+        const targetId = selected.id;
+        try {
+          await window.Storage.renameDialoguePreset(targetId, name);
+          if (!isCurrentGalPresetOperation(revision, targetId)) return;
+          personal = await window.Storage.getAllDialoguePresets();
+          if (!isCurrentGalPresetOperation(revision, targetId)) return;
+          const renamed = personal.find(function(p) { return p.id === targetId; }); if (!renamed) { toast('预设已不存在'); return; }
+          selected = renamed; replaceDraft(selected); render();
+        } catch (error) { toast(error.message || '重命名失败'); }
+      });
+      $('#gal-delete-personal').addEventListener('click', async function() {
+        if (selectedScope !== 'personal' || !selected || !selected.id) { toast('内置和项目快照不能删除'); return; }
+        if (!window.confirm('删除这个个人预设？')) return;
+        const revision = draftRevision;
+        const targetId = selected.id;
+        try {
+          await window.Storage.deleteDialoguePreset(targetId);
+          if (!isCurrentGalPresetOperation(revision, targetId)) return;
+          personal = await window.Storage.getAllDialoguePresets();
+          if (!isCurrentGalPresetOperation(revision, targetId)) return;
+          selectedScope = 'built-in'; selected = builtins[0]; replaceDraft(selected); render();
+        } catch (error) { toast(error.message || '删除失败'); }
+      });
+      $('#gal-upload-image').addEventListener('change', async function() {
+        const file = this.files && this.files[0]; if (!file) return;
+        if (!/^image\/(png|jpeg|webp)$/i.test(file.type || '')) { toast('仅支持 PNG、JPEG、WebP 图片'); return; }
+        const revision = ++draftRevision;
+        const uploadSession = session;
+        try {
+          const src = await readFileAsDataUrl(file); const size = await decodeImage(src);
+          if (uploadSession !== galPresetSession || revision !== draftRevision) return;
+          if (!isSafeGalImageSrc(src)) throw new Error('图片格式无效');
+          draft.imageSrc = src; draft.imageWidth = size.width; draft.imageHeight = size.height;
+          draft.slices = window.GalgameDialogue.normalizeSlices({}, size.width, size.height); draftRevision++; updateDraftUI();
+        } catch (error) { if (uploadSession === galPresetSession && revision === draftRevision) toast('图片无法读取，请换一张图片'); }
+      });
+      $('#gal-import-preset').addEventListener('change', function() {
+        const file = this.files && this.files[0]; if (!file) return;
+        const revision = ++draftRevision;
+        const importSession = session;
+        const reader = new FileReader();
+        reader.onload = async function() {
+          try {
+            if (importSession !== galPresetSession || revision !== draftRevision) return;
+            const incoming = window.GalgameDialogue.parsePreset(reader.result);
+            if (!isSafeGalImageSrc(incoming.imageSrc)) { toast('导入预设图片无效'); return; }
+            delete incoming.id;
+            const id = await window.Storage.saveDialoguePreset(incoming);
+            if (importSession !== galPresetSession || revision !== draftRevision) return;
+            personal = await window.Storage.getAllDialoguePresets();
+            if (importSession !== galPresetSession || revision !== draftRevision) return;
+            selectedScope = 'personal'; selected = personal.find(function(p) { return p.id === id; }); replaceDraft(selected); render(); toast('预设已导入');
+          } catch (error) { if (importSession === galPresetSession && revision === draftRevision) toast(error.message || '导入失败'); }
+        };
+        reader.onerror = function() { if (importSession === galPresetSession && revision === draftRevision) toast('文件读取失败'); };
+        reader.readAsText(file);
+      });
+      $('#gal-export-preset').addEventListener('click', function() { try { const blob = new Blob([window.GalgameDialogue.serializePreset(draft)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = (draft.name || 'galgame') + '.jgpreset'; a.click(); setTimeout(function() { URL.revokeObjectURL(url); }, 0); } catch (error) { toast(error.message || '导出失败'); } });
+      $('#gal-apply-preset').addEventListener('click', function() { applyGalPresetToProject(draft); });
+    }
+    modal.classList.remove('hidden'); render();
+    const close = $('#gal-preset-close'); if (close) close.onclick = closeGalPresetManager;
+  }
+
   // ===== 设置：外观（游戏整体默认外观覆盖）=====
   function renderAppearance() {
     const box = $('#settings-appearance');
@@ -3986,6 +4191,10 @@
           '</div></div>' +
         '<div class="field"><label>Galgame 底框透明度 <span id="ap-galop-val">' + Math.round(galBoxParts(ap.galBoxColor).a * 100) + '%</span></label>' +
           '<input type="range" id="ap-galop" min="10" max="100" step="1" value="' + Math.round(galBoxParts(ap.galBoxColor).a * 100) + '"></div>' +
+        '<div class="field ap-galpanel-field"><label><input id="ap-galpanel-enabled" type="checkbox"' + (ap.galPanel && ap.galPanel.enabled ? ' checked' : '') + '> 使用图片对话框</label>' +
+          '<span class="ap-galpanel-current">' + (ap.galPanel ? (isSafeGalImageSrc(ap.galPanel.imageSrc) ? '<img src="' + escapeHtml(ap.galPanel.imageSrc) + '" alt="">' : '') + '<span>' + escapeHtml(ap.galPanel.name) + '</span>' : '<span>未选择（使用上方颜色）</span>') + '</span>' +
+          '<button class="btn" type="button" id="ap-open-gal-presets">管理图片预设</button></div>' +
+        '<div class="ai-hint">图片对话框未启用时继续使用底框色和透明度；应用图片后会保存独立快照。</div>' +
       '</div>' +
       '<div class="ai-section">' +
         '<h4><svg class="ico" aria-hidden="true"><use href="#ic-image"/></svg> 开场背景</h4>' +
@@ -4054,6 +4263,14 @@
     galColor.addEventListener('input', function() { const p = galParts(); const nc = toHexColor(this.value); const r=parseInt(nc.slice(1,3),16),g=parseInt(nc.slice(3,5),16),b=parseInt(nc.slice(5,7),16); const rgba=setGal(r,g,b,p.a); galText.value=rgba; galOp.value=Math.round(p.a*100); galOpVal.textContent=Math.round(p.a*100)+'%'; saveAppearance({ galBoxColor: rgba }); applyPreview(); });
     galText.addEventListener('input', function() { const v=this.value.trim(); if(!v) return; const p=galBoxParts(v); galColor.value=toHexColor(v); galOp.value=Math.round(p.a*100); galOpVal.textContent=Math.round(p.a*100)+'%'; saveAppearance({ galBoxColor: v }); applyPreview(); });
     galOp.addEventListener('input', function() { const p=galParts(); const a=parseInt(this.value,10)/100; const rgba=setGal(p.r,p.g,p.b,a); galText.value=rgba; galOpVal.textContent=this.value+'%'; saveAppearance({ galBoxColor: rgba }); applyPreview(); });
+    const galPanelEnabled = box.querySelector('#ap-galpanel-enabled');
+    if (galPanelEnabled) galPanelEnabled.addEventListener('change', function() {
+      if (!this.checked) { saveAppearance({ galPanel: Object.assign({}, getAppearance().galPanel, { enabled: false }) }); applyPreview(); toast('已改用 Galgame 底框色'); }
+      else if (getAppearance().galPanel) { saveAppearance({ galPanel: Object.assign({}, getAppearance().galPanel, { enabled: true }) }); applyPreview(); }
+      else { this.checked = false; openGalPresetManager(); }
+    });
+    const galOpenPresets = box.querySelector('#ap-open-gal-presets');
+    if (galOpenPresets) galOpenPresets.addEventListener('click', openGalPresetManager);
     // 开场背景（从通用迁入）
     const obSel = box.querySelector('#gs-opening');
     if (obSel) {
@@ -6025,9 +6242,6 @@ self.onmessage = function (e) {
   }
 
   // ============ 编译检查 ============
-  function escapeHtml(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
   // 预览 / 导出前的「编译」：返回问题列表 [{line,type:'error'|'warning',msg}]
   async function validateStory() {
     const issues = [];

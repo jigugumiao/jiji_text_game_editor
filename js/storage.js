@@ -760,6 +760,62 @@ function getVarNames() {
   return new Set(loadVars().map(v => (v.name || '').trim()).filter(Boolean));
 }
 
+// ============ Galgame 对话框预设（全局，不随项目切换） ============
+// 测试版与正式版的对话框预设彼此隔离；预设不属于任何具体项目。
+// 用运行时函数而非常量，是因为测试会在 require 之后改 window.STORY_EDITOR_NS。
+function _editorNamespace() {
+  if (typeof window !== 'undefined' && window.STORY_EDITOR_NS === 'test') return 'test:';
+  return '';
+}
+function _dialoguePresetKey(id) { return _editorNamespace() + 'dialogue-preset:' + id; }
+
+function _copyDialoguePreset(preset) {
+  const copy = Object.assign({}, preset || {});
+  if (copy.slices && typeof copy.slices === 'object') copy.slices = Object.assign({}, copy.slices);
+  return copy;
+}
+
+async function saveDialoguePreset(preset) {
+  const savedPreset = _copyDialoguePreset(preset);
+  const id = savedPreset.id || uid('gal');
+  const name = (savedPreset.name && String(savedPreset.name).trim()) || '未命名预设';
+  const updatedAt = Date.now();
+  savedPreset.id = id;
+  savedPreset.name = name;
+  savedPreset.updatedAt = updatedAt;
+  await idbPut(STORE_META, {
+    key: _dialoguePresetKey(id), type: 'dialogue-preset', id, name,
+    preset: savedPreset, updatedAt,
+  });
+  return id;
+}
+
+async function getAllDialoguePresets() {
+  const all = await idbGetAll(STORE_META);
+  return all
+    .filter(record => record && record.type === 'dialogue-preset' && record.id != null && record.key === _dialoguePresetKey(record.id))
+    .map(record => _copyDialoguePreset(record.preset))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN'));
+}
+
+async function deleteDialoguePreset(id) {
+  await idbDelete(STORE_META, _dialoguePresetKey(id));
+}
+
+async function renameDialoguePreset(id, name) {
+  const key = _dialoguePresetKey(id);
+  const record = await idbGet(STORE_META, key);
+  if (!record || record.type !== 'dialogue-preset' || record.key !== key) throw new Error('预设不存在');
+  const updatedAt = Date.now();
+  const nextName = (name && String(name).trim()) || record.name;
+  const preset = _copyDialoguePreset(record.preset);
+  preset.name = nextName;
+  preset.updatedAt = updatedAt;
+  const updated = Object.assign({}, record, { name: nextName, preset, updatedAt });
+  await idbPut(STORE_META, updated);
+  return Object.assign({}, updated, { preset: _copyDialoguePreset(updated.preset) });
+}
+
 const Storage = {
   LIBS, saveAsset, getAsset, getAllAssets, deleteAsset, renameAsset,
   importSceneBundle, importSceneBundleFile, saveStory, loadStory, saveStoryText, loadStoryText,
@@ -776,6 +832,8 @@ const Storage = {
   readProjectSnapshot, writeTemporaryProject, validateTemporaryProject, registerTemporaryProject, cleanupTemporaryProject, copyProjectForVisual,
   // 工程备份 / 恢复（跨设备搬运整个剧本：素材+变量+线索+设定）
   exportProject, importProject,
+  // Galgame 对话框预设（全局，不随项目切换）
+  saveDialoguePreset, getAllDialoguePresets, deleteDialoguePreset, renameDialoguePreset,
 };
 
 if (typeof window !== 'undefined') window.Storage = Storage;

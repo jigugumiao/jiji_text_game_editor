@@ -536,6 +536,15 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
     /* 永不滚动上移：超长段落由 fitGalgameContent 纵向缩放字号适配，而不是滚上去 */
     overflow: hidden;
   }
+  /* 项目内嵌的九宫格快照加载成功后才启用图片边框；默认始终保留纯色框回退。 */
+  body.galgame.gal-panel-image #message-list {
+    border-style: solid;
+    border-width: var(--gal-panel-top) var(--gal-panel-right) var(--gal-panel-bottom) var(--gal-panel-left);
+    border-image-source: var(--gal-panel-image);
+    border-image-slice: var(--gal-panel-slice) fill;
+    border-image-repeat: stretch;
+    background: transparent;
+  }
   /* 字号由运行时按框高动态计算（目标 3 行，见 fitGalgameFont），CSS 变量兜底 20px */
   body.galgame .message { width: 92%; max-width: 900px; margin: 0 auto 10px; padding: 0 26px; font-size: var(--gal-font-size, 20px); }
   /* 黑框内统一白字：屏蔽自动对比色（auto-dark 会变成黑字，在黑框上不可读） */
@@ -1722,6 +1731,40 @@ __STORY_DATA__
       if (APPEAR.galBoxColor) document.body.style.setProperty('--gal-box-color', APPEAR.galBoxColor);
     }
   } catch (e) {}
+
+  function clearGalPanelImage() {
+    document.body.classList.remove('gal-panel-image');
+    ['--gal-panel-image', '--gal-panel-slice', '--gal-panel-top', '--gal-panel-right', '--gal-panel-bottom', '--gal-panel-left']
+      .forEach(function(name) { document.body.style.removeProperty(name); });
+  }
+  function applyGalPanelAppearance(panel) {
+    clearGalPanelImage();
+    if (!GALGAME || !panel || !panel.enabled || !/^data:image\//i.test(String(panel.imageSrc || ''))) return;
+    const width = Number(panel.imageWidth);
+    const height = Number(panel.imageHeight);
+    if (!Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1) return;
+    const slices = panel.slices || {};
+    const values = [slices.top, slices.right, slices.bottom, slices.left].map(Number);
+    if (values.some(function(value) { return !Number.isInteger(value) || value < 0; })) return;
+    if (values[1] + values[3] >= width || values[0] + values[2] >= height) return;
+    const image = new Image();
+    image.onload = function() {
+      if (image.naturalWidth < 1 || image.naturalHeight < 1 || image.naturalWidth !== width || image.naturalHeight !== height) {
+        clearGalPanelImage();
+        return;
+      }
+      const escapedSrc = String(panel.imageSrc).replace(/["\\\n\r\f]/g, '\\$&');
+      document.body.style.setProperty('--gal-panel-image', 'url("' + escapedSrc + '")');
+      document.body.style.setProperty('--gal-panel-slice', values.join(' '));
+      ['top', 'right', 'bottom', 'left'].forEach(function(side, index) {
+        document.body.style.setProperty('--gal-panel-' + side, values[index] + 'px');
+      });
+      document.body.classList.add('gal-panel-image');
+    };
+    image.onerror = clearGalPanelImage;
+    image.src = panel.imageSrc;
+  }
+  applyGalPanelAppearance(APPEAR.galPanel);
   const _bgCanvas = document.createElement('canvas');
   const _bgCtx = _bgCanvas.getContext('2d', { willReadFrequently: true });
   let _bgData = null, _bgReady = false;

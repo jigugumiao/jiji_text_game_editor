@@ -51,6 +51,14 @@
 - 旧项目转换（「转换为可视化项目」）只能复制到临时项目、校验、最后登记；源项目和当前项目指针不得在失败或成功前被改写。新项目写入 `visualEditorVersion:1` 与 `convertedFrom`。`js/project-converter.js` 是转换服务。
 - 变更选项/可视化 UI/转换逻辑后至少运行对应 focused test（story-options / story-visual-doc / visual-story-ui / project-converter / visual-options-runtime / story-state-management / context-menu-variable）、`tests/release-cache-bust.test.js` 与完整 `tests/*.test.js`；改动前端资源必须同步更新 `?v=` 与两个版本展示。
 
+## Galgame 九宫格对话框背景（2026-08-29 开发，codex/galgame-nine-slice-impl 分支；2026-09-17 并入 feature/agent 恢复）
+
+- 入口：设置 → 外观 →「Galgame 对话框背景」区块（开关「使用图片对话框」+「管理图片预设」按钮）。仅 galgame 游玩模式生效；未启用时回退到底框色/透明度。
+- 架构：`js/galgame-dialogue.js`（window.GalgameDialogue：normalizeSlices / createSnapshot / serializePreset / parsePreset / BUILTIN_PRESETS 四款内置）；存储走 `js/storage.js` 的 `saveDialoguePreset` / `getAllDialoguePresets` / `deleteDialoguePreset` / `renameDialoguePreset`（IndexedDB STORE_META，`dialogue-preset:` key + `_editorNamespace()` 按 test NS 隔离，预设全局不随项目切换）；项目保存完整快照（`appearance.galPanel`，含 imageSrc/imageWidth/imageHeight/slices/enabled），不引用全局预设 ID。
+- 运行时：exporter.js 的 `applyGalPanelAppearance(APPEAR.galPanel)` 校验图片尺寸与切片后设 `--gal-panel-*` CSS 变量，`body.galgame.gal-panel-image #message-list` 用 border-image 九宫格拉伸。
+- 曾被 v25.4.88（5dc4173）覆盖 beta 时一并删除（与可视化编辑同因：功能在 codex 分支、从未进主线）。教训见「多工具并行开发分叉」。
+- 测试：galgame-dialogue / galgame-dialogue-editor / galgame-dialogue-runtime / dialogue-preset-storage。测试断言 editor.js 的 `escapeHtml` 必须恰好 1 处且含 `'`→`&#39;` 转义；`DEFAULT_APPEARANCE` 必须含 `galPanel: null`。
+
 ## 注意
 
 - `dist/`、`dist-test/` 是构建产物，已 gitignore；要更新线上 beta 页面时把 dist-test 内容拷贝到 `beta/` 提交推送即可。

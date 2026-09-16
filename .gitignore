@@ -25,3 +25,5 @@ Thumbs.db
 
 # 临时测试/验证脚手架（无头渲染对比等），不入仓库
 _dof_hdri_test/
+
+.superpowers/

@@ -36,6 +36,11 @@ assert.match(editor, /\^image\\\/\(png\|jpeg\|webp\)\$\/i\.test\(file\.type/, 'u
 assert.match(editor, /img\.onload\s*=\s*function\(\).*naturalWidth[\s\S]*img\.onerror\s*=\s*reject/, 'image decoding waits for onload and rejects decode errors');
 assert.match(editor, /\(e\.clientY\s*-\s*rect\.top\)\s*\/\s*rect\.height\s*\*\s*draft\.imageHeight/, 'top guide maps rendered Y coordinates to image pixels');
 assert.match(editor, /\(e\.clientX\s*-\s*rect\.left\)\s*\/\s*rect\.width\s*\*\s*draft\.imageWidth/, 'left guide maps rendered X coordinates to image pixels');
+assert.match(editor, /id="gal-image-canvas"/, 'guides share a dedicated canvas with the image');
+assert.match(editor, /canvas\.appendChild\(guide\)/, 'guides are attached to the image canvas instead of the outer stage');
+assert.match(editor, /info\[1\]\s*\/\s*rect\.height\s*\*\s*100\s*\)\s*\+\s*'%'/, 'horizontal guide positions stay proportional when the image scales');
+assert.match(editor, /info\[1\]\s*\/\s*rect\.width\s*\*\s*100\s*\)\s*\+\s*'%'/, 'vertical guide positions stay proportional when the image scales');
+assert.match(css, /\.gal-image-canvas\s*\{[^}]*position:\s*relative/, 'image canvas establishes the guide positioning context');
 assert.match(editor, /removeEventListener\('pointermove',\s*move\)[\s\S]*removeEventListener\('pointerup',\s*end\)/, 'drag completion removes pointer move and up listeners');
 assert.equal((editor.match(/function escapeHtml\(s\)/g) || []).length, 1, 'uses one attribute-safe HTML escaper instead of a later weak override');
 assert.match(editor, /function escapeHtml\(s\)[\s\S]{0,300}['"]['"]\s*:\s*['"]&#39;['"]/, 'escapes apostrophes as well as HTML delimiters');
@@ -45,7 +50,7 @@ assert.match(editor, /isSafeGalImageSrc\(draft\.imageSrc\)/, 'does not inject an
 assert.match(editor, /applyGalPanelPreview\(el,\s*draft,\s*['"]rgba\(0,0,0,\.55\)['"],\s*true\)/, 'manager previews selected drafts even before they are applied/enabled');
 assert.match(editor, /forceEnabled\s*\|\|\s*panel\.enabled/, 'preview supports an explicit draft-only enabled override');
 assert.doesNotMatch(editor, /el\.style\.borderWidth\s*=\s*['"]1px['"]/, 'nine-slice previews never collapse all borders to 1px');
-assert.match(editor, /el\.style\.borderWidth\s*=\s*s\.top\s*\+\s*['"]px\s*['"]\s*\+\s*s\.right/, 'preview border widths are derived from normalized slice values');
+assert.match(editor, /el\.style\.borderWidth\s*=\s*previewSlices\.top\s*\+\s*['"]px\s*['"]\s*\+\s*previewSlices\.right/, 'preview border widths are derived from fitted normalized slice values');
 assert.match(editor, /if \(galPresetDragCleanup\) galPresetDragCleanup\(\);[\s\S]{0,240}const pointerId\s*=\s*event\.pointerId/, 'starting a drag cleans up prior drag state and records the initiator');
 assert.match(editor, /const move\s*=\s*function\(e\)\s*\{\s*if \(e\.pointerId\s*!==\s*pointerId\) return;/, 'drag ignores move events from other pointers');
 assert.match(editor, /const end\s*=\s*function\(e\)\s*\{\s*if \(e\s*&&\s*e\.pointerId\s*!==\s*pointerId\) return;/, 'drag cleanup remains callable without a PointerEvent when the modal closes');
@@ -72,5 +77,15 @@ assert.match(editor, /parsePreset\(reader\.result\)[\s\S]{0,220}!isSafeGalImageS
 
 assert.match(css, /#gal-preset-manager[\s\S]*max-width:\s*min\(1040px,\s*94vw\)/, 'manager uses the requested desktop modal width');
 assert.match(css, /@media\s*\(max-width:\s*760px\)[\s\S]*gal-preset/, 'manager has a compact responsive layout');
+assert.match(editor, /<small>预览<\/small><div id="gal-preview-desktop"/, 'manager uses one generic bottom-bar preview label');
+assert.doesNotMatch(editor, /手机预览|桌面预览|gal-preview-mobile|gal-stretch-mobile/, 'manager removes the redundant phone preview');
+assert.match(css, /\.gal-preview-pair\s*\{[^}]*display:\s*block/, 'single preview occupies the full preview area instead of a two-column grid');
+assert.match(css, /\.gal-stretch-preview\s*\{[^}]*box-sizing:\s*border-box[^}]*aspect-ratio:\s*16\s*\/\s*3[^}]*min-height:\s*0/, 'panel preview keeps a fixed game-like outer ratio despite slice borders');
+assert.match(css, /\.gal-stretch-preview\s*\{[^}]*width:\s*100%/, 'preview outer width is pinned to its fixed grid column');
+assert.match(editor, /function fitGalPreviewBorders\(el,\s*slices\)/, 'preview border widths are fitted independently from stored slice values');
+assert.match(editor, /el\.classList\.contains\('gal-stretch-preview'\)/, 'only fixed-ratio previews fit their border widths');
+assert.match(editor, /el\.getBoundingClientRect\(\)\.width/, 'preview fitting uses the rendered outer width');
+assert.match(editor, /Math\.min\(1,/, 'preview fitting only scales borders down and never enlarges them');
+assert.match(editor, /const previewSlices\s*=\s*fitGalPreviewBorders\(el,\s*s\)/, 'nine-slice preview applies fitted rather than raw border widths');
 
 console.log('galgame dialogue editor source contract passed');

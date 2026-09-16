@@ -1729,6 +1729,16 @@ __STORY_DATA__
       if (APPEAR.titleColor) document.body.style.setProperty('--title-color', APPEAR.titleColor);
       if (APPEAR.fontSize) document.body.style.setProperty('--body-font-size', (APPEAR.fontSize | 0) + 'px');
       if (APPEAR.galBoxColor) document.body.style.setProperty('--gal-box-color', APPEAR.galBoxColor);
+      if (APPEAR.overlayShadow && APPEAR.overlayShadow.enabled) {
+        var _ovLayer = document.getElementById('overlay-layer');
+        if (_ovLayer) {
+          var _os = APPEAR.overlayShadow;
+          var _blur = (typeof _os.blur === 'number' ? _os.blur : 18) + 'px';
+          var _dist = (typeof _os.dist === 'number' ? _os.dist : 10) + 'px';
+          var _op = (typeof _os.opacity === 'number' ? _os.opacity : 45) / 100;
+          _ovLayer.style.filter = 'drop-shadow(' + _dist + ' ' + _dist + ' ' + _blur + ' rgba(0,0,0,' + _op + '))';
+        }
+      }
     }
   } catch (e) {}
 

@@ -30,7 +30,7 @@
   // playMode: 'longform' 长文模式（默认，文字累积成长卷）| 'galgame' galgame模式（底部黑色文本框，逐段显示）
   let globalSettings = { gameName: '', subtitle: '', authorId: '', icon: '', font: null, openingBg: '', openingMusic: '', textContrast: 'auto', playMode: 'longform', watermark: { text: '', pos: '右下', url: '', opacity: 40 }, appearance: null, toy: null };
   // 外观默认设置（设置页「外观」标签可覆盖）。字体走系统默认字体栈，不读本地字体文件。
-  const DEFAULT_APPEARANCE = { fontSize: 20, titleFont: '', bodyFont: '', dividerFont: '', galBoxColor: 'rgba(0,0,0,0.55)', titleColor: '', galPanel: null };
+  const DEFAULT_APPEARANCE = { fontSize: 20, titleFont: '', bodyFont: '', dividerFont: '', galBoxColor: 'rgba(0,0,0,0.55)', titleColor: '', galPanel: null, overlayShadow: null };
   function getAppearance() { return Object.assign({}, DEFAULT_APPEARANCE, globalSettings.appearance || {}); }
   function saveAppearance(patch) { globalSettings.appearance = Object.assign({}, getAppearance(), patch); saveGlobal(); }
   // 把 meta 里的创作设定统一同步进 globalSettings（开场背景/音乐/图标等所有字段，避免 openProject 漏字段导致刷新后丢失）
@@ -3954,6 +3954,25 @@
     const s = panel.slices;
     return 'url("' + panel.imageSrc.replace(/"/g, '%22') + '") ' + s.top + ' ' + s.right + ' ' + s.bottom + ' ' + s.left + ' fill / 1 / 0 stretch';
   }
+  function fitGalPreviewBorders(el, slices) {
+    const fitted = ['top', 'right', 'bottom', 'left'].reduce(function(result, side) {
+      result[side] = Math.max(0, Number(slices[side]) || 0);
+      return result;
+    }, {});
+    if (!el || !el.classList.contains('gal-stretch-preview')) return fitted;
+    const width = el.getBoundingClientRect().width;
+    if (!(width > 0)) return fitted;
+    const ratio = 16 / 3;
+    const height = width / ratio;
+    const style = getComputedStyle(el);
+    const horizontalSpace = Math.max(0, width - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0) - 24);
+    const verticalSpace = Math.max(0, height - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0) - 24);
+    const scaleX = Math.min(1, horizontalSpace / Math.max(1, fitted.left + fitted.right));
+    const scaleY = Math.min(1, verticalSpace / Math.max(1, fitted.top + fitted.bottom));
+    fitted.left *= scaleX; fitted.right *= scaleX;
+    fitted.top *= scaleY; fitted.bottom *= scaleY;
+    return fitted;
+  }
   function closeGalPresetManager() {
     if (galPresetDragCleanup) galPresetDragCleanup();
     galPresetSession++;
@@ -3967,7 +3986,8 @@
       el.style.borderImage = galPanelBorder(panel);
       el.style.borderStyle = 'solid';
       const s = panel.slices;
-      el.style.borderWidth = s.top + 'px ' + s.right + 'px ' + s.bottom + 'px ' + s.left + 'px';
+      const previewSlices = fitGalPreviewBorders(el, s);
+      el.style.borderWidth = previewSlices.top + 'px ' + previewSlices.right + 'px ' + previewSlices.bottom + 'px ' + previewSlices.left + 'px';
     } else {
       el.style.borderImage = '';
       el.style.borderStyle = '';
@@ -4015,9 +4035,9 @@
       body.innerHTML = '<div class="gal-preset-layout"><aside class="gal-preset-rail">' + items('built-in', builtins) + items('personal', personal) + items('project', project) +
         '<button class="btn" type="button" id="gal-new-personal">新建个人预设</button></aside><main class="gal-preset-editor">' +
         '<div class="gal-preset-toolbar"><input id="gal-preset-name" value="' + safeName(draft && draft.name) + '" aria-label="预设名称"><button class="btn" type="button" id="gal-copy-personal">复制为个人预设</button><button class="btn" type="button" id="gal-save-personal">保存个人预设</button><button class="btn" type="button" id="gal-rename-personal">重命名</button><button class="btn btn-ghost" type="button" id="gal-delete-personal">删除</button></div>' +
-        '<div class="gal-image-editor"><div class="gal-image-stage" id="gal-image-stage"><img id="gal-draft-image" src="' + escapeHtml(draftSrc) + '" alt="对话框图片切片编辑预览"></div><div class="gal-slice-inputs">' +
+        '<div class="gal-image-editor"><div class="gal-image-stage" id="gal-image-stage"><div class="gal-image-canvas" id="gal-image-canvas"><img id="gal-draft-image" src="' + escapeHtml(draftSrc) + '" alt="对话框图片切片编辑预览"></div></div><div class="gal-slice-inputs">' +
           ['top','right','bottom','left'].map(function(side) { return '<label>' + side + '<input id="gal-slice-' + side + '" type="number" min="0" value="' + (draft ? draft.slices[side] : 0) + '"></label>'; }).join('') +
-        '</div></div><div class="gal-preview-pair"><div><small>桌面预览</small><div id="gal-preview-desktop" class="gal-stretch-preview gal-stretch-desktop">示例对话文字</div></div><div><small>手机预览</small><div id="gal-preview-mobile" class="gal-stretch-preview gal-stretch-mobile">示例对话文字</div></div></div>' +
+        '</div></div><div class="gal-preview-pair"><div><small>预览</small><div id="gal-preview-desktop" class="gal-stretch-preview gal-stretch-desktop">示例对话文字</div></div></div>' +
         '<div class="gal-preset-actions"><label class="btn">上传图片<input id="gal-upload-image" type="file" accept="image/png,image/jpeg,image/webp" hidden></label><label class="btn">导入 .jgpreset<input id="gal-import-preset" type="file" accept=".jgpreset,application/json" hidden></label><button class="btn" type="button" id="gal-export-preset">导出 .jgpreset</button><button class="btn btn-primary" type="button" id="gal-apply-preset">应用到本项目</button></div>' +
         '<p class="gal-preset-hint">拖动图片上的四条线，或输入像素数调整九宫格切片。内置和个人预设只会成为草稿；应用后，项目保存独立快照。</p></main></div>';
       bind(); updateDraftUI();
@@ -4030,18 +4050,18 @@
       if (!draft) return;
       const name = $('#gal-preset-name'); if (name && document.activeElement !== name) name.value = draft.name || '';
       ['top','right','bottom','left'].forEach(function(side) { const input = $('#gal-slice-' + side); if (input) input.value = draft.slices[side]; });
-      ['#gal-preview-desktop', '#gal-preview-mobile'].forEach(function(sel) { const el = $(sel); if (el) applyGalPanelPreview(el, draft, 'rgba(0,0,0,.55)', true); });
-      const stage = $('#gal-image-stage'); const image = $('#gal-draft-image');
-      if (!stage || !image) return;
-      stage.querySelectorAll('.gal-slice-guide').forEach(function(el) { el.remove(); });
+      ['#gal-preview-desktop'].forEach(function(sel) { const el = $(sel); if (el) applyGalPanelPreview(el, draft, 'rgba(0,0,0,.55)', true); });
+      const stage = $('#gal-image-stage'); const canvas = $('#gal-image-canvas'); const image = $('#gal-draft-image');
+      if (!stage || !canvas || !image) return;
+      canvas.querySelectorAll('.gal-slice-guide').forEach(function(el) { el.remove(); });
       if (!image.complete || !image.naturalWidth) return;
       const rect = image.getBoundingClientRect(), sx = rect.width / draft.imageWidth, sy = rect.height / draft.imageHeight;
       [['top', draft.slices.top * sy, 'y'], ['bottom', rect.height - draft.slices.bottom * sy, 'y'], ['left', draft.slices.left * sx, 'x'], ['right', rect.width - draft.slices.right * sx, 'x']].forEach(function(info) {
         const guide = document.createElement('button'); guide.type = 'button'; guide.className = 'gal-slice-guide gal-slice-' + info[0]; guide.dataset.side = info[0];
-        if (info[2] === 'y') guide.style.top = info[1] + 'px'; else guide.style.left = info[1] + 'px';
-        stage.appendChild(guide);
+        if (info[2] === 'y') guide.style.top = (info[1] / rect.height * 100) + '%'; else guide.style.left = (info[1] / rect.width * 100) + '%';
+        canvas.appendChild(guide);
       });
-      stage.querySelectorAll('.gal-slice-guide').forEach(function(guide) { guide.addEventListener('pointerdown', startDrag); });
+      canvas.querySelectorAll('.gal-slice-guide').forEach(function(guide) { guide.addEventListener('pointerdown', startDrag); });
     }
     function startDrag(event) {
       const side = event.currentTarget.dataset.side, image = $('#gal-draft-image'); if (!image || !draft) return;
@@ -4170,37 +4190,69 @@
     const optHtml = FONT_PRESETS.map(o => '<option value="' + escapeHtml(o[0]) + '"' + (ap.bodyFont === o[0] ? ' selected' : '') + '>' + escapeHtml(o[1]) + '</option>').join('');
     const optTitle = FONT_PRESETS.map(o => '<option value="' + escapeHtml(o[0]) + '"' + (ap.titleFont === o[0] ? ' selected' : '') + '>' + escapeHtml(o[1]) + '</option>').join('');
     const optDivider = FONT_PRESETS.map(o => '<option value="' + escapeHtml(o[0]) + '"' + (ap.dividerFont === o[0] ? ' selected' : '') + '>' + escapeHtml(o[1]) + '</option>').join('');
+    const wmText = wm.text || '';
+    const wmOpacity = wm.opacity || 40;
     box.innerHTML =
       '<div class="ai-section">' +
         '<h4><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>游戏整体外观 <span class="ai-sub-tip">统一覆盖全部剧情块</span></h4>' +
-        '<div class="ai-hint">设置默认外观，覆盖试玩与导出成品。</div>' +
-        '<div class="field"><label>正文字号 <span id="ap-fs-val">' + ap.fontSize + 'px</span></label>' +
-          '<input type="range" id="ap-fontsize" min="14" max="32" step="1" value="' + ap.fontSize + '"></div>' +
-        '<div class="field"><label>浮动标题字体</label><select id="ap-titlefont">' + optTitle + '</select></div>' +
-        '<div class="field"><label>正文字体</label><select id="ap-bodyfont">' + optHtml + '</select></div>' +
-        '<div class="field"><label>分割线字体</label><select id="ap-dividerfont">' + optDivider + '</select></div>' +
-        '<div class="field"><label>浮动标题默认颜色</label>' +
-          '<div style="display:flex;align-items:center;gap:10px">' +
-            '<input type="color" id="ap-titlecolor" value="' + (ap.titleColor ? toHexColor(ap.titleColor) : '#ffffff') + '" style="width:42px;height:30px;border:0;background:none;cursor:pointer;padding:0">' +
-            '<input type="text" id="ap-titlecolor-text" value="' + escapeHtml(ap.titleColor || '') + '" style="flex:1;min-width:0" placeholder="留空=默认白色 #fff">' +
-          '</div></div>' +
-        '<div class="field"><label>Galgame 底框色</label>' +
-          '<div style="display:flex;align-items:center;gap:10px">' +
-            '<input type="color" id="ap-galbox" value="' + toHexColor(ap.galBoxColor) + '" style="width:42px;height:30px;border:0;background:none;cursor:pointer;padding:0">' +
-            '<input type="text" id="ap-galbox-text" value="' + escapeHtml(ap.galBoxColor) + '" style="flex:1;min-width:0" placeholder="rgba(0,0,0,0.55)">' +
-          '</div></div>' +
-        '<div class="field"><label>Galgame 底框透明度 <span id="ap-galop-val">' + Math.round(galBoxParts(ap.galBoxColor).a * 100) + '%</span></label>' +
-          '<input type="range" id="ap-galop" min="10" max="100" step="1" value="' + Math.round(galBoxParts(ap.galBoxColor).a * 100) + '"></div>' +
-        '<div class="field ap-galpanel-field"><label><input id="ap-galpanel-enabled" type="checkbox"' + (ap.galPanel && ap.galPanel.enabled ? ' checked' : '') + '> 使用图片对话框</label>' +
-          '<span class="ap-galpanel-current">' + (ap.galPanel ? (isSafeGalImageSrc(ap.galPanel.imageSrc) ? '<img src="' + escapeHtml(ap.galPanel.imageSrc) + '" alt="">' : '') + '<span>' + escapeHtml(ap.galPanel.name) + '</span>' : '<span>未选择（使用上方颜色）</span>') + '</span>' +
-          '<button class="btn" type="button" id="ap-open-gal-presets">管理图片预设</button></div>' +
-        '<div class="ai-hint">图片对话框未启用时继续使用底框色和透明度；应用图片后会保存独立快照。</div>' +
+        '<div class="ai-hint">点击下方预览框中的元素（标题 / 正文 / 分割线 / Galgame 对话框 / 水印），只显示对应的设置；点击预览框空白处收起。</div>' +
+        '<div class="ap-preview-row">' +
+          '<div class="ap-preview ap-preview-long" data-preview-zone="long">' +
+            '<div class="ap-prev-overlay ap-edit-target" data-edit="overlay" id="ap-prev-overlay"' + (window.OVERLAY_SAMPLE_DATA ? ' style="background-image:url(&quot;' + window.OVERLAY_SAMPLE_DATA + '&quot;)"' : '') + '></div>' +
+            '<div class="ap-edit-target ap-prev-title" data-edit="title" id="ap-prev-title">第一章 · 启程</div>' +
+            '<div class="ap-edit-target ap-msg" data-edit="body" id="ap-prev-long">这是长文模式的示例正文，用来预览正文字体与字号的整体观感。</div>' +
+            '<div class="ap-edit-target ap-prev-divider" data-edit="divider"><span class="divider-line"></span><span class="divider-text" id="ap-prev-divider">分隔小标题</span><span class="divider-line"></span></div>' +
+            '<div class="ap-prev-wm ap-edit-target" data-edit="wm" id="ap-prev-wm-long">' + escapeHtml(wmText || '水印') + '</div>' +
+          '</div>' +
+          '<div class="ap-preview ap-preview-gal" data-preview-zone="gal">' +
+            '<div class="ap-edit-target ap-galbox" data-edit="galbox" id="ap-prev-gal"><div class="ap-msg ap-edit-target" data-edit="body" id="ap-prev-gal-msg">这是 Galgame 底部对话框的示例文字，底框颜色可点击编辑。</div></div>' +
+            '<div class="ap-prev-wm ap-edit-target" data-edit="wm" id="ap-prev-wm-gal">' + escapeHtml(wmText || '水印') + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ap-settings-panel">' +
+          '<div class="ap-active-label" id="ap-active-label">点击预览框中的元素开始编辑</div>' +
+          '<div class="field" data-groups="body"><label>正文字号 <span id="ap-fs-val">' + ap.fontSize + 'px</span></label>' +
+            '<input type="range" id="ap-fontsize" min="14" max="32" step="1" value="' + ap.fontSize + '"></div>' +
+          '<div class="field" data-groups="body title"><label>浮动标题字体</label><select id="ap-titlefont">' + optTitle + '</select></div>' +
+          '<div class="field" data-groups="body"><label>正文字体</label><select id="ap-bodyfont">' + optHtml + '</select></div>' +
+          '<div class="field" data-groups="title"><label>浮动标题默认颜色</label>' +
+            '<div style="display:flex;align-items:center;gap:10px">' +
+              '<input type="color" id="ap-titlecolor" value="' + (ap.titleColor ? toHexColor(ap.titleColor) : '#ffffff') + '" style="width:42px;height:30px;border:0;background:none;cursor:pointer;padding:0">' +
+              '<input type="text" id="ap-titlecolor-text" value="' + escapeHtml(ap.titleColor || '') + '" style="flex:1;min-width:0" placeholder="留空=默认白色 #fff">' +
+            '</div></div>' +
+          '<div class="field" data-groups="divider"><label>分割线字体</label><select id="ap-dividerfont">' + optDivider + '</select></div>' +
+          '<div class="field" data-groups="galbox"><label>Galgame 底框色</label>' +
+            '<div style="display:flex;align-items:center;gap:10px">' +
+              '<input type="color" id="ap-galbox" value="' + toHexColor(ap.galBoxColor) + '" style="width:42px;height:30px;border:0;background:none;cursor:pointer;padding:0">' +
+              '<input type="text" id="ap-galbox-text" value="' + escapeHtml(ap.galBoxColor) + '" style="flex:1;min-width:0" placeholder="rgba(0,0,0,0.55)">' +
+            '</div></div>' +
+          '<div class="field" data-groups="galbox"><label>Galgame 底框透明度 <span id="ap-galop-val">' + Math.round(galBoxParts(ap.galBoxColor).a * 100) + '%</span></label>' +
+            '<input type="range" id="ap-galop" min="10" max="100" step="1" value="' + Math.round(galBoxParts(ap.galBoxColor).a * 100) + '"></div>' +
+          '<div class="field ap-galpanel-field" data-groups="galbox"><label><input id="ap-galpanel-enabled" type="checkbox"' + (ap.galPanel && ap.galPanel.enabled ? ' checked' : '') + '> 使用图片对话框</label>' +
+            '<span class="ap-galpanel-current">' + (ap.galPanel ? (isSafeGalImageSrc(ap.galPanel.imageSrc) ? '<img src="' + escapeHtml(ap.galPanel.imageSrc) + '" alt="">' : '') + '<span>' + escapeHtml(ap.galPanel.name) + '</span>' : '<span>未选择（使用上方颜色）</span>') + '</span>' +
+            '<button class="btn" type="button" id="ap-open-gal-presets">管理图片预设</button></div>' +
+          '<div class="ai-hint" data-groups="galbox">图片对话框未启用时继续使用底框色和透明度；应用图片后会保存独立快照。</div>' +
+          '<div class="field" data-groups="wm"><label>水印文字</label><input type="text" id="wm-text" value="' + escapeHtml(wmText) + '" placeholder="水印文字（留空=不显示）"></div>' +
+          '<div class="field" data-groups="wm"><label>水印位置</label><select id="wm-pos">' +
+            ['左上','右上','左下','右下'].map(function(p){ return '<option value="' + p + '"' + (wm.pos===p?' selected':'') + '>' + p + '</option>'; }).join('') +
+          '</select></div>' +
+          '<div class="field" data-groups="wm"><label>水印不透明度 <span id="wm-op-val">' + wmOpacity + '%</span></label>' +
+            '<input type="range" id="wm-opacity" min="10" max="100" value="' + wmOpacity + '"></div>' +
+          '<div class="field" data-groups="overlay"><label><input id="ap-ov-shadow-enabled" type="checkbox"' + (ap.overlayShadow && ap.overlayShadow.enabled ? ' checked' : '') + '> 叠层投影</label>' +
+            '<span class="ai-sub-tip">给叠层（透明 PNG 角色/物件）加柔和阴影，使其从背景中浮出</span></div>' +
+          '<div class="field" data-groups="overlay"><label>投影模糊 <span id="ap-ov-blur-val">' + ((ap.overlayShadow && ap.overlayShadow.blur) || 18) + 'px</span></label>' +
+            '<input type="range" id="ap-ov-blur" min="0" max="60" step="1" value="' + ((ap.overlayShadow && ap.overlayShadow.blur) || 18) + '"></div>' +
+          '<div class="field" data-groups="overlay"><label>投影距离 <span id="ap-ov-dist-val">' + ((ap.overlayShadow && ap.overlayShadow.dist) || 10) + 'px</span></label>' +
+            '<input type="range" id="ap-ov-dist" min="0" max="40" step="1" value="' + ((ap.overlayShadow && ap.overlayShadow.dist) || 10) + '"></div>' +
+          '<div class="field" data-groups="overlay"><label>投影不透明度 <span id="ap-ov-op-val">' + ((ap.overlayShadow && ap.overlayShadow.opacity) || 45) + '%</span></label>' +
+            '<input type="range" id="ap-ov-op" min="0" max="90" step="1" value="' + ((ap.overlayShadow && ap.overlayShadow.opacity) || 45) + '"></div>' +
+        '</div>' +
       '</div>' +
       '<div class="ai-section">' +
         '<h4><svg class="ico" aria-hidden="true"><use href="#ic-image"/></svg> 开场背景</h4>' +
         '<div class="field"><label>开场背景图案</label>' +
           '<select id="gs-opening"><option value="">（使用默认深色开场）</option></select>' +
-          (globalSettings.openingBg ? (String(globalSettings.openingBg).indexOf('data:') === 0 ? ' <span style="font-size:12px;color:#8b96a8">（旧版上传图，仍生效）</span>' : ' <span style="font-size:12px;color:#88c0ff">已选择：' + escapeHtml(globalSettings.openingBg) + '</span>') : ' <span style="font-size:12px;color:#8b96a8">（从素材库的背景中选取；留空=默认深色开场）</span>') + '</div>' +
+          (globalSettings.openingBg ? (String(globalSettings.openingBg).indexOf('data:') === 0 ? ' <span style="font-size:12px;color:#8b96a8">（旧版上传图，仍生效）</span>' : ' <span style="font-size:12px;color:#88c0ff">已选择：' + escapeHtml(globalSettings.openingBg) + '</span>') : ' <span style="font-size:12px;color:#8b96a8">（从素材库的背景中选取；留空=默认深色开场，预览框同步显示）</span>') + '</div>' +
         (globalSettings.openingBg && String(globalSettings.openingBg).indexOf('data:') === 0 ? '<div class="field"><img id="gs-opening-preview" src="' + globalSettings.openingBg + '" style="max-width:140px;max-height:80px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);object-fit:cover"></div>' : '') +
       '</div>' +
       '<div class="ai-section">' +
@@ -4209,29 +4261,8 @@
         '<div class="field"><label>保护强度</label><select id="gs-textcontrast">' +
           [['off','关（保持原样）'],['auto','自动（选字色 + 调亮暗背景，默认）']].map(function(o){ return '<option value="' + o[0] + '"' + (globalSettings.textContrast === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></div>' +
-      '</div>' +
-      '<div class="ai-section">' +
-        '<h4><svg class="ico" aria-hidden="true"><use href="#ic-lock"/></svg> 水印设置</h4>' +
-        '<div class="field"><label>文字</label><input type="text" id="wm-text" value="' + escapeHtml(wm.text) + '" placeholder="水印文字（留空=不显示）"></div>' +
-        '<div class="field"><label>位置</label><select id="wm-pos">' +
-          ['左上','右上','左下','右下'].map(function(p){ return '<option value="' + p + '"' + (wm.pos===p?' selected':'') + '>' + p + '</option>'; }).join('') +
-        '</select></div>' +
-        '<div class="field"><label>不透明度</label><input type="range" id="wm-opacity" min="10" max="100" value="' + (wm.opacity || 40) + '"><span id="wm-op-val" style="font-size:12px;color:#9aa3b2;min-width:30px">' + (wm.opacity || 40) + '%</span></div>' +
-      '</div>' +
-      '<div class="ai-section">' +
-        '<h4><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>实时预览</h4>' +
-        '<div class="ai-hint">左长文 / 右 Galgame，改设置即时反映。</div>' +
-        '<div class="ap-preview-row">' +
-          '<div class="ap-preview ap-preview-long">' +
-            '<div class="ap-prev-title" id="ap-prev-title">第一章 · 启程</div>' +
-            '<div class="ap-msg" id="ap-prev-long">这是长文模式的示例正文，用来预览正文字体与字号的整体观感。</div>' +
-            '<div class="ap-prev-divider"><span class="divider-line"></span><span class="divider-text" id="ap-prev-divider">分隔小标题</span><span class="divider-line"></span></div>' +
-          '</div>' +
-          '<div class="ap-preview ap-preview-gal">' +
-            '<div class="ap-galbox" id="ap-prev-gal"><div class="ap-msg" id="ap-prev-gal-msg">这是 Galgame 底部对话框的示例文字，底框颜色可在上方调整。</div></div>' +
-          '</div>' +
-        '</div>' +
       '</div>';
+    const apActive = { group: null };
     function applyPreview() {
       const a = getAppearance();
       const fs = (a.fontSize || 20) + 'px';
@@ -4243,9 +4274,49 @@
       if (div) div.style.fontFamily = a.dividerFont || 'inherit';
       const galBox = $('#ap-prev-gal');
       const galMsg = $('#ap-prev-gal-msg');
-      if (galBox) galBox.style.background = a.galBoxColor;
+      if (galBox) applyGalPanelPreview(galBox, a.galPanel, a.galBoxColor);
       if (galMsg) { galMsg.style.fontFamily = a.bodyFont || 'inherit'; galMsg.style.fontSize = fs; }
+      const gw = globalSettings.watermark;
+      ['long','gal'].forEach(function(zone) {
+        const el = $('#ap-prev-wm-' + zone);
+        if (!el) return;
+        if (gw && gw.text) { el.textContent = gw.text; el.style.opacity = (gw.opacity || 40) / 100; el.style.display = ''; }
+        else { el.style.display = 'none'; }
+        const posMap = { '左上':['top','12px','left','16px'], '右上':['top','12px','right','16px'], '左下':['bottom','12px','left','16px'], '右下':['bottom','12px','right','16px'] };
+        const p = posMap[gw && gw.pos] || posMap['右下'];
+        el.style[p[0]] = p[1]; el.style[p[2]] = p[3];
+        el.style.top = p[0] === 'top' ? p[1] : ''; el.style.bottom = p[0] === 'bottom' ? p[1] : '';
+        el.style.left = p[2] === 'left' ? p[3] : ''; el.style.right = p[2] === 'right' ? p[3] : '';
+      });
+      const ov = $('#ap-prev-overlay');
+      if (ov) {
+        const os = a.overlayShadow;
+        if (os && os.enabled) {
+          const blur = (typeof os.blur === 'number' ? os.blur : 18) + 'px';
+          const dist = (typeof os.dist === 'number' ? os.dist : 10) + 'px';
+          const op = (typeof os.opacity === 'number' ? os.opacity : 45) / 100;
+          ov.style.filter = 'drop-shadow(' + dist + ' ' + dist + ' ' + blur + ' rgba(0,0,0,' + op + '))';
+        } else {
+          ov.style.filter = 'none';
+        }
+      }
     }
+    function setActiveGroup(group) {
+      apActive.group = group;
+      const label = { title: '浮动标题', body: '正文', divider: '分割线', galbox: 'Galgame 对话框', wm: '水印', overlay: '叠层' }[group] || '';
+      const lbl = $('#ap-active-label');
+      if (lbl) lbl.textContent = label ? ('正在编辑：' + label) : '点击预览框中的元素开始编辑';
+      box.querySelectorAll('[data-groups]').forEach(function(el) {
+        el.style.display = (!group || (el.getAttribute('data-groups') || '').split(' ').indexOf(group) >= 0) ? '' : 'none';
+      });
+      box.querySelectorAll('[data-edit]').forEach(function(el) { el.classList.toggle('ap-edit-active', el.getAttribute('data-edit') === group); });
+    }
+    box.querySelectorAll('[data-edit]').forEach(function(el) {
+      el.addEventListener('click', function(e) { e.stopPropagation(); setActiveGroup(this.getAttribute('data-edit')); });
+    });
+    box.querySelectorAll('[data-preview-zone]').forEach(function(zone) {
+      zone.addEventListener('click', function() { setActiveGroup(null); });
+    });
     function galParts() { return galBoxParts(getAppearance().galBoxColor); }
     function setGal(r,g,b,a){ return 'rgba(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ',' + a + ')'; }
     box.querySelector('#ap-fontsize').addEventListener('input', function() { $('#ap-fs-val').textContent = this.value + 'px'; saveAppearance({ fontSize: parseInt(this.value, 10) }); applyPreview(); });
@@ -4280,6 +4351,18 @@
           if (a && a.name) opts.push('<option value="' + escapeHtml(a.name) + '"' + (globalSettings.openingBg === a.name ? ' selected' : '') + '>' + escapeHtml(a.name) + '</option>');
         });
         obSel.innerHTML = opts.join('');
+        // 同步到预览框背景：素材名按名解析 src/纯色；旧版 data: 直链直接用。图片上叠深色渐变保证文字可读。
+        function setZoneBackground(z, src, color) {
+          if (src) { z.style.backgroundImage = 'linear-gradient(rgba(10,12,18,0.62), rgba(10,12,18,0.62)), url("' + src + '")'; z.style.backgroundSize = 'cover'; z.style.backgroundPosition = 'center'; }
+          else if (color) { z.style.backgroundImage = ''; z.style.backgroundColor = color; }
+        }
+        const bg = globalSettings.openingBg;
+        if (bg && String(bg).indexOf('data:') === 0) {
+          box.querySelectorAll('[data-preview-zone]').forEach(function(z) { setZoneBackground(z, bg, ''); });
+        } else if (bg) {
+          const hit = (list || []).find(function(a) { return a && a.name === bg; });
+          if (hit) box.querySelectorAll('[data-preview-zone]').forEach(function(z) { setZoneBackground(z, hit.src || '', (hit.kind === 'solid' && hit.color) ? hit.color : ''); });
+        }
       }).catch(function() {});
       obSel.addEventListener('change', function() {
         globalSettings.openingBg = this.value; saveGlobal();
@@ -4289,9 +4372,21 @@
     }
     const tcSel = box.querySelector('#gs-textcontrast');
     if (tcSel) tcSel.addEventListener('change', function() { globalSettings.textContrast = this.value; saveGlobal(); toast('文字对比度保护：' + this.options[this.selectedIndex].text); });
-    box.querySelector('#wm-text').addEventListener('input', function() { globalSettings.watermark.text = this.value; saveGlobal(); });
-    box.querySelector('#wm-pos').addEventListener('change', function() { globalSettings.watermark.pos = this.value; saveGlobal(); });
-    box.querySelector('#wm-opacity').addEventListener('input', function() { globalSettings.watermark.opacity = parseInt(this.value); box.querySelector('#wm-op-val').textContent = this.value + '%'; saveGlobal(); });
+    box.querySelector('#wm-text').addEventListener('input', function() { globalSettings.watermark.text = this.value; saveGlobal(); applyPreview(); });
+    box.querySelector('#wm-pos').addEventListener('change', function() { globalSettings.watermark.pos = this.value; saveGlobal(); applyPreview(); });
+    box.querySelector('#wm-opacity').addEventListener('input', function() { globalSettings.watermark.opacity = parseInt(this.value); box.querySelector('#wm-op-val').textContent = this.value + '%'; saveGlobal(); applyPreview(); });
+    // 叠层投影
+    function curOverlayShadow() { return Object.assign({ enabled: false, blur: 18, dist: 10, opacity: 45 }, getAppearance().overlayShadow || {}); }
+    function saveOverlayShadow(patch) { saveAppearance({ overlayShadow: Object.assign(curOverlayShadow(), patch) }); applyPreview(); }
+    const ovEnabled = box.querySelector('#ap-ov-shadow-enabled');
+    if (ovEnabled) ovEnabled.addEventListener('change', function() { saveOverlayShadow({ enabled: this.checked }); });
+    const ovBlur = box.querySelector('#ap-ov-blur');
+    if (ovBlur) ovBlur.addEventListener('input', function() { box.querySelector('#ap-ov-blur-val').textContent = this.value + 'px'; saveOverlayShadow({ blur: parseInt(this.value, 10) }); });
+    const ovDist = box.querySelector('#ap-ov-dist');
+    if (ovDist) ovDist.addEventListener('input', function() { box.querySelector('#ap-ov-dist-val').textContent = this.value + 'px'; saveOverlayShadow({ dist: parseInt(this.value, 10) }); });
+    const ovOp = box.querySelector('#ap-ov-op');
+    if (ovOp) ovOp.addEventListener('input', function() { box.querySelector('#ap-ov-op-val').textContent = this.value + '%'; saveOverlayShadow({ opacity: parseInt(this.value, 10) }); });
+    setActiveGroup(null);
     applyPreview();
   }
 

@@ -1998,7 +1998,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 }
 
 /* ===== 设置：外观 预览 ===== */
-.ap-preview { border-radius: 10px; overflow: hidden; }
+.ap-preview { border-radius: 10px; overflow: hidden; position: relative; }
 .ap-preview-row { display: flex; gap: 12px; align-items: stretch; margin-top: 4px; }
 .ap-preview-row > .ap-preview { flex: 1 1 0; min-width: 0; margin-top: 0; }
 .ap-preview-long { background: linear-gradient(180deg, #141926, #0a0c12); padding: 28px 0; min-height: 200px; display: flex; flex-direction: column; justify-content: center; gap: 14px; }
@@ -2010,6 +2010,18 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 .ap-preview-gal { position: relative; background: #05070c; min-height: 200px; display: flex; }
 .ap-galbox { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 26px; min-height: 70px; display: flex; align-items: center; background: rgba(0,0,0,0.55); }
 .ap-galbox .ap-msg { max-width: 900px; width: 92%; margin: 0 auto; padding: 0; color: #f2f6ff; }
+/* 预览元素可点击 + 激活高亮 */
+.ap-edit-target { cursor: pointer; transition: box-shadow .15s; border-radius: 6px; }
+.ap-edit-target:hover { box-shadow: 0 0 0 1px rgba(136,192,255,0.55), 0 0 14px rgba(136,192,255,0.25); }
+.ap-edit-target.ap-edit-active { box-shadow: 0 0 0 2px #88c0ff, 0 0 18px rgba(136,192,255,0.45); }
+.ap-preview-long .ap-edit-target, .ap-preview-gal .ap-edit-target { position: relative; z-index: 2; }
+/* 预览框水印 */
+.ap-prev-wm { position: absolute; z-index: 4; font-size: 12px; color: rgba(255,255,255,0.8); text-shadow: 0 1px 4px rgba(0,0,0,0.9); white-space: nowrap; pointer-events: auto; }
+/* 预览框叠层示例：与运行时 overlay-layer 一致（居中 contain、60% 高、文字层之下） */
+.ap-prev-overlay { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); height: 60%; z-index: 1; pointer-events: auto; background-repeat: no-repeat; background-position: center; background-size: contain; }
+/* 外观设置分组：默认全收起，点预览元素才显示对应组 */
+.ap-settings-panel { margin-top: 12px; }
+.ap-active-label { font-size: 13px; color: #88c0ff; margin: 0 0 10px; min-height: 18px; }
 .toy-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
 .toy-actions .btn { flex: 0 0 auto; }
 .settings-sub code { background: rgba(0,0,0,0.3); color: #cfe0ff; padding: 1px 6px; border-radius: 5px; font-size: 12px; }
@@ -2085,7 +2097,8 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 .gal-preset-toolbar .btn, .gal-preset-actions .btn { width: auto; margin: 0; }
 .gal-image-editor { display: grid; grid-template-columns: minmax(0, 1fr) 128px; gap: 14px; margin: 14px 0; }
 .gal-image-stage { position: relative; display: flex; align-items: center; justify-content: center; min-height: 200px; overflow: hidden; background: #111722; border: 1px solid var(--border); border-radius: 9px; }
-.gal-image-stage img { display: block; max-width: 100%; max-height: 300px; object-fit: contain; }
+.gal-image-canvas { position: relative; display: inline-block; flex: 0 1 auto; max-width: 100%; line-height: 0; }
+.gal-image-canvas img { display: block; max-width: 100%; max-height: 300px; object-fit: contain; }
 .gal-slice-guide { position: absolute; z-index: 2; padding: 0; background: transparent; border: 0; outline: 0; touch-action: none; cursor: grab; }
 .gal-slice-guide::after { content: ''; position: absolute; background: #79a8ff; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
 .gal-slice-top, .gal-slice-bottom { left: 0; width: 100%; height: 24px; transform: translateY(-50%); }
@@ -2095,10 +2108,10 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 .gal-slice-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-content: start; }
 .gal-slice-inputs label { font-size: 12px; color: var(--text-2); }
 .gal-slice-inputs input { width: 100%; min-height: 40px; box-sizing: border-box; margin-top: 3px; padding: 6px; color: var(--text); background: var(--bg); border: 1px solid var(--border-strong); border-radius: 6px; }
-.gal-preview-pair { display: grid; grid-template-columns: 1fr 180px; gap: 12px; margin: 0 0 14px; }
+.gal-preview-pair { display: block; margin: 0 0 14px; }
+.gal-preview-pair > div { min-width: 0; }
 .gal-preview-pair small { display: block; margin-bottom: 5px; color: var(--text-2); }
-.gal-stretch-preview { min-height: 74px; box-sizing: border-box; padding: 25px 30px; color: #f4f7ff; background: rgba(0,0,0,.55); border-style: solid; border-width: 22px 28px; }
-.gal-stretch-mobile { min-height: 120px; padding: 35px 22px; }
+.gal-stretch-preview { width: 100%; box-sizing: border-box; aspect-ratio: 16 / 3; min-height: 0; padding: 25px 30px; overflow: hidden; display: flex; align-items: center; color: #f4f7ff; background: rgba(0,0,0,.55); border-style: solid; border-width: 22px 28px; }
 .gal-preset-hint { margin: 12px 0 0; color: var(--text-3); font-size: 12px; line-height: 1.5; }
 .ap-galpanel-field { align-items: center; flex-wrap: wrap; }
 .ap-galpanel-field > label { width: auto; color: var(--text); }
@@ -2112,7 +2125,6 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
   .gal-preset-scope { flex: 0 0 auto; min-width: 130px; margin: 0; }
   .gal-preset-editor { padding: 12px; }
   .gal-image-editor { grid-template-columns: 1fr; }
-  .gal-preview-pair { grid-template-columns: 1fr; }
   .gal-slice-inputs input { min-height: 40px; }
 }
 @media (max-width: 640px) {

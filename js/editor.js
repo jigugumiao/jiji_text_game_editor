@@ -4198,13 +4198,14 @@
         '<div class="ai-hint">点击下方预览框中的元素（标题 / 正文 / 分割线 / Galgame 对话框 / 水印），只显示对应的设置；点击预览框空白处收起。</div>' +
         '<div class="ap-preview-row">' +
           '<div class="ap-preview ap-preview-long" data-preview-zone="long">' +
-            '<div class="ap-prev-overlay ap-edit-target" data-edit="overlay" id="ap-prev-overlay"' + (window.OVERLAY_SAMPLE_DATA ? ' style="background-image:url(&quot;' + window.OVERLAY_SAMPLE_DATA + '&quot;)"' : '') + '></div>' +
+            '<div class="ap-prev-overlay ap-edit-target" data-edit="overlay" id="ap-prev-overlay-long"' + (window.OVERLAY_SAMPLE_DATA ? ' style="background-image:url(&quot;' + window.OVERLAY_SAMPLE_DATA + '&quot;)"' : '') + '></div>' +
             '<div class="ap-edit-target ap-prev-title" data-edit="title" id="ap-prev-title">第一章 · 启程</div>' +
             '<div class="ap-edit-target ap-msg" data-edit="body" id="ap-prev-long">这是长文模式的示例正文，用来预览正文字体与字号的整体观感。</div>' +
             '<div class="ap-edit-target ap-prev-divider" data-edit="divider"><span class="divider-line"></span><span class="divider-text" id="ap-prev-divider">分隔小标题</span><span class="divider-line"></span></div>' +
             '<div class="ap-prev-wm ap-edit-target" data-edit="wm" id="ap-prev-wm-long">' + escapeHtml(wmText || '水印') + '</div>' +
           '</div>' +
           '<div class="ap-preview ap-preview-gal" data-preview-zone="gal">' +
+            '<div class="ap-prev-overlay ap-edit-target" data-edit="overlay" id="ap-prev-overlay-gal"' + (window.OVERLAY_SAMPLE_DATA ? ' style="background-image:url(&quot;' + window.OVERLAY_SAMPLE_DATA + '&quot;)"' : '') + '></div>' +
             '<div class="ap-edit-target ap-galbox" data-edit="galbox" id="ap-prev-gal"><div class="ap-msg ap-edit-target" data-edit="body" id="ap-prev-gal-msg">这是 Galgame 底部对话框的示例文字，底框颜色可点击编辑。</div></div>' +
             '<div class="ap-prev-wm ap-edit-target" data-edit="wm" id="ap-prev-wm-gal">' + escapeHtml(wmText || '水印') + '</div>' +
           '</div>' +
@@ -4288,18 +4289,11 @@
         el.style.top = p[0] === 'top' ? p[1] : ''; el.style.bottom = p[0] === 'bottom' ? p[1] : '';
         el.style.left = p[2] === 'left' ? p[3] : ''; el.style.right = p[2] === 'right' ? p[3] : '';
       });
-      const ov = $('#ap-prev-overlay');
-      if (ov) {
-        const os = a.overlayShadow;
-        if (os && os.enabled) {
-          const blur = (typeof os.blur === 'number' ? os.blur : 18) + 'px';
-          const dist = (typeof os.dist === 'number' ? os.dist : 10) + 'px';
-          const op = (typeof os.opacity === 'number' ? os.opacity : 45) / 100;
-          ov.style.filter = 'drop-shadow(' + dist + ' ' + dist + ' ' + blur + ' rgba(0,0,0,' + op + '))';
-        } else {
-          ov.style.filter = 'none';
-        }
-      }
+      const os = a.overlayShadow || {};
+      const ovFilter = (os.enabled)
+        ? 'drop-shadow(' + (typeof os.dist === 'number' ? os.dist : 10) + 'px ' + (typeof os.dist === 'number' ? os.dist : 10) + 'px ' + (typeof os.blur === 'number' ? os.blur : 18) + 'px rgba(0,0,0,' + ((typeof os.opacity === 'number' ? os.opacity : 45) / 100) + '))'
+        : 'none';
+      box.querySelectorAll('.ap-prev-overlay').forEach(function(el) { el.style.filter = ovFilter; });
     }
     function setActiveGroup(group) {
       apActive.group = group;

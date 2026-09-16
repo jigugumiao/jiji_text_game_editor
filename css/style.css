@@ -2001,24 +2001,29 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 .ap-preview { border-radius: 10px; overflow: hidden; position: relative; }
 .ap-preview-row { display: flex; gap: 12px; align-items: stretch; margin-top: 4px; }
 .ap-preview-row > .ap-preview { flex: 1 1 0; min-width: 0; margin-top: 0; }
-.ap-preview-long { background: linear-gradient(180deg, #141926, #0a0c12); padding: 28px 0; min-height: 200px; display: flex; flex-direction: column; justify-content: center; gap: 14px; }
+/* 预览框高度必须是确定值：绝对定位的叠层/水印用百分比定位，父级 auto 高度会让百分比解析成 auto 而塌成不可见 */
+.ap-preview-long { background: linear-gradient(180deg, #141926, #0a0c12); padding: 20px 0; height: 300px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; justify-content: center; gap: 14px; }
 .ap-prev-title { max-width: 640px; width: 100%; margin: 0 auto; padding: 0 24px; box-sizing: border-box; color: #fff; font-size: 26px; font-weight: 700; text-align: center; text-shadow: 0 2px 18px rgba(0,0,0,0.6); line-height: 1.3; }
 .ap-msg { max-width: 640px; width: 100%; margin: 0 auto; padding: 0 24px; box-sizing: border-box; line-height: 1.6; color: #e9eef8; white-space: pre-wrap; word-break: break-word; font-size: 20px; }
 .ap-prev-divider { display: flex; align-items: center; justify-content: center; gap: 14px; max-width: 640px; width: 100%; margin: 0 auto; }
 .ap-prev-divider .divider-line { flex: 1; max-width: 42%; height: 1px; background: rgba(160,178,210,0.4); }
 .ap-prev-divider .divider-text { color: rgba(190,205,228,0.9); font-size: 15px; letter-spacing: 3px; white-space: nowrap; }
-.ap-preview-gal { position: relative; background: #05070c; min-height: 200px; display: flex; }
+.ap-preview-gal { position: relative; background: #05070c; height: 300px; box-sizing: border-box; overflow: hidden; display: flex; }
 .ap-galbox { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 26px; min-height: 70px; display: flex; align-items: center; background: rgba(0,0,0,0.55); }
 .ap-galbox .ap-msg { max-width: 900px; width: 92%; margin: 0 auto; padding: 0; color: #f2f6ff; }
 /* 预览元素可点击 + 激活高亮 */
 .ap-edit-target { cursor: pointer; transition: box-shadow .15s; border-radius: 6px; }
 .ap-edit-target:hover { box-shadow: 0 0 0 1px rgba(136,192,255,0.55), 0 0 14px rgba(136,192,255,0.25); }
 .ap-edit-target.ap-edit-active { box-shadow: 0 0 0 2px #88c0ff, 0 0 18px rgba(136,192,255,0.45); }
-.ap-preview-long .ap-edit-target, .ap-preview-gal .ap-edit-target { position: relative; z-index: 2; }
+/* 文字层压在叠层之上：只给这些元素加定位，绝不能覆盖 .ap-galbox/.ap-prev-overlay/.ap-prev-wm 自身的 absolute（否则贴底对话框和居中叠层都会失效） */
+.ap-preview .ap-prev-title, .ap-preview .ap-msg, .ap-preview .ap-prev-divider { position: relative; z-index: 2; }
+.ap-preview .ap-galbox { z-index: 2; }
 /* 预览框水印 */
 .ap-prev-wm { position: absolute; z-index: 4; font-size: 12px; color: rgba(255,255,255,0.8); text-shadow: 0 1px 4px rgba(0,0,0,0.9); white-space: nowrap; pointer-events: auto; }
-/* 预览框叠层示例：与运行时 overlay-layer 一致（居中 contain、60% 高、文字层之下） */
-.ap-prev-overlay { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); height: 60%; z-index: 1; pointer-events: auto; background-repeat: no-repeat; background-position: center; background-size: contain; }
+/* 预览框叠层示例：与运行时 overlay-layer 一致（居中带 contain，文字层盖在其上）；高度用 78% 居中带保证竖图够大 */
+.ap-preview .ap-prev-overlay { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); height: 78%; min-height: 96px; z-index: 0; pointer-events: auto; background-repeat: no-repeat; background-position: center; background-size: contain; }
+/* Galgame 预览框：叠层占上半区，底部留给贴底对话框（叠层在上、对话框在下） */
+.ap-preview-gal .ap-prev-overlay { top: 8px; bottom: 112px; height: auto; transform: none; background-position: center bottom; }
 /* 外观设置分组：默认全收起，点预览元素才显示对应组 */
 .ap-settings-panel { margin-top: 12px; }
 .ap-active-label { font-size: 13px; color: #88c0ff; margin: 0 0 10px; min-height: 18px; }
@@ -2129,6 +2134,10 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 }
 @media (max-width: 640px) {
   .ap-galbox .ap-msg { width: calc(100% - 36px); max-width: none; }
+  /* 窄屏：两个预览框改为上下堆叠，避免各占半宽导致竖版叠层被压成细条 */
+  .ap-preview-row { flex-direction: column; }
+  .ap-preview-row > .ap-preview { width: 100%; }
+  .ap-preview-long, .ap-preview-gal { height: 300px; }
 }
 .toy-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
 .toy-actions .btn { flex: 0 0 auto; }

@@ -6,6 +6,15 @@
 <title>剧情编辑器 · 测试版</title>
 <style>
 /* inlined from css/style.css */
+.time-machine-list { margin-top: 16px; display: grid; gap: 8px; }
+.time-machine-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.time-machine-row > div { white-space: pre-line; font-size: 13px; line-height: 1.6; }
+.time-machine-row > button { flex-shrink: 0; }
+.time-machine-restoring { z-index: 10000; align-items: center; justify-content: center; padding: 24px; color: white; background: rgba(17,17,20,.85); }
+.time-machine-confirm { max-width: min(460px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--text); line-height: 1.6; }
+.time-machine-confirm::backdrop { background: rgba(17,17,20,.45); }
+.time-machine-confirm-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+
 /* ============================================================
    浅色极简高级风主题
    参考：Vercel（纯白/柔灰、边框即阴影）、Notion（纸感暖灰、低透明阴影）、
@@ -2266,7 +2275,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.114-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.115-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -2791,6 +2800,7 @@ const LS_LEGACY_META = _NS + 'story-editor:meta';
 const DB_NAME = _NS + 'story-editor';
 const STORE_ASSETS = 'assets';
 const STORE_META = 'meta';
+const STORE_BACKUPS = 'backups';
 
 let _projectId = null; // 当前项目 id；null 表示尚未进入任何项目
 
@@ -2818,10 +2828,26 @@ function openDB() {
         db.createObjectStore(STORE_META, { keyPath: 'key' });
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      req.result.onversionchange = () => { req.result.close(); _dbPromise = null; };
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
   });
   return _dbPromise;
+}
+
+// 独立数据库避免旧版已打开的编辑器阻塞素材数据库的版本升级。
+let _backupDBPromise = null;
+function openBackupDB() {
+  if (_backupDBPromise) return _backupDBPromise;
+  _backupDBPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME + ':time-machine', 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(STORE_BACKUPS, { keyPath: 'key' }); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  }).catch(error => { _backupDBPromise = null; throw error; });
+  return _backupDBPromise;
 }
 
 // （已移除 localStorage 回退：纯 IndexedDB，file:// 下原生支持，纯前端运行）
@@ -2852,7 +2878,7 @@ function _idFromKey(key) {
 
 // 以下均为纯 IndexedDB 操作；失败时直接 reject，由调用方（编辑器）捕获并提示，不再静默降级到 localStorage。
 async function idbPut(store, value) {
-  const db = await openDB();
+  const db = await (store === STORE_BACKUPS ? openBackupDB() : openDB());
   await new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readwrite');
     tx.objectStore(store).put(value);
@@ -2861,7 +2887,7 @@ async function idbPut(store, value) {
   });
 }
 async function idbGet(store, key) {
-  const db = await openDB();
+  const db = await (store === STORE_BACKUPS ? openBackupDB() : openDB());
   return await new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readonly');
     const r = tx.objectStore(store).get(key);
@@ -2870,7 +2896,7 @@ async function idbGet(store, key) {
   });
 }
 async function idbDelete(store, key) {
-  const db = await openDB();
+  const db = await (store === STORE_BACKUPS ? openBackupDB() : openDB());
   await new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readwrite');
     tx.objectStore(store).delete(key);
@@ -2879,7 +2905,7 @@ async function idbDelete(store, key) {
   });
 }
 async function idbGetAll(store) {
-  const db = await openDB();
+  const db = await (store === STORE_BACKUPS ? openBackupDB() : openDB());
   return await new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readonly');
     const r = tx.objectStore(store).getAll();
@@ -2942,6 +2968,9 @@ async function deleteProject(id) {
   localStorage.removeItem(LS_META + ':' + id);
   localStorage.removeItem(LS_BLOCKS + ':' + id);
   localStorage.removeItem(LS_VARS + ':' + id);
+  const backups = await listTimeMachineBackups(id);
+  for (const backup of backups) await idbDelete(STORE_BACKUPS, _backupKey(id, backup.id));
+  await idbDelete(STORE_BACKUPS, _backupIndexKey(id));
   // 删除该项目素材
   try {
     const all = await idbGetAll(STORE_ASSETS);
@@ -3447,6 +3476,100 @@ function loadMeta() {
 const BACKUP_FORMAT = 'story-editor-project';
 const BACKUP_VERSION = 1;
 
+// 时光机：完整快照与轻量目录分开存储；目录与淘汰在同一事务内更新。
+const TIME_MACHINE_LIMIT = 30;
+function _backupIndexKey(pid) { return 'index:' + pid; }
+function _backupKey(pid, id) { return 'snapshot:' + pid + ':' + id; }
+async function listTimeMachineBackups(pid) {
+  const record = await idbGet(STORE_BACKUPS, _backupIndexKey(pid));
+  return record && record.entries || [];
+}
+async function createTimeMachineBackup(pid, reason, draft) {
+  const project = listProjects().find(p => p.id === pid);
+  if (!project) throw new Error('项目不存在');
+  const snapshot = await readProjectSnapshot(pid); // 素材读取失败必须中止，不能生成不完整快照。
+  if (draft && typeof draft.text === 'string' && typeof draft.block === 'string') {
+    if (draft.block === MAIN_BLOCK) snapshot.blocks.main = draft.text;
+    else snapshot.blocks.blocks[draft.block] = draft.text;
+    snapshot.data.blocks = JSON.stringify(snapshot.blocks);
+  }
+  if (!listProjects().some(p => p.id === pid)) throw new Error('项目已删除');
+  const id = uid('backup');
+  const summary = {
+    id, createdAt: Date.now(), reason: reason || 'auto', projectName: project.name,
+    blockCount: 1 + Object.keys(snapshot.blocks.blocks || {}).length,
+    assetCount: snapshot.assets.length
+  };
+  const db = await openBackupDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_BACKUPS, 'readwrite');
+    const store = tx.objectStore(STORE_BACKUPS);
+    const request = store.get(_backupIndexKey(pid));
+    request.onsuccess = () => {
+      const entries = [summary].concat(request.result && request.result.entries || []);
+      store.put({ key: _backupKey(pid, id), project, snapshot });
+      for (const old of entries.slice(TIME_MACHINE_LIMIT)) store.delete(_backupKey(pid, old.id));
+      store.put({ key: _backupIndexKey(pid), entries: entries.slice(0, TIME_MACHINE_LIMIT) });
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = tx.onabort = () => reject(tx.error || new Error('时光机备份失败'));
+  });
+  return summary;
+}
+async function restoreTimeMachineBackup(pid, backupId) {
+  const record = await idbGet(STORE_BACKUPS, _backupKey(pid, backupId));
+  if (!record || !record.snapshot || record.snapshot.id !== pid) throw new Error('备份不存在或已过期');
+  const snapshot = record.snapshot;
+  const blocks = _readJson(snapshot.data.blocks, null);
+  if (snapshot.data.blocks != null && (!blocks || typeof blocks.main !== 'string' || !blocks.blocks)) throw new Error('备份剧情块无效');
+  if (!Array.isArray(snapshot.assets) || snapshot.assets.some(a => !a.lib || !a.id || !LIBS.includes(a.lib))) throw new Error('备份素材无效');
+  // 先读取目标快照，再备份当前内容；即使第 30 条被淘汰，目标仍在内存中。
+  await createTimeMachineBackup(pid, 'before-restore');
+  const db = await openDB();
+  const keys = _projectDataKeys(pid);
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_ASSETS, 'readwrite');
+    const store = tx.objectStore(STORE_ASSETS);
+    const request = store.getAll();
+    let previous = null, previousProjects = null, failure = null;
+    request.onsuccess = () => {
+      try {
+        previous = {};
+        Object.keys(keys).forEach(name => { previous[name] = localStorage.getItem(keys[name]); });
+        previousProjects = localStorage.getItem(LS_PROJECTS);
+        const projects = listProjects();
+        const index = projects.findIndex(p => p.id === pid);
+        if (index < 0) throw new Error('项目不存在');
+        const prefix = pid + PROJECT_NS_SEP;
+        for (const asset of request.result || []) if (asset.key && asset.key.indexOf(prefix) === 0) store.delete(asset.key);
+        for (const asset of snapshot.assets) store.put(Object.assign({}, asset, { key: prefix + asset.lib + ':' + asset.id }));
+        Object.keys(keys).forEach(name => {
+          if (snapshot.data[name] == null) localStorage.removeItem(keys[name]);
+          else localStorage.setItem(keys[name], snapshot.data[name]);
+        });
+        projects[index] = Object.assign({}, record.project, { id: pid });
+        _writeProjects(projects);
+      } catch (error) { failure = error; tx.abort(); }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => { failure = failure || tx.error; };
+    tx.onabort = () => {
+      try {
+        if (previous) Object.keys(keys).forEach(name => {
+          if (previous[name] == null) localStorage.removeItem(keys[name]);
+          else localStorage.setItem(keys[name], previous[name]);
+        });
+        if (previousProjects != null) localStorage.setItem(LS_PROJECTS, previousProjects);
+      } catch (rollbackError) {
+        reject(new Error('恢复失败，回退未完成；恢复前的完整内容已保存在时光机：' + rollbackError.message));
+        return;
+      }
+      reject(failure || tx.error || new Error('恢复失败，已保留原项目'));
+    };
+  });
+  return pid;
+}
+
 async function exportProject(pid) {
   const realPid = pid || _projectId;
   if (!realPid) throw new Error('没有可备份的项目');
@@ -3588,12 +3711,84 @@ const Storage = {
   readProjectSnapshot, writeTemporaryProject, validateTemporaryProject, registerTemporaryProject, cleanupTemporaryProject, copyProjectForVisual,
   // 工程备份 / 恢复（跨设备搬运整个剧本：素材+变量+线索+设定）
   exportProject, importProject,
+  TIME_MACHINE_LIMIT, listTimeMachineBackups, createTimeMachineBackup, restoreTimeMachineBackup,
   // Galgame 对话框预设（全局，不随项目切换）
   saveDialoguePreset, getAllDialoguePresets, deleteDialoguePreset, renameDialoguePreset,
 };
 
 if (typeof window !== 'undefined') window.Storage = Storage;
 if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
+
+</script>
+<script>
+/* inlined from js/time-machine.js */
+// 后台备份只绑定进入编辑器的项目；在途任务始终使用捕获的项目 id。
+(function () {
+  'use strict';
+  var INTERVAL_MS = 3 * 60 * 1000;
+  function createController(options) {
+    var schedule = options.setTimeout || setTimeout;
+    var cancel = options.clearTimeout || clearTimeout;
+    var now = options.now || Date.now;
+    var session = null, timer = null, pending = null;
+    async function run(reason) {
+      var current = session;
+      if (!current) return null;
+      if (pending) {
+        if (pending.session === current) return pending.promise;
+        await pending.promise;
+        if (session !== current) return null;
+      }
+      var task = { session: current };
+      pending = task;
+      task.promise = (async function () {
+        try {
+          options.flush(current.pid);
+          var result = await options.backup(current.pid, reason || 'auto');
+          if (session === current && options.onStatus) options.onStatus(null, result);
+          return result;
+        } catch (error) {
+          if (session === current && options.onStatus) options.onStatus(error);
+          return null;
+        } finally { if (pending === task) pending = null; }
+      })();
+      return task.promise;
+    }
+    function arm(current) {
+      current.due = now() + INTERVAL_MS;
+      timer = schedule(function () { tick(current); }, INTERVAL_MS);
+    }
+    async function tick(current) {
+      if (session !== current) return;
+      timer = null;
+      await run('auto');
+      if (session === current) arm(current);
+    }
+    function stop() {
+      session = null;
+      if (timer != null) cancel(timer);
+      timer = null;
+      return pending ? pending.promise : Promise.resolve();
+    }
+    function start(pid) {
+      stop();
+      session = { pid: pid };
+      arm(session);
+      return run('open');
+    }
+    function checkDue() {
+      if (session && now() >= session.due) {
+        if (timer != null) cancel(timer);
+        return tick(session);
+      }
+      return Promise.resolve();
+    }
+    return { start: start, stop: stop, backupNow: function () { return run('manual'); }, checkDue: checkDue };
+  }
+  var api = { INTERVAL_MS: INTERVAL_MS, createController: createController };
+  if (typeof window !== 'undefined') window.TimeMachine = api;
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})();
 
 </script>
 <script>
@@ -5682,10 +5877,20 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     var onDiagnostic = options.onDiagnostic;
     var lastNode = null;
     var currentDocument = null;
+    var documentContextKey = null;
     var mode = 'source';
     var isCommitting = false;
     var editingOption = null;
     var sourceBeforeOptionEdit = null;
+    var optionContextKey = null;
+    function contextKey() { return options.getDocumentKey ? options.getDocumentKey() : ''; }
+    function resetContext() {
+      editingOption = null;
+      sourceBeforeOptionEdit = null;
+      optionContextKey = null;
+      lastNode = null;
+      lastTextOffset = null;
+    }
     var lastTextOffset = null;
     var insertMenu = typeof document !== 'undefined' ? document.getElementById('visual-insert-menu') : null;
     var insertPopover = typeof document !== 'undefined' ? document.getElementById('visual-insert-popover') : null;
@@ -5698,8 +5903,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
         isCommitting = true;
         var next = VisualDoc.replaceNode(getSource(), node, replacement);
         options.setSource(next);
-        currentDocument = VisualDoc.scan(next);
-        renderDocument(visualHost, currentDocument, onDiagnostic, renderOptions);
+        refresh();
       } finally {
         isCommitting = false;
       }
@@ -5711,24 +5915,30 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       if (!node || !node.data || !node.data.option || !visualHost) return;
       editingOption = node;
       sourceBeforeOptionEdit = getSource();
+      optionContextKey = contextKey();
+      var sessionSource = sourceBeforeOptionEdit, sessionKey = optionContextKey;
+      function isCurrentSession() {
+        return editingOption === node && contextKey() === sessionKey && getSource() === sessionSource;
+      }
       renderOptionEditor(visualHost, node, optionDraftFromOption(node.data.option, options.getStates ? options.getStates() : null), {
         getStates: options.getStates,
         getBlocks: options.getBlocks,
         tipKey: 'first-option',
         getUiPreference: options.getUiPreference,
         setUiPreference: options.setUiPreference,
-        close: function () { editingOption = null; sourceBeforeOptionEdit = null; refresh(); },
-        restore: function () { if (sourceBeforeOptionEdit != null) options.setSource(sourceBeforeOptionEdit); },
+        close: function () { if (editingOption === node) resetContext(); refresh(); },
+        // The form only changes a draft. A failed save must never restore an entire document.
+        restore: function () {},
         commit: function (replacement) {
+          if (!isCurrentSession()) return { ok: false, error: '剧情已切换或修改，请重新打开选项' };
           var VisualDoc = getVisualDoc();
           try {
-            var next = VisualDoc.replaceNode(getSource(), editingOption, replacement);
+            var next = VisualDoc.replaceNode(getSource(), node, replacement);
             options.setSource(next);
             editingOption = null; sourceBeforeOptionEdit = null;
             refresh();
             return { ok: true };
           } catch (_) {
-            if (sourceBeforeOptionEdit != null) options.setSource(sourceBeforeOptionEdit);
             return { ok: false, error: '无法保存选项' };
           }
         }
@@ -5740,6 +5950,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
         return;
       }
       var command = node.data;
+      var commandSource = getSource(), commandKey = contextKey();
       var editor = document.createElement('input');
       editor.type = 'text';
       editor.className = 'story-visual-command-input';
@@ -5748,6 +5959,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       editor.placeholder = command.name === '停顿' ? '毫秒（可留空）' : '填写内容';
       var wrapper = document.createElement('span');
       wrapper.className = element.className + ' story-visual-command-editing';
+      wrapper.dataset.start = String(node.start); wrapper.dataset.end = String(node.end);
       var name = document.createElement('span');
       name.className = 'story-visual-command-name';
       name.textContent = command.name + '：';
@@ -5758,7 +5970,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
         if (settled) return;
         settled = true;
         var replacement = serializeCommandEdit(node, editor.value);
-        if (save && replacement !== node.raw) commitTextNode(node, replacement);
+        if (save && replacement !== node.raw && commandSource === getSource() && commandKey === contextKey()) commitTextNode(node, replacement);
         else refresh();
       }
       editor.addEventListener('keydown', function (event) {
@@ -5780,9 +5992,19 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     function refresh() {
       var VisualDoc = getVisualDoc();
       if (!VisualDoc) return null;
-      if (editingOption) return currentDocument;
+      if (editingOption && optionContextKey === contextKey() && sourceBeforeOptionEdit === getSource()) return currentDocument;
+      if (editingOption) resetContext();
       currentDocument = VisualDoc.scan(getSource());
-      renderDocument(visualHost, currentDocument, onDiagnostic, renderOptions);
+      documentContextKey = contextKey();
+      var renderedSource = currentDocument.source, renderedKey = contextKey();
+      var boundOptions = Object.assign({}, renderOptions, {
+        commitTextNode: function (node, replacement) {
+          if (getSource() === renderedSource && contextKey() === renderedKey) commitTextNode(node, replacement);
+        },
+        onEditOption: function (node) { if (getSource() === renderedSource && contextKey() === renderedKey) editOption(node); },
+        onEditCommand: function (node, element) { if (getSource() === renderedSource && contextKey() === renderedKey) editCommand(node, element); }
+      });
+      renderDocument(visualHost, currentDocument, onDiagnostic, boundOptions);
       return currentDocument;
     }
     function rememberSelection() {
@@ -5811,8 +6033,30 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       if (visualHost) visualHost.hidden = false;
       if (insertMenu) insertMenu.hidden = false;
     }
+    function commitFocusedEditor() {
+      var active = typeof document !== 'undefined' && document.activeElement;
+      if (!isCommitting && active && visualHost && visualHost.contains(active) && active.matches && active.matches('.story-visual-node-text[contenteditable="true"], .story-visual-command-input')) active.blur();
+    }
+    // Read the focused paragraph without blurring, rerendering or moving the caret.
+    function getSnapshotSource() {
+      var source = getSource(), active = typeof document !== 'undefined' && document.activeElement;
+      if (!active || !visualHost || !visualHost.contains(active) || !currentDocument
+          || currentDocument.source !== source || documentContextKey !== contextKey()) return source;
+      var element = active.closest && active.closest('[data-start][data-end]');
+      if (!element) return source;
+      var node = currentDocument.nodes.find(function (n) { return n.start === Number(element.dataset.start) && n.end === Number(element.dataset.end); });
+      if (!node) return source;
+      var replacement;
+      if (active.matches('.story-visual-node-text[contenteditable="true"]')) {
+        var parts = splitEditableText(node.raw);
+        replacement = parts.leading + sourceFromTextEditor(active) + parts.trailing;
+      } else if (active.matches('.story-visual-command-input')) replacement = serializeCommandEdit(node, active.value);
+      else return source;
+      return getVisualDoc().replaceNode(source, node, replacement);
+    }
     function showSource() {
       commitFocusedEditor();
+      resetContext();
       mode = 'source';
       if (visualHost) visualHost.hidden = true;
       if (sourceWrap) sourceWrap.hidden = false;
@@ -5832,11 +6076,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       showVisual: showVisual,
       showSource: showSource,
       refresh: refresh,
+      resetContext: resetContext,
+      getSnapshotSource: getSnapshotSource,
       insert: insert,
-      commitFocusedEditor: function () {
-        var active = typeof document !== 'undefined' && document.activeElement;
-        if (active && active.matches && active.matches('.story-visual-node-text[contenteditable="true"]')) active.blur();
-      },
+      commitFocusedEditor: commitFocusedEditor,
       getMode: function () { return mode; },
       destroy: destroy
     };
@@ -11847,6 +12090,11 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   let currentProjectMode = 'game'; // 'game' 剧情游戏 | 'article' 通用文章
   let pendingAudioLib = null;
   let saveTimer = null;
+  let timeMachineController = null;
+  let timeMachineRestoring = false;
+  let timeMachineError = '';
+  let editorProjectId = null;
+  let timeMachineRenderGeneration = 0;
   let history = [];      // 撤销栈：{ text, selStart, selEnd }
   let histIndex = -1;    // 当前位置
   let histTimer = null;  // 打字合并计时器
@@ -12251,6 +12499,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       sourceWrap: editorTextWrap,
       visualHost: visualHost,
       getSource: () => storyText.value,
+      getDocumentKey: () => window.Storage.getCurrentProjectId() + ':' + activeBlock,
       setSource: (next) => { storyText.value = next; commitEdit(); },
       getStates: () => window.Storage.getVars(),
       getBlocks: () => window.Storage.listBlockNames(),
@@ -13189,6 +13438,10 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   }
 
   async function openProject(id) {
+    if (editorProjectId && !timeMachineRestoring) saveNow();
+    if (timeMachineController) await timeMachineController.stop();
+    clearTimeout(saveTimer); clearTimeout(histTimer); clearTimeout(pvTimer);
+    if (visualController) { visualController.commitFocusedEditor(); visualController.resetContext(); }
     window.Storage.setCurrentProject(id);
     await repairExampleAssetsIfNeeded(); // 就地修复旧版相对路径示例素材（按需触发 9MB 懒加载）
     currentProjectMode = window.Storage.getProjectMode(id); // 'article' | 'game'
@@ -13204,7 +13457,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       if (initial === '') initial = DEFAULT_TEXT;
       window.Storage.setBlockText(activeBlock, initial);
     }
-    text = window.Storage.getBlockText(activeBlock) || initial || DEFAULT_TEXT;
+    text = window.Storage.getBlockText(activeBlock);
     storyText.value = text;
     updateWordCount();
     history = []; histIndex = -1;
@@ -13228,6 +13481,27 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     document.querySelectorAll('.project-conversion-hint').forEach(function (hint) { hint.remove(); });
     const project = window.Storage.listProjects().find(p => p.id === id);
     if (project && project.mode !== 'article' && !project.visualEditorVersion) showOldProjectConversionHint(project);
+    if (!timeMachineController) {
+      timeMachineController = window.TimeMachine.createController({
+        flush: (pid) => { if (window.Storage.getCurrentProjectId() === pid) saveNow(false); },
+        backup: (pid, reason) => window.Storage.createTimeMachineBackup(pid, reason,
+          window.Storage.getCurrentProjectId() === pid ? { block: activeBlock, text: visualController ? visualController.getSnapshotSource() : storyText.value } : null),
+        onStatus: (error) => {
+          const previousError = timeMachineError;
+          timeMachineError = error ? (error.message || String(error)) : '';
+          if (error && timeMachineError !== previousError) toast('时光机备份失败：' + timeMachineError);
+          const panel = $('#settings-time-machine');
+          if (panel && !panel.parentElement.classList.contains('hidden')) renderTimeMachine();
+        }
+      });
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && timeMachineController && !timeMachineRestoring) timeMachineController.checkDue();
+      });
+    }
+    timeMachineError = '';
+    editorProjectId = id;
+    if (visualController && visualController.getMode() === 'visual') visualController.refresh();
+    timeMachineController.start(id);
   }
 
   let conversionProjectId = null;
@@ -13290,6 +13564,9 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   }
   function returnToProjects() {
     saveNow();
+    if (timeMachineController) timeMachineController.stop();
+    if (visualController) visualController.resetContext();
+    editorProjectId = null;
     const list = $('#projects-list');
     // 结构未变（仍是同一批项目）→ 直接显示已渲染的卡片，不整页重刷；仅后台刷新统计数字
     if (_projectsSignature && list && list.querySelector('.project-card') && projectsSignatureMatches()) {
@@ -13512,6 +13789,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     // 全局快捷键：Ctrl/⌘+Z 撤销、Ctrl/⌘+Y 或 Ctrl/⌘+Shift+Z 重做、Ctrl/⌘+S 保存、F12 预览
     // 绑定在 document（而非 storyText）上，使文本框未聚焦（光标不显示）时撤销/重做也生效
     document.addEventListener('keydown', (e) => {
+      if (timeMachineRestoring) { e.preventDefault(); return; }
       if (e.ctrlKey || e.metaKey) {
         const k = e.key.toLowerCase();
         const t = e.target;
@@ -15343,6 +15621,8 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   function switchBlock(name) {
     if (name === activeBlock) { renderLibrary(); updateBlockChip(); return; }
     if (visualController) visualController.commitFocusedEditor();
+    if (visualController) visualController.resetContext();
+    clearTimeout(saveTimer); clearTimeout(histTimer);
     window.Storage.setBlockText(activeBlock, storyText.value);
     activeBlock = name;
     text = window.Storage.getBlockText(name) || '';
@@ -15484,6 +15764,9 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
   }
   async function handleDeleteBlock(name) {
     if (!confirm('确定删除剧情块「' + name + '」？\n注意：其它块里指向它的 <剧情块:名称> / <选项:...,名称> 会变成无效引用。')) return;
+    saveNow();
+    if (activeBlock === name && visualController) { visualController.commitFocusedEditor(); visualController.resetContext(); }
+    clearTimeout(saveTimer); clearTimeout(histTimer);
     window.Storage.deleteBlock(name);
     if (activeBlock === name) {
       activeBlock = MAIN_BLOCK;
@@ -15495,6 +15778,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     renderLibrary();
     refreshTodo();
     toast('已删除剧情块「' + name + '」');
+    if (visualController && visualController.getMode() === 'visual') visualController.refresh();
   }
 
   function renderBgCards(list, assets) {
@@ -18220,8 +18504,7 @@ self.onmessage = function (e) {
               if (opts.length > 6) pushIssue(prefix, n, 'error', '一行最多放置 6 个选项，当前 ' + opts.length + ' 个');
               for (const o of opts) {
                 const bn = o.option.block;
-                if (bn === MAIN_BLOCK) pushIssue(prefix, n, 'warning', '不建议选项跳到主剧情块');
-                else if (bn && !blockNames.has(bn)) pushIssue(prefix, n, 'warning', '选项指向的剧情块「' + bn + '」未找到，点击可能无效');
+                if (bn && !blockNames.has(bn)) pushIssue(prefix, n, 'warning', '选项指向的剧情块「' + bn + '」未找到，点击可能无效');
                 // 条件表达式的检查（空条件/语法/未定义变量）由 StoryVars.analyze 统一处理
               }
             }
@@ -18502,9 +18785,13 @@ self.onmessage = function (e) {
   // ============ 保存 ============
   function scheduleSave() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveNow, 400);
+    saveTimer = setTimeout(() => saveNow(false), 400);
   }
-  function saveNow() {
+  function saveNow(flushFocused = true) {
+    if (timeMachineRestoring) return;
+    if (flushFocused && visualController) visualController.commitFocusedEditor();
+    clearTimeout(saveTimer);
+    text = storyText.value;
     window.Storage.setBlockText(activeBlock, text);
     const existing = window.Storage.loadMeta() || {};
     window.Storage.saveMeta(existing);
@@ -20916,12 +21203,87 @@ self.onmessage = function (e) {
     refreshSettingsForms();
   }
   function closeSettings() { $('#settings-drawer').classList.add('hidden'); }
+  function confirmTimeMachineRestore(stamp) {
+    return new Promise(resolve => {
+      const dialog = document.createElement('dialog'); dialog.className = 'time-machine-confirm';
+      dialog.innerHTML = '<h3>恢复历史版本</h3><p>将当前完整项目恢复到 ' + escapeHtml(stamp) + '。</p><p>恢复前会自动备份当前内容，之后也可从时光机找回。</p><div class="time-machine-confirm-actions"><button type="button" class="btn btn-ghost" data-answer="cancel">取消</button><button type="button" class="btn btn-primary" data-answer="restore">确认恢复</button></div>';
+      function finish(answer) { dialog.close(); dialog.remove(); resolve(answer); }
+      dialog.querySelector('[data-answer="cancel"]').onclick = () => finish(false);
+      dialog.querySelector('[data-answer="restore"]').onclick = () => finish(true);
+      dialog.addEventListener('cancel', event => { event.preventDefault(); finish(false); });
+      document.body.appendChild(dialog); dialog.showModal();
+    });
+  }
+  async function renderTimeMachine() {
+    const box = $('#settings-time-machine');
+    if (!box) return;
+    const pid = window.Storage.getCurrentProjectId();
+    const generation = ++timeMachineRenderGeneration;
+    box.innerHTML = '<h4>时光机</h4><div class="ai-hint">正在读取备份…</div>';
+    try {
+      const entries = await window.Storage.listTimeMachineBackups(pid);
+      if (generation !== timeMachineRenderGeneration || window.Storage.getCurrentProjectId() !== pid) return;
+      box.innerHTML = '<h4>时光机</h4><div class="ai-hint">编辑期间后台每 3 分钟备份当前完整项目，保留最近 30 条。包含全部剧情块、变量、设置和素材。恢复前会额外备份当前版本。</div>'
+        + '<div class="ai-hint">备份保存在当前浏览器；关闭页面后暂停。浏览器休眠或限制后台计时后，返回页面会补一次备份。</div>'
+        + '<button type="button" class="btn btn-ghost" id="time-machine-backup-now">立即备份</button>'
+        + '<p class="ai-status" role="status">' + escapeHtml(timeMachineError ? '最近备份失败：' + timeMachineError : '已保存 ' + entries.length + ' / 30 条备份') + '</p>';
+      const backupButton = box.querySelector('#time-machine-backup-now');
+      backupButton.disabled = timeMachineRestoring;
+      backupButton.onclick = async () => {
+        backupButton.disabled = true;
+        const result = await timeMachineController.backupNow();
+        if (result) toast('时光机备份已保存');
+        renderTimeMachine();
+      };
+      const list = document.createElement('div'); list.className = 'time-machine-list';
+      if (!entries.length) list.textContent = '还没有备份。首次进入项目会自动保存一条。';
+      const reasons = { open: '进入项目', auto: '自动备份', manual: '手动备份', 'before-restore': '恢复前备份' };
+      entries.forEach(entry => {
+        const row = document.createElement('div'); row.className = 'time-machine-row';
+        const detail = document.createElement('div');
+        const stamp = new Date(entry.createdAt).toLocaleString('zh-CN', { hour12: false });
+        detail.textContent = stamp + ' · ' + (reasons[entry.reason] || '自动备份') + '\n' + entry.blockCount + ' 个剧情块 · ' + entry.assetCount + ' 个素材';
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-ghost'; button.textContent = '恢复'; button.disabled = timeMachineRestoring;
+        button.onclick = async () => {
+          if (timeMachineRestoring || window.Storage.getCurrentProjectId() !== pid) return;
+          if (!await confirmTimeMachineRestore(stamp)) return;
+          if (timeMachineRestoring || window.Storage.getCurrentProjectId() !== pid) return;
+          saveNow();
+          if (visualController) visualController.resetContext();
+          timeMachineRestoring = true;
+          const blocker = document.createElement('div'); blocker.className = 'modal time-machine-restoring'; blocker.setAttribute('role', 'status'); blocker.textContent = '正在备份当前内容并恢复历史版本，请稍候…'; document.body.appendChild(blocker);
+          clearTimeout(saveTimer); clearTimeout(histTimer); clearTimeout(pvTimer);
+          ftResetSession(); agentResetSession();
+          try {
+            await timeMachineController.stop();
+            await window.Storage.restoreTimeMachineBackup(pid, entry.id);
+            await openProject(pid);
+            refreshSettingsForms();
+            toast('已恢复历史版本；恢复前内容已备份');
+          } catch (error) {
+            timeMachineError = error.message || String(error);
+            toast('时光机恢复失败：' + timeMachineError);
+            timeMachineController.start(pid);
+          } finally {
+            timeMachineRestoring = false;
+            blocker.remove();
+            renderTimeMachine();
+          }
+        };
+        row.append(detail, button); list.appendChild(row);
+      });
+      box.appendChild(list);
+    } catch (error) {
+      if (generation === timeMachineRenderGeneration) box.innerHTML = '<h4>时光机</h4><p role="alert">无法读取备份：' + escapeHtml(error.message || String(error)) + '</p>';
+    }
+  }
   function switchSettingsSub(sub) {
     document.querySelectorAll('.settings-subnav').forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
     document.querySelectorAll('.settings-sub').forEach(p => p.classList.toggle('hidden', p.dataset.sub !== sub));
     if (sub === 'general') renderSettingsGeneral();
     else if (sub === 'appearance') renderAppearance();
     else if (sub === 'toy') renderToy();
+    else if (sub === 'time-machine') renderTimeMachine();
   }
   function refreshSettingsForms() {
     loadAISettings();
@@ -21611,6 +21973,7 @@ self.onmessage = function (e) {
       <button class="settings-subnav active" data-sub="ai"><svg class="ico" aria-hidden="true"><use href="#ic-sparkles"/></svg>AI 编剧</button>
       <button class="settings-subnav" data-sub="general"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>通用</button>
       <button class="settings-subnav" data-sub="appearance"><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>外观</button>
+      <button class="settings-subnav" data-sub="time-machine"><svg class="ico" aria-hidden="true"><use href="#ic-corner-up-left"/></svg>时光机</button>
       <button class="settings-subnav" data-sub="toy"><svg class="ico" aria-hidden="true"><use href="#ic-bili"/></svg>Toy推送</button>
       <button class="settings-subnav" data-sub="about"><svg class="ico" aria-hidden="true"><use href="#ic-user"/></svg>关于作者</button>
     </div>
@@ -21662,6 +22025,9 @@ self.onmessage = function (e) {
         <div class="ai-section" id="settings-appearance"></div>
       </div>
       <!-- 子项：Toy 推送 -->
+      <div class="settings-sub hidden" data-sub="time-machine">
+        <div class="ai-section" id="settings-time-machine"></div>
+      </div>
       <div class="settings-sub hidden" data-sub="toy">
         <div class="ai-section" id="settings-toy"></div>
       </div>
@@ -21683,7 +22049,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.114</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.115</span></div>
         </div>
       </div>
     </div>

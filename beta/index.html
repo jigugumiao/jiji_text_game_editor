@@ -450,19 +450,57 @@ body.portrait .cursor-start-toggle { font-size: 11px; padding: 3px 6px; gap: 3px
 .story-visual-context-tip span { flex: 1; }
 .story-visual-context-tip-close { flex: 0 0 auto; padding: 0 !important; border: 0 !important; color: var(--text-2) !important; text-decoration: underline; }
 .story-visual-form-field { display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 12px; align-items: center; margin: 12px 0; color: var(--text-2); }
+.story-visual-form-field[hidden] { display: none; }
 .story-visual-form-field input, .story-visual-form-field select { min-width: 0; min-height: 32px; padding: 5px 8px; border-radius: 5px; font: inherit; }
 .story-visual-condition-area, .story-visual-effects-area { margin: 26px 0; padding-top: 2px; }
-.story-visual-condition-tree { margin: 10px 0 0 10px; padding: 3px 0 3px 12px; border-left: 1px solid var(--visual-form-tree-line); }
-.story-visual-condition-tree-header, .story-visual-condition-tree-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; color: var(--text-2); font-size: 13px; }
-.story-visual-condition-tree-header > span { min-width: 5em; color: var(--text-2); }
-.story-visual-condition-row, .story-visual-effect-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 9px 0; }
-.story-visual-condition-row input, .story-visual-effect-row input { min-width: 7em; }
+.story-visual-condition-tree { min-width: 0; margin: 8px 0; padding: 9px 12px; border-left: 2px solid var(--visual-form-tree-line); border-radius: 0 5px 5px 0; background: var(--bg-soft); }
+.story-visual-condition-root { margin: 10px 0 0; padding: 0; border: 0; background: transparent; }
+.story-visual-condition-tree-header, .story-visual-condition-tree-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; color: var(--text-2); font-size: 13px; }
+.story-visual-condition-heading { flex: 1 1 10em; }
+.story-visual-condition-tree-header > select { max-width: 100%; min-width: 0; padding: 4px 5px; font: inherit; border: 1px solid var(--visual-form-field-border); border-radius: 4px; }
+.story-visual-condition-count { flex: 1 0 auto; white-space: nowrap; color: var(--text-3); font-size: 12px; }
+.story-visual-condition-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.1fr) minmax(0, 1fr) 30px; align-items: center; gap: 7px; margin: 5px 0; }
+.story-visual-condition-row > input, .story-visual-condition-row > select { width: 100%; min-width: 0; min-height: 32px; padding: 5px 6px; border: 1px solid var(--visual-form-field-border); border-radius: 5px; font: inherit; }
+.story-visual-condition-row > [aria-invalid="true"] { border-color: var(--danger); }
+.story-visual-condition-row-error { grid-column: 1 / -1; color: var(--danger); font-size: 12px; overflow-wrap: anywhere; }
+.story-visual-condition-tree-body[hidden], .story-visual-condition-row-error[hidden], .story-visual-condition-collapsed-summary[hidden] { display: none; }
+.story-visual-condition-connector { display: flex; align-items: center; gap: 9px; padding: 1px 6px; color: var(--text-3); font-size: 12px; }
+.story-visual-condition-connector::after { content: ''; width: 24px; height: 1px; background: var(--visual-form-tree-line); }
+.story-visual-condition-collapsed-summary { padding: 3px 0 4px 6px; color: var(--text-2); font-size: 13px; overflow-wrap: anywhere; }
+.story-visual-condition-menu { position: relative; margin-left: auto; }
+.story-visual-condition-menu > summary { display: block; min-width: 30px; min-height: 30px; padding: 4px 7px; border-radius: 4px; cursor: pointer; list-style: none; }
+.story-visual-condition-menu > summary::-webkit-details-marker { display: none; }
+.story-visual-condition-menu > summary:hover, .story-visual-condition-menu[open] > summary { background: var(--bg-soft); color: var(--text); }
+.story-visual-condition-menu-items { position: absolute; right: 0; top: 100%; z-index: 5; min-width: 9em; padding: 5px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 5px; box-shadow: 0 3px 12px var(--border); }
+.story-visual-condition-add { margin-left: 0; }
+.story-visual-condition-add .story-visual-condition-menu-items { left: 0; right: auto; }
+.story-visual-condition-menu-items > button { display: block; width: 100%; text-align: left; white-space: nowrap; }
+.story-visual-effect-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 9px 0; }
+.story-visual-effect-row input { min-width: 7em; }
 .story-visual-condition-summary { margin-top: 7px; color: var(--text-3); font-size: 13px; }
 .story-visual-form-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--border); }
 .story-visual-option-form button { min-height: 30px; padding: 4px 10px; color: inherit; background: transparent; border: 1px solid var(--border-strong); border-radius: 5px; font: inherit; cursor: pointer; }
 .story-visual-option-form .story-visual-form-primary { color: #fff; background: var(--accent); border-color: var(--accent); }
 .story-visual-option-form .story-visual-form-secondary { color: var(--text-2); }
 .story-visual-option-form button:disabled { opacity: .45; cursor: not-allowed; }
+.story-visual-option-form .story-visual-condition-icon, .story-visual-option-form .story-visual-condition-menu-items > button { padding: 4px 6px; border: 0; color: var(--text-2); }
+.story-visual-option-form .story-visual-condition-icon { width: 30px; }
+.story-visual-option-form .story-visual-condition-remove { opacity: .55; }
+.story-visual-condition-row:hover .story-visual-condition-remove, .story-visual-condition-remove:focus-visible { opacity: 1; }
+.story-visual-option-form .story-visual-condition-icon:hover, .story-visual-option-form .story-visual-condition-menu-items > button:hover { background: var(--bg-sunken); }
+.story-visual-condition-menu > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .story-visual-option-form { padding: 20px 12px 28px; }
+  .story-visual-condition-tree { padding: 8px; }
+  .story-visual-condition-root { padding: 0; }
+  .story-visual-condition-row { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, .85fr) 28px; gap: 4px; }
+  .story-visual-condition-row > input, .story-visual-condition-row > select { padding: 5px 3px; }
+  .story-visual-condition-root > .story-visual-condition-tree-header > .story-visual-condition-heading { flex-basis: 100%; }
+}
+@media (pointer: coarse) {
+  .story-visual-condition-row > input, .story-visual-condition-row > select { min-height: 44px; font-size: 16px; }
+  .story-visual-condition-menu > summary, .story-visual-option-form .story-visual-condition-icon { min-height: 44px; }
+}
 .story-visual-form-error { margin: 8px 0; color: var(--danger); }
 /* 极淡、低存在感的行号，仅在编译报错时帮助定位行 */
 .ln-gutter {
@@ -2228,7 +2266,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.112-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.114-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -5017,27 +5055,46 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     return groupToAst(draft);
   }
 
+  function conditionRowIssue(row, states) {
+    var types = stateTypes(states), name = String(row && row.name || '').trim(), type = types[name];
+    if (!name) return '请选择变量';
+    if (!type) return '剧情状态「' + name + '」不存在';
+    var operators = type === 'number' ? ['>', '<', '>=', '<=', '==', '!=', '=']
+      : type === 'text' ? ['==', '!=', '=', 'contains', 'notcontains'] : ['==', '!=', '='];
+    if (operators.indexOf(row.op) < 0) return '请选择判断关系';
+    var value = row.value;
+    if (value === '' || value === null || value === undefined) return type === 'number' ? '请输入数值' : '请填写条件值';
+    if (type === 'number' && !/^-?\d+(\.\d+)?$/.test(String(value))) return '请输入有效数值';
+    if (type === 'boolean' && value !== true && value !== false && value !== 'true' && value !== 'false') return '请选择是或否';
+    return '';
+  }
+
+  // Presentation status only; runtime evaluation remains in StoryVars.
+  function conditionDraftStatus(draft, states) {
+    var status = { count: 0, incomplete: 0, firstIncomplete: 0 };
+    function visit(group) {
+      if (!group || !Array.isArray(group.rows) || !group.rows.length) {
+        status.incomplete++;
+        if (!status.firstIncomplete) status.firstIncomplete = status.count + 1;
+        return;
+      }
+      group.rows.forEach(function (row) {
+        if (row && row.kind === 'group') { visit(row); return; }
+        status.count++;
+        if (conditionRowIssue(row, states)) {
+          status.incomplete++;
+          if (!status.firstIncomplete) status.firstIncomplete = status.count;
+        }
+      });
+    }
+    visit(draft);
+    return status;
+  }
+
   function conditionNaturalText(draft, states) {
     if (!draft || !Array.isArray(draft.rows) || !draft.rows.length) return '请先添加一条条件。';
-    var types = stateTypes(states), index = 0, incomplete = 0;
-    function invalid(row) {
-      var name = String(row && row.name || '').trim(), type = types[name], value = row && row.value;
-      if (!name || !type || !row.op || value === '' || value === null || value === undefined) return true;
-      if (type === 'number') return ['>', '<', '>=', '<=', '==', '!=', '='].indexOf(row.op) < 0 || !/^-?\d+(\.\d+)?$/.test(String(value));
-      if (type === 'text') return ['==', '!=', '=', 'contains', 'notcontains'].indexOf(row.op) < 0;
-      return ['==', '!=', '='].indexOf(row.op) < 0 || (value !== true && value !== false && value !== 'true' && value !== 'false');
-    }
-    function checkGroup(group) {
-      if (!group || !Array.isArray(group.rows) || !group.rows.length) { if (!incomplete) incomplete = index + 1; return false; }
-      var complete = true;
-      group.rows.forEach(function (row) {
-        if (row && row.kind === 'group') { if (!checkGroup(row)) complete = false; return; }
-        index++;
-        if (invalid(row)) { if (!incomplete) incomplete = index; complete = false; }
-      });
-      return complete;
-    }
-    if (!checkGroup(draft)) return '请完成第 ' + (incomplete || 1) + ' 条条件。';
+    var status = conditionDraftStatus(draft, states);
+    if (status.incomplete) return '请完成第 ' + status.firstIncomplete + ' 条条件。';
     var ast = conditionDraftToAst(draft), SV = getStoryVars();
     return ast && SV && SV.summarizeCondition ? SV.summarizeCondition(ast, stateTypes(states)) : '请完成第 1 条条件。';
   }
@@ -5306,7 +5363,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     return tip;
   }
 
-  function renderOptionEditor(host, node, initialDraft, context) {
+  function renderOptionEditor(host, node, initialDraft, context, viewState) {
+    viewState = viewState || { collapsedGroups: new WeakSet() };
     var states = context.getStates ? context.getStates() : [], types = stateTypes(states);
     var blocks = context.getBlocks ? context.getBlocks() : [];
     var draft = initialDraft;
@@ -5316,6 +5374,15 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     form.className = 'story-visual-option-form';
     form.noValidate = true;
     form.addEventListener('contextmenu', function (event) { event.preventDefault(); });
+    form.addEventListener('click', function (event) {
+      var activeMenu = event.target.closest('.story-visual-condition-menu');
+      form.querySelectorAll('.story-visual-condition-menu[open]').forEach(function (menu) { if (menu !== activeMenu) menu.open = false; });
+    });
+    form.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape') return;
+      var menu = event.target.closest('.story-visual-condition-menu[open]');
+      if (menu) { menu.open = false; menu.querySelector('summary').focus(); event.preventDefault(); }
+    });
     var title = document.createElement('div'); title.className = 'story-visual-form-title'; title.textContent = '编辑选项'; form.appendChild(title);
     var contextualTip = renderContextualTip(context);
     var error = document.createElement('div'); error.className = 'story-visual-form-error'; error.hidden = true; form.appendChild(error);
@@ -5332,74 +5399,133 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     unmet.addEventListener('change', function () { messageLine.hidden = unmet.value !== 'disable'; });
     var conditionArea = document.createElement('div'); conditionArea.className = 'story-visual-condition-area'; form.appendChild(conditionArea);
     var effectsArea = document.createElement('div'); effectsArea.className = 'story-visual-effects-area'; form.appendChild(effectsArea);
-    function rerender() { renderOptionEditor(host, node, readDraft(), context); }
+    function rerender() {
+      var active = document.activeElement, focusKey = active && active.dataset && active.dataset.conditionFocus;
+      renderOptionEditor(host, node, readDraft(), context, viewState);
+      if (focusKey) {
+        var target = Array.prototype.find.call(host.querySelectorAll('[data-condition-focus]'), function (field) { return field.dataset.conditionFocus === focusKey; });
+        if (target) target.focus();
+      }
+    }
     function readDraft() { return { text: text.value, block: block.value || null, condition: draft.condition, unmetBehavior: unmet.value, unmetMessage: message.value, effects: draft.effects, unknownFields: draft.unknownFields }; }
-    var conditionSummary = null, effectSummaries = [];
+    var conditionSummary = null, effectSummaries = [], conditionViewUpdates = [];
     function inputValueForType(type, input) {
       var value = input.value;
       return type === 'number' && /^-?\d+(\.\d+)?$/.test(value) ? Number(value) : value;
     }
     function updateConditionSummary() {
-      if (conditionSummary) conditionSummary.textContent = '自然语言翻译：' + conditionNaturalText(draft.condition, types);
+      if (conditionSummary) {
+        var status = conditionDraftStatus(draft.condition, types);
+        conditionSummary.textContent = status.incomplete ? '还有 ' + status.incomplete + ' 项未完成' : '出现规则：' + conditionNaturalText(draft.condition, types);
+      }
+      conditionViewUpdates.forEach(function (update) { update(); });
     }
     function updateEffectSummary(index) {
       if (effectSummaries[index]) effectSummaries[index].textContent = '自然语言翻译：' + effectNaturalText(draft.effects[index], types);
+      conditionViewUpdates.forEach(function (update) { update(); });
     }
     function rowLabel(label) { var e = document.createElement('div'); e.className = 'story-visual-form-label'; e.textContent = label; return e; }
     function renderConditionTree(group, parent, config) {
       var tree = document.createElement('div'); tree.className = 'story-visual-condition-tree';
+      if (config.root) tree.classList.add('story-visual-condition-root');
+      var path = config.path || 'condition';
       var header = document.createElement('div'); header.className = 'story-visual-condition-tree-header';
-      var heading = document.createElement('span'); heading.textContent = config.root ? config.rootHeading : '满足以下';
-      var mode = makeField('select', group.mode, [['all', '全部条件'], ['any', '任意条件']], readOnly);
-      mode.addEventListener('change', function () { group.mode = mode.value; rerender(); });
-      header.append(heading, mode);
-      if (!readOnly && config.remove) {
-        var removeGroupButton = document.createElement('button'); removeGroupButton.type = 'button'; removeGroupButton.textContent = config.root ? config.rootRemoveText : '删除条件组';
-        removeGroupButton.addEventListener('click', config.remove); header.appendChild(removeGroupButton);
+      var body = document.createElement('div'); body.className = 'story-visual-condition-tree-body';
+      var collapsed = !config.root && viewState.collapsedGroups.has(group);
+      body.hidden = collapsed;
+      if (!config.root) {
+        var toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'story-visual-condition-icon'; toggle.textContent = collapsed ? '▸' : '▾';
+        toggle.setAttribute('aria-label', collapsed ? '展开条件组' : '折叠条件组'); toggle.setAttribute('aria-expanded', String(!collapsed)); toggle.dataset.conditionFocus = path + '-toggle';
+        toggle.addEventListener('click', function () { if (collapsed) viewState.collapsedGroups.delete(group); else viewState.collapsedGroups.add(group); rerender(); });
+        header.appendChild(toggle);
+      } else {
+        var heading = document.createElement('span'); heading.className = 'story-visual-condition-heading'; heading.textContent = config.rootHeading; header.appendChild(heading);
       }
-      tree.appendChild(header);
+      var mode = makeField('select', group.mode, [['all', '同时满足'], ['any', '满足任意一项']], readOnly);
+      mode.setAttribute('aria-label', '条件组满足方式'); mode.dataset.conditionFocus = path + '-mode';
+      mode.addEventListener('change', function () { group.mode = mode.value; rerender(); });
+      header.appendChild(mode);
+      var count = document.createElement('span'); count.className = 'story-visual-condition-count'; header.appendChild(count);
+      var collapsedSummary = document.createElement('div'); collapsedSummary.className = 'story-visual-condition-collapsed-summary'; collapsedSummary.hidden = !collapsed;
+      function updateGroupStatus() {
+        var status = conditionDraftStatus(group, types);
+        count.textContent = status.count + ' 条条件' + (status.incomplete ? ' · ' + status.incomplete + ' 项未完成' : '');
+        collapsedSummary.textContent = status.incomplete ? '请展开补全条件' : conditionNaturalText(group, types);
+      }
+      updateGroupStatus(); conditionViewUpdates.push(updateGroupStatus);
+      if (!readOnly && config.remove) {
+        var menu = document.createElement('details'); menu.className = 'story-visual-condition-menu';
+        var menuLabel = document.createElement('summary'); menuLabel.textContent = '⋯'; menuLabel.setAttribute('aria-label', '条件组操作');
+        var menuItems = document.createElement('div'); menuItems.className = 'story-visual-condition-menu-items';
+        var removeGroupButton = document.createElement('button'); removeGroupButton.type = 'button'; removeGroupButton.textContent = config.root ? config.rootRemoveText : '删除条件组';
+        removeGroupButton.addEventListener('click', config.remove); menuItems.appendChild(removeGroupButton); menu.append(menuLabel, menuItems); header.appendChild(menu);
+      }
+      tree.append(header, collapsedSummary, body);
       group.rows.forEach(function (row, index) {
+        var rowPath = path + '-' + index;
+        if (index) { var connector = document.createElement('div'); connector.className = 'story-visual-condition-connector'; connector.textContent = group.mode === 'any' ? '或者' : '并且'; body.appendChild(connector); }
         if (row.kind === 'group') {
-          renderConditionTree(row, tree, { root: false, onValueInput: config.onValueInput, remove: function () { group.rows.splice(index, 1); rerender(); } });
+          renderConditionTree(row, body, { root: false, path: rowPath, onValueInput: config.onValueInput, remove: function () { group.rows.splice(index, 1); rerender(); } });
           return;
         }
         var line = document.createElement('div'); line.className = 'story-visual-condition-row';
-        var name = makeField('select', row.name, [['', '选择变量']].concat(Object.keys(types).map(function (key) { return [key, key]; })), readOnly);
+        var nameChoices = [['', '选择变量']].concat(Object.keys(types).map(function (key) { return [key, key]; }));
+        if (row.name && !types[row.name]) nameChoices.push([row.name, row.name + '（不存在）']);
+        var name = makeField('select', row.name, nameChoices, readOnly);
+        name.setAttribute('aria-label', '变量'); name.dataset.conditionFocus = rowPath + '-name';
         name.addEventListener('change', function () { row.name = name.value; row.op = types[row.name] === 'boolean' ? '=' : ''; row.value = types[row.name] === 'boolean' ? true : ''; rerender(); });
         line.appendChild(name);
-        if (name.value) {
-          var type = types[name.value];
-          if (type === 'boolean') {
-            var booleanValue = makeField('select', String(row.value), [['true', '为是'], ['false', '为否']], readOnly);
-            booleanValue.addEventListener('change', function () { row.op = '='; row.value = booleanValue.value === 'true'; rerender(); });
-            line.appendChild(booleanValue);
-          } else {
-            var opChoices = type === 'number' ? [['', '选择关系'], ['>=', '不少于'], ['<=', '不多于'], ['>', '大于'], ['<', '小于'], ['=', '等于'], ['!=', '不等于']]
-              : [['', '选择关系'], ['=', '等于'], ['!=', '不等于'], ['contains', '包含'], ['notcontains', '不包含']];
-            var op = makeField('select', row.op, opChoices, readOnly);
-            var value = makeField('input', row.value, null, readOnly);
-            op.addEventListener('change', function () { row.op = op.value; rerender(); }); value.addEventListener('input', function () { row.value = inputValueForType(type, value); config.onValueInput(); });
-            line.append(op, value);
+        var type = types[name.value], op, value;
+        if (type === 'boolean') {
+          op = makeField('select', row.op === '==' ? '=' : row.op, [['=', '为'], ['!=', '不为']], readOnly);
+          value = makeField('select', String(row.value), [['true', '是'], ['false', '否']], readOnly);
+          value.addEventListener('change', function () { row.value = value.value === 'true'; config.onValueInput(); });
+        } else {
+          var opChoices = !type ? [['', '判断关系']] : type === 'number' ? [['', '选择关系'], ['>=', '不少于'], ['<=', '不多于'], ['>', '大于'], ['<', '小于'], ['=', '等于'], ['!=', '不等于']]
+            : [['', '选择关系'], ['=', '等于'], ['!=', '不等于'], ['contains', '包含'], ['notcontains', '不包含']];
+          op = makeField('select', row.op === '==' ? '=' : row.op, opChoices, readOnly || !type);
+          value = makeField('input', row.value, null, readOnly || !type);
+          value.placeholder = type === 'number' ? '数值' : type === 'text' ? '文字' : '条件值';
+          if (type === 'number') value.inputMode = 'decimal';
+          value.addEventListener('input', function () { row.value = inputValueForType(type, value); config.onValueInput(); });
+        }
+        op.setAttribute('aria-label', '判断关系'); value.setAttribute('aria-label', '条件值');
+        op.dataset.conditionFocus = rowPath + '-op'; value.dataset.conditionFocus = rowPath + '-value';
+        op.addEventListener('change', function () { row.op = op.value; config.onValueInput(); });
+        line.append(op, value);
+        if (!readOnly) { var remove = document.createElement('button'); remove.type = 'button'; remove.className = 'story-visual-condition-icon story-visual-condition-remove'; remove.textContent = '×'; remove.setAttribute('aria-label', '删除条件'); remove.dataset.conditionFocus = rowPath + '-remove'; remove.addEventListener('click', function () { group.rows.splice(index, 1); rerender(); }); line.appendChild(remove); }
+        var feedback = document.createElement('div'); feedback.className = 'story-visual-condition-row-error'; feedback.id = 'story-condition-error-' + rowPath; feedback.setAttribute('aria-live', 'polite'); line.appendChild(feedback);
+        function updateRowFeedback() {
+          var issue = conditionRowIssue(row, types);
+          feedback.textContent = issue; feedback.hidden = !issue;
+          [name, op, value].forEach(function (input) { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); });
+          if (issue) {
+            var invalidField = !type ? name : !row.op ? op : value;
+            invalidField.setAttribute('aria-invalid', 'true'); invalidField.setAttribute('aria-describedby', feedback.id);
           }
         }
-        if (!readOnly) { var remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '删除'; remove.addEventListener('click', function () { group.rows.splice(index, 1); rerender(); }); line.appendChild(remove); }
-        tree.appendChild(line);
+        updateRowFeedback(); conditionViewUpdates.push(updateRowFeedback);
+        body.appendChild(line);
       });
+      if (!group.rows.length) { var empty = document.createElement('div'); empty.className = 'story-visual-condition-row-error'; empty.textContent = '请添加一条条件'; body.appendChild(empty); }
       if (!readOnly) {
         var actions = document.createElement('div'); actions.className = 'story-visual-condition-tree-actions';
+        var addMenu = document.createElement('details'); addMenu.className = 'story-visual-condition-menu story-visual-condition-add';
+        var addLabel = document.createElement('summary'); addLabel.textContent = '＋ 添加';
+        var addItems = document.createElement('div'); addItems.className = 'story-visual-condition-menu-items';
         var addComparison = document.createElement('button'); addComparison.type = 'button'; addComparison.textContent = '添加条件';
         addComparison.addEventListener('click', function () { group.rows.push({ kind: 'comparison', name: '', op: '', value: '' }); rerender(); });
         var addGroup = document.createElement('button'); addGroup.type = 'button'; addGroup.textContent = '添加条件组';
-        addGroup.addEventListener('click', function () { group.rows.push({ kind: 'group', mode: 'all', rows: [] }); rerender(); });
-        actions.append(addComparison, addGroup); tree.appendChild(actions);
+        addGroup.addEventListener('click', function () { group.rows.push({ kind: 'group', mode: 'all', rows: [{ kind: 'comparison', name: '', op: '', value: '' }] }); rerender(); });
+        addItems.append(addComparison, addGroup); addMenu.append(addLabel, addItems); actions.appendChild(addMenu); body.appendChild(actions);
       }
       parent.appendChild(tree);
     }
     conditionArea.appendChild(rowLabel('选项条件'));
     if (draft.condition) {
-      renderConditionTree(draft.condition, conditionArea, { root: true, rootHeading: '满足以下', rootRemoveText: '删除条件组', onValueInput: updateConditionSummary, remove: function () { draft.condition = null; rerender(); } });
+      renderConditionTree(draft.condition, conditionArea, { root: true, rootHeading: '满足以下条件时出现', rootRemoveText: '移除全部条件', onValueInput: updateConditionSummary, remove: function () { draft.condition = null; rerender(); } });
       var summary = document.createElement('div'); summary.className = 'story-visual-condition-summary';
-      summary.textContent = '自然语言翻译：' + conditionNaturalText(draft.condition, types); conditionSummary = summary; conditionArea.appendChild(summary);
+      conditionSummary = summary; conditionArea.appendChild(summary); updateConditionSummary();
     }
     else if (!readOnly) { var addCondition = document.createElement('button'); addCondition.type = 'button'; addCondition.textContent = '添加条件'; addCondition.addEventListener('click', function () { draft.condition = { mode: 'all', rows: [{ kind: 'comparison', name: '', op: '', value: '' }] }; context.tipKey = 'first-condition'; rerender(); }); conditionArea.appendChild(addCondition); }
     effectsArea.appendChild(rowLabel('选中后变量变化'));
@@ -5418,7 +5544,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
       }
       if (!readOnly) { var remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '删除'; remove.addEventListener('click', function () { draft.effects.splice(index, 1); rerender(); }); line.appendChild(remove); }
       effectsArea.appendChild(line);
-      if (effect.condition) renderConditionTree(effect.condition, effectsArea, { root: true, rootHeading: '仅当满足以下', rootRemoveText: '移除执行条件', onValueInput: function () { updateEffectSummary(index); }, remove: function () { effect.condition = null; rerender(); } });
+      if (effect.condition) renderConditionTree(effect.condition, effectsArea, { root: true, path: 'effect-' + index, rootHeading: '仅当满足以下', rootRemoveText: '移除执行条件', onValueInput: function () { updateEffectSummary(index); }, remove: function () { effect.condition = null; rerender(); } });
       var effectSummary = document.createElement('div'); effectSummary.className = 'story-visual-condition-summary';
       effectSummary.textContent = '自然语言翻译：' + effectNaturalText(effect, types);
       effectSummaries[index] = effectSummary;
@@ -5730,6 +5856,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Storage;
     conditionAstToDraft: conditionAstToDraft,
     conditionDraftToAst: conditionDraftToAst,
     conditionNaturalText: conditionNaturalText,
+    conditionRowIssue: conditionRowIssue,
+    conditionDraftStatus: conditionDraftStatus,
     effectNaturalText: effectNaturalText,
     effectDraftToOps: effectDraftToOps,
     optionDraftFromOption: optionDraftFromOption,
@@ -21555,7 +21683,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.86</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.114</span></div>
         </div>
       </div>
     </div>

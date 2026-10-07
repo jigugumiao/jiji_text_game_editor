@@ -61,6 +61,9 @@
 
 ## 注意
 
+- v25.4.115：设置 → 时光机。`js/time-machine.js` 调度当前项目的 3 分钟后台备份；`storage.js` 使用独立的 `DB_NAME + ':time-machine'` IndexedDB 保存完整快照及目录，每项目最多 30 条，不升级原素材 DB，避免旧标签页阻塞。恢复当前项目之前必须成功备份；素材替换为单事务，localStorage 写入或事务失败时回退。关闭页面后不运行。
+- 可视化写入必须绑定项目+块的 `getDocumentKey()` 和编辑前全文；切块/切项目须 `resetContext()`。选项表单只改草稿，失败时禁止全文恢复。后台备份通过 `getSnapshotSource()` 读取正在输入的正文，不 blur、不重绘、不抢光标。新增回归：`time-machine.test.js`、`visual-block-isolation.test.js`。
+
 - `dist/`、`dist-test/` 是构建产物，已 gitignore；要更新线上 beta 页面时把 dist-test 内容拷贝到 `beta/` 提交推送即可。
 - tests/*.test.js 用 Node 直跑，无依赖；改动 js 后跑一遍全部测试 + 更新 index.html 的 `?v=` 缓存标识与 app-version（tests/release-cache-bust.test.js 断言精确版本串）。
 - 测试清单：agent / ai-tools / clearoverlay-editor / clearoverlay-runtime / no-blocking-google-fonts / option-condition / project-converter / regression-string-raw-template / release-cache-bust / story-options / story-state-management / story-vars / story-visual-doc / var-conformance / visual-options-runtime / visual-story-ui。

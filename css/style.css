@@ -1,3 +1,12 @@
+.time-machine-list { margin-top: 16px; display: grid; gap: 8px; }
+.time-machine-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.time-machine-row > div { white-space: pre-line; font-size: 13px; line-height: 1.6; }
+.time-machine-row > button { flex-shrink: 0; }
+.time-machine-restoring { z-index: 10000; align-items: center; justify-content: center; padding: 24px; color: white; background: rgba(17,17,20,.85); }
+.time-machine-confirm { max-width: min(460px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--text); line-height: 1.6; }
+.time-machine-confirm::backdrop { background: rgba(17,17,20,.45); }
+.time-machine-confirm-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+
 /* ============================================================
    浅色极简高级风主题
    参考：Vercel（纯白/柔灰、边框即阴影）、Notion（纸感暖灰、低透明阴影）、

@@ -35,6 +35,7 @@ const LS_LEGACY_META = _NS + 'story-editor:meta';
 const DB_NAME = _NS + 'story-editor';
 const STORE_ASSETS = 'assets';
 const STORE_META = 'meta';
+const STORE_BACKUPS = 'backups';
 
 let _projectId = null; // 当前项目 id；null 表示尚未进入任何项目
 
@@ -62,10 +63,26 @@ function openDB() {
         db.createObjectStore(STORE_META, { keyPath: 'key' });
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      req.result.onversionchange = () => { req.result.close(); _dbPromise = null; };
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
   });
   return _dbPromise;
+}
+
+// 独立数据库避免旧版已打开的编辑器阻塞素材数据库的版本升级。
+let _backupDBPromise = null;
+function openBackupDB() {
+  if (_backupDBPromise) return _backupDBPromise;
+  _backupDBPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME + ':time-machine', 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(STORE_BACKUPS, { keyPath: 'key' }); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  }).catch(error => { _backupDBPromise = null; throw error; });
+  return _backupDBPromise;
 }
 
 // （已移除 localStorage 回退：纯 IndexedDB，file:// 下原生支持，纯前端运行）
@@ -96,7 +113,7 @@ function _idFromKey(key) {
 
 // 以下均为纯 IndexedDB 操作；失败时直接 reject，由调用方（编辑器）捕获并提示，不再静默降级到 localStorage。
 async function idbPut(store, value) {
-  const db = await openDB();
+  const db = await (store === STORE_BACKUPS ? openBackupDB() : openDB());
   await new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readwrite');
     tx.objectStore(store).put(value);
@@ -105,7 +122,7 @@ async function idbPut(store, value) {
   });
 }
 async function idbGet(store, key) {
-  const db = await openDB();
+  const db = await (store === STORE_BACKUPS ? openBackupDB() : openDB());
   return await new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readonly');
     const r = tx.objectStore(store).get(key);
@@ -114,7 +131,7 @@ async function idbGet(store, key) {
   });
 }
 async function idbDelete(store, key) {
-  const db = await openDB();
+  const db = await (store === STORE_BACKUPS ? openBackupDB() : openDB());
   await new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readwrite');
     tx.objectStore(store).delete(key);
@@ -123,7 +140,7 @@ async function idbDelete(store, key) {
   });
 }
 async function idbGetAll(store) {
-  const db = await openDB();
+  const db = await (store === STORE_BACKUPS ? openBackupDB() : openDB());
   return await new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readonly');
     const r = tx.objectStore(store).getAll();
@@ -186,6 +203,9 @@ async function deleteProject(id) {
   localStorage.removeItem(LS_META + ':' + id);
   localStorage.removeItem(LS_BLOCKS + ':' + id);
   localStorage.removeItem(LS_VARS + ':' + id);
+  const backups = await listTimeMachineBackups(id);
+  for (const backup of backups) await idbDelete(STORE_BACKUPS, _backupKey(id, backup.id));
+  await idbDelete(STORE_BACKUPS, _backupIndexKey(id));
   // 删除该项目素材
   try {
     const all = await idbGetAll(STORE_ASSETS);
@@ -691,6 +711,100 @@ function loadMeta() {
 const BACKUP_FORMAT = 'story-editor-project';
 const BACKUP_VERSION = 1;
 
+// 时光机：完整快照与轻量目录分开存储；目录与淘汰在同一事务内更新。
+const TIME_MACHINE_LIMIT = 30;
+function _backupIndexKey(pid) { return 'index:' + pid; }
+function _backupKey(pid, id) { return 'snapshot:' + pid + ':' + id; }
+async function listTimeMachineBackups(pid) {
+  const record = await idbGet(STORE_BACKUPS, _backupIndexKey(pid));
+  return record && record.entries || [];
+}
+async function createTimeMachineBackup(pid, reason, draft) {
+  const project = listProjects().find(p => p.id === pid);
+  if (!project) throw new Error('项目不存在');
+  const snapshot = await readProjectSnapshot(pid); // 素材读取失败必须中止，不能生成不完整快照。
+  if (draft && typeof draft.text === 'string' && typeof draft.block === 'string') {
+    if (draft.block === MAIN_BLOCK) snapshot.blocks.main = draft.text;
+    else snapshot.blocks.blocks[draft.block] = draft.text;
+    snapshot.data.blocks = JSON.stringify(snapshot.blocks);
+  }
+  if (!listProjects().some(p => p.id === pid)) throw new Error('项目已删除');
+  const id = uid('backup');
+  const summary = {
+    id, createdAt: Date.now(), reason: reason || 'auto', projectName: project.name,
+    blockCount: 1 + Object.keys(snapshot.blocks.blocks || {}).length,
+    assetCount: snapshot.assets.length
+  };
+  const db = await openBackupDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_BACKUPS, 'readwrite');
+    const store = tx.objectStore(STORE_BACKUPS);
+    const request = store.get(_backupIndexKey(pid));
+    request.onsuccess = () => {
+      const entries = [summary].concat(request.result && request.result.entries || []);
+      store.put({ key: _backupKey(pid, id), project, snapshot });
+      for (const old of entries.slice(TIME_MACHINE_LIMIT)) store.delete(_backupKey(pid, old.id));
+      store.put({ key: _backupIndexKey(pid), entries: entries.slice(0, TIME_MACHINE_LIMIT) });
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = tx.onabort = () => reject(tx.error || new Error('时光机备份失败'));
+  });
+  return summary;
+}
+async function restoreTimeMachineBackup(pid, backupId) {
+  const record = await idbGet(STORE_BACKUPS, _backupKey(pid, backupId));
+  if (!record || !record.snapshot || record.snapshot.id !== pid) throw new Error('备份不存在或已过期');
+  const snapshot = record.snapshot;
+  const blocks = _readJson(snapshot.data.blocks, null);
+  if (snapshot.data.blocks != null && (!blocks || typeof blocks.main !== 'string' || !blocks.blocks)) throw new Error('备份剧情块无效');
+  if (!Array.isArray(snapshot.assets) || snapshot.assets.some(a => !a.lib || !a.id || !LIBS.includes(a.lib))) throw new Error('备份素材无效');
+  // 先读取目标快照，再备份当前内容；即使第 30 条被淘汰，目标仍在内存中。
+  await createTimeMachineBackup(pid, 'before-restore');
+  const db = await openDB();
+  const keys = _projectDataKeys(pid);
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_ASSETS, 'readwrite');
+    const store = tx.objectStore(STORE_ASSETS);
+    const request = store.getAll();
+    let previous = null, previousProjects = null, failure = null;
+    request.onsuccess = () => {
+      try {
+        previous = {};
+        Object.keys(keys).forEach(name => { previous[name] = localStorage.getItem(keys[name]); });
+        previousProjects = localStorage.getItem(LS_PROJECTS);
+        const projects = listProjects();
+        const index = projects.findIndex(p => p.id === pid);
+        if (index < 0) throw new Error('项目不存在');
+        const prefix = pid + PROJECT_NS_SEP;
+        for (const asset of request.result || []) if (asset.key && asset.key.indexOf(prefix) === 0) store.delete(asset.key);
+        for (const asset of snapshot.assets) store.put(Object.assign({}, asset, { key: prefix + asset.lib + ':' + asset.id }));
+        Object.keys(keys).forEach(name => {
+          if (snapshot.data[name] == null) localStorage.removeItem(keys[name]);
+          else localStorage.setItem(keys[name], snapshot.data[name]);
+        });
+        projects[index] = Object.assign({}, record.project, { id: pid });
+        _writeProjects(projects);
+      } catch (error) { failure = error; tx.abort(); }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => { failure = failure || tx.error; };
+    tx.onabort = () => {
+      try {
+        if (previous) Object.keys(keys).forEach(name => {
+          if (previous[name] == null) localStorage.removeItem(keys[name]);
+          else localStorage.setItem(keys[name], previous[name]);
+        });
+        if (previousProjects != null) localStorage.setItem(LS_PROJECTS, previousProjects);
+      } catch (rollbackError) {
+        reject(new Error('恢复失败，回退未完成；恢复前的完整内容已保存在时光机：' + rollbackError.message));
+        return;
+      }
+      reject(failure || tx.error || new Error('恢复失败，已保留原项目'));
+    };
+  });
+  return pid;
+}
+
 async function exportProject(pid) {
   const realPid = pid || _projectId;
   if (!realPid) throw new Error('没有可备份的项目');
@@ -832,6 +946,7 @@ const Storage = {
   readProjectSnapshot, writeTemporaryProject, validateTemporaryProject, registerTemporaryProject, cleanupTemporaryProject, copyProjectForVisual,
   // 工程备份 / 恢复（跨设备搬运整个剧本：素材+变量+线索+设定）
   exportProject, importProject,
+  TIME_MACHINE_LIMIT, listTimeMachineBackups, createTimeMachineBackup, restoreTimeMachineBackup,
   // Galgame 对话框预设（全局，不随项目切换）
   saveDialoguePreset, getAllDialoguePresets, deleteDialoguePreset, renameDialoguePreset,
 };

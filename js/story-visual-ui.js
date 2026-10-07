@@ -715,10 +715,20 @@
     var onDiagnostic = options.onDiagnostic;
     var lastNode = null;
     var currentDocument = null;
+    var documentContextKey = null;
     var mode = 'source';
     var isCommitting = false;
     var editingOption = null;
     var sourceBeforeOptionEdit = null;
+    var optionContextKey = null;
+    function contextKey() { return options.getDocumentKey ? options.getDocumentKey() : ''; }
+    function resetContext() {
+      editingOption = null;
+      sourceBeforeOptionEdit = null;
+      optionContextKey = null;
+      lastNode = null;
+      lastTextOffset = null;
+    }
     var lastTextOffset = null;
     var insertMenu = typeof document !== 'undefined' ? document.getElementById('visual-insert-menu') : null;
     var insertPopover = typeof document !== 'undefined' ? document.getElementById('visual-insert-popover') : null;
@@ -731,8 +741,7 @@
         isCommitting = true;
         var next = VisualDoc.replaceNode(getSource(), node, replacement);
         options.setSource(next);
-        currentDocument = VisualDoc.scan(next);
-        renderDocument(visualHost, currentDocument, onDiagnostic, renderOptions);
+        refresh();
       } finally {
         isCommitting = false;
       }
@@ -744,24 +753,30 @@
       if (!node || !node.data || !node.data.option || !visualHost) return;
       editingOption = node;
       sourceBeforeOptionEdit = getSource();
+      optionContextKey = contextKey();
+      var sessionSource = sourceBeforeOptionEdit, sessionKey = optionContextKey;
+      function isCurrentSession() {
+        return editingOption === node && contextKey() === sessionKey && getSource() === sessionSource;
+      }
       renderOptionEditor(visualHost, node, optionDraftFromOption(node.data.option, options.getStates ? options.getStates() : null), {
         getStates: options.getStates,
         getBlocks: options.getBlocks,
         tipKey: 'first-option',
         getUiPreference: options.getUiPreference,
         setUiPreference: options.setUiPreference,
-        close: function () { editingOption = null; sourceBeforeOptionEdit = null; refresh(); },
-        restore: function () { if (sourceBeforeOptionEdit != null) options.setSource(sourceBeforeOptionEdit); },
+        close: function () { if (editingOption === node) resetContext(); refresh(); },
+        // The form only changes a draft. A failed save must never restore an entire document.
+        restore: function () {},
         commit: function (replacement) {
+          if (!isCurrentSession()) return { ok: false, error: '剧情已切换或修改，请重新打开选项' };
           var VisualDoc = getVisualDoc();
           try {
-            var next = VisualDoc.replaceNode(getSource(), editingOption, replacement);
+            var next = VisualDoc.replaceNode(getSource(), node, replacement);
             options.setSource(next);
             editingOption = null; sourceBeforeOptionEdit = null;
             refresh();
             return { ok: true };
           } catch (_) {
-            if (sourceBeforeOptionEdit != null) options.setSource(sourceBeforeOptionEdit);
             return { ok: false, error: '无法保存选项' };
           }
         }
@@ -773,6 +788,7 @@
         return;
       }
       var command = node.data;
+      var commandSource = getSource(), commandKey = contextKey();
       var editor = document.createElement('input');
       editor.type = 'text';
       editor.className = 'story-visual-command-input';
@@ -781,6 +797,7 @@
       editor.placeholder = command.name === '停顿' ? '毫秒（可留空）' : '填写内容';
       var wrapper = document.createElement('span');
       wrapper.className = element.className + ' story-visual-command-editing';
+      wrapper.dataset.start = String(node.start); wrapper.dataset.end = String(node.end);
       var name = document.createElement('span');
       name.className = 'story-visual-command-name';
       name.textContent = command.name + '：';
@@ -791,7 +808,7 @@
         if (settled) return;
         settled = true;
         var replacement = serializeCommandEdit(node, editor.value);
-        if (save && replacement !== node.raw) commitTextNode(node, replacement);
+        if (save && replacement !== node.raw && commandSource === getSource() && commandKey === contextKey()) commitTextNode(node, replacement);
         else refresh();
       }
       editor.addEventListener('keydown', function (event) {
@@ -813,9 +830,19 @@
     function refresh() {
       var VisualDoc = getVisualDoc();
       if (!VisualDoc) return null;
-      if (editingOption) return currentDocument;
+      if (editingOption && optionContextKey === contextKey() && sourceBeforeOptionEdit === getSource()) return currentDocument;
+      if (editingOption) resetContext();
       currentDocument = VisualDoc.scan(getSource());
-      renderDocument(visualHost, currentDocument, onDiagnostic, renderOptions);
+      documentContextKey = contextKey();
+      var renderedSource = currentDocument.source, renderedKey = contextKey();
+      var boundOptions = Object.assign({}, renderOptions, {
+        commitTextNode: function (node, replacement) {
+          if (getSource() === renderedSource && contextKey() === renderedKey) commitTextNode(node, replacement);
+        },
+        onEditOption: function (node) { if (getSource() === renderedSource && contextKey() === renderedKey) editOption(node); },
+        onEditCommand: function (node, element) { if (getSource() === renderedSource && contextKey() === renderedKey) editCommand(node, element); }
+      });
+      renderDocument(visualHost, currentDocument, onDiagnostic, boundOptions);
       return currentDocument;
     }
     function rememberSelection() {
@@ -844,8 +871,30 @@
       if (visualHost) visualHost.hidden = false;
       if (insertMenu) insertMenu.hidden = false;
     }
+    function commitFocusedEditor() {
+      var active = typeof document !== 'undefined' && document.activeElement;
+      if (!isCommitting && active && visualHost && visualHost.contains(active) && active.matches && active.matches('.story-visual-node-text[contenteditable="true"], .story-visual-command-input')) active.blur();
+    }
+    // Read the focused paragraph without blurring, rerendering or moving the caret.
+    function getSnapshotSource() {
+      var source = getSource(), active = typeof document !== 'undefined' && document.activeElement;
+      if (!active || !visualHost || !visualHost.contains(active) || !currentDocument
+          || currentDocument.source !== source || documentContextKey !== contextKey()) return source;
+      var element = active.closest && active.closest('[data-start][data-end]');
+      if (!element) return source;
+      var node = currentDocument.nodes.find(function (n) { return n.start === Number(element.dataset.start) && n.end === Number(element.dataset.end); });
+      if (!node) return source;
+      var replacement;
+      if (active.matches('.story-visual-node-text[contenteditable="true"]')) {
+        var parts = splitEditableText(node.raw);
+        replacement = parts.leading + sourceFromTextEditor(active) + parts.trailing;
+      } else if (active.matches('.story-visual-command-input')) replacement = serializeCommandEdit(node, active.value);
+      else return source;
+      return getVisualDoc().replaceNode(source, node, replacement);
+    }
     function showSource() {
       commitFocusedEditor();
+      resetContext();
       mode = 'source';
       if (visualHost) visualHost.hidden = true;
       if (sourceWrap) sourceWrap.hidden = false;
@@ -865,11 +914,10 @@
       showVisual: showVisual,
       showSource: showSource,
       refresh: refresh,
+      resetContext: resetContext,
+      getSnapshotSource: getSnapshotSource,
       insert: insert,
-      commitFocusedEditor: function () {
-        var active = typeof document !== 'undefined' && document.activeElement;
-        if (active && active.matches && active.matches('.story-visual-node-text[contenteditable="true"]')) active.blur();
-      },
+      commitFocusedEditor: commitFocusedEditor,
       getMode: function () { return mode; },
       destroy: destroy
     };

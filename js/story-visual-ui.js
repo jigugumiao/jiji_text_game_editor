@@ -90,7 +90,7 @@
 
   function conditionRowIssue(row, states) {
     var types = stateTypes(states), name = String(row && row.name || '').trim(), type = types[name];
-    if (!name) return '请选择剧情状态';
+    if (!name) return '请选择变量';
     if (!type) return '剧情状态「' + name + '」不存在';
     var operators = type === 'number' ? ['>', '<', '>=', '<=', '==', '!=', '=']
       : type === 'text' ? ['==', '!=', '=', 'contains', 'notcontains'] : ['==', '!=', '='];
@@ -502,10 +502,10 @@
           return;
         }
         var line = document.createElement('div'); line.className = 'story-visual-condition-row';
-        var nameChoices = [['', '选择剧情状态']].concat(Object.keys(types).map(function (key) { return [key, key]; }));
+        var nameChoices = [['', '选择变量']].concat(Object.keys(types).map(function (key) { return [key, key]; }));
         if (row.name && !types[row.name]) nameChoices.push([row.name, row.name + '（不存在）']);
         var name = makeField('select', row.name, nameChoices, readOnly);
-        name.setAttribute('aria-label', '剧情状态'); name.dataset.conditionFocus = rowPath + '-name';
+        name.setAttribute('aria-label', '变量'); name.dataset.conditionFocus = rowPath + '-name';
         name.addEventListener('change', function () { row.name = name.value; row.op = types[row.name] === 'boolean' ? '=' : ''; row.value = types[row.name] === 'boolean' ? true : ''; rerender(); });
         line.appendChild(name);
         var type = types[name.value], op, value;

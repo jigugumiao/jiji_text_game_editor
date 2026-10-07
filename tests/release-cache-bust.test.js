@@ -4,12 +4,12 @@ const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 
-assert.match(html, /id="app-version">v25\.4\.113</, '界面版本必须标记紧凑条件编辑器版本');
-assert.match(html, /id="about-version">v25\.4\.113</, '关于工具中的版本必须同步');
+assert.match(html, /id="app-version">v25\.4\.114</, '界面版本必须标记紧凑条件编辑器版本');
+assert.match(html, /id="about-version">v25\.4\.114</, '关于工具中的版本必须同步');
 assert.match(html, /js\/story-vars\.js\?v=20260917-01/, '变量系统共享模块合并后必须带缓存标识');
 assert.match(html, /js\/story-options\.js\?v=20260827-03/, '新增选项语法共享模块必须带缓存标识');
 assert.match(html, /js\/story-visual-doc\.js\?v=20260829-01/, '状态保存校验修复必须刷新可视化文档模块缓存标识');
-assert.match(html, /js\/story-visual-ui\.js\?v=20261007-01/, '可视化编辑器界面模块必须刷新缓存标识');
+assert.match(html, /js\/story-visual-ui\.js\?v=20261007-02/, '可视化编辑器界面模块必须刷新缓存标识');
 assert.match(html, /js\/project-converter\.js\?v=20260827-02/, '项目转换模块必须带缓存标识');
 assert.match(html, /js\/exporter\.js\?v=20260917-03/, '叠层投影运行时后必须刷新 exporter.js 缓存标识');
 assert.match(html, /js\/editor\.js\?v=20260917-03/, '外观重构与叠层投影后必须刷新 editor.js 缓存标识');

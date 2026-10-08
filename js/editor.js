@@ -2770,7 +2770,11 @@
       list.appendChild(tip);
     }
   }
-  function renderLibrary() {
+  function renderLibrary(options) {
+    // 切剧情块会重建列表，先保存实际滚动容器的位置；换库/换项目仍从顶部开始。
+    const oldScroll = libPanel.querySelector('.lib-scroll');
+    const scrollTop = options && options.preserveScroll && activeLib === 'dialogueblock'
+      && activeLib === _lastRenderedLib && oldScroll ? oldScroll.scrollTop : 0;
     // 切换到其它库时自动清空筛选
     if (activeLib !== _lastRenderedLib) { libFilter = ''; _lastRenderedLib = activeLib; }
     libPanel.innerHTML = '';
@@ -2814,6 +2818,7 @@
     libPanel.appendChild(scroll);
     renderLibList(list, countEl, tools);
     applyLibFilter(list);
+    scroll.scrollTop = scrollTop;
   }
   // 渲染当前库的工具条 + 列表（筛选框输入时仅重渲此部分，避免焦点丢失）
   function renderLibList(list, countEl, tools) {
@@ -3616,7 +3621,7 @@
 
   // 切换到某个剧情块编辑（先提交当前块文本）
   function switchBlock(name) {
-    if (name === activeBlock) { renderLibrary(); updateBlockChip(); return; }
+    if (name === activeBlock) { renderLibrary({ preserveScroll: true }); updateBlockChip(); return; }
     if (visualController) visualController.commitFocusedEditor();
     if (visualController) visualController.resetContext();
     clearTimeout(saveTimer); clearTimeout(histTimer);
@@ -3630,7 +3635,7 @@
     pushHistory();
     updateBlockChip();
     updateUndoButtons();
-    renderLibrary();
+    renderLibrary({ preserveScroll: true });
     refreshTodo();
     refreshBlockReviewLine();
     renderReviewPanel();

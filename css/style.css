@@ -597,7 +597,7 @@ body.portrait .word-count { right: 8px; bottom: 8px; }
 .lib-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; border-radius: 10px; transition: .15s; overflow: hidden; }
 .lib-panel.drag-over { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
 .lib-head { flex: 0 0 auto; display: flex; flex-direction: column; }
-.lib-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 12px 12px; }
+.lib-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 0 12px 12px; }
 .lib-footer { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg-soft); }
 .lib-footer .btn { width: auto; }
 body.portrait .lib-footer { padding: 8px 10px; }

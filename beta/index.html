@@ -605,7 +605,7 @@ body.portrait .word-count { right: 8px; bottom: 8px; }
 .lib-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; border-radius: 10px; transition: .15s; overflow: hidden; }
 .lib-panel.drag-over { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
 .lib-head { flex: 0 0 auto; display: flex; flex-direction: column; }
-.lib-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 12px 12px; }
+.lib-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 0 12px 12px; }
 .lib-footer { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg-soft); }
 .lib-footer .btn { width: auto; }
 body.portrait .lib-footer { padding: 8px 10px; }
@@ -2282,7 +2282,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.116-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.117-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -14787,7 +14787,11 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
       list.appendChild(tip);
     }
   }
-  function renderLibrary() {
+  function renderLibrary(options) {
+    // 切剧情块会重建列表，先保存实际滚动容器的位置；换库/换项目仍从顶部开始。
+    const oldScroll = libPanel.querySelector('.lib-scroll');
+    const scrollTop = options && options.preserveScroll && activeLib === 'dialogueblock'
+      && activeLib === _lastRenderedLib && oldScroll ? oldScroll.scrollTop : 0;
     // 切换到其它库时自动清空筛选
     if (activeLib !== _lastRenderedLib) { libFilter = ''; _lastRenderedLib = activeLib; }
     libPanel.innerHTML = '';
@@ -14831,6 +14835,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     libPanel.appendChild(scroll);
     renderLibList(list, countEl, tools);
     applyLibFilter(list);
+    scroll.scrollTop = scrollTop;
   }
   // 渲染当前库的工具条 + 列表（筛选框输入时仅重渲此部分，避免焦点丢失）
   function renderLibList(list, countEl, tools) {
@@ -15633,7 +15638,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
 
   // 切换到某个剧情块编辑（先提交当前块文本）
   function switchBlock(name) {
-    if (name === activeBlock) { renderLibrary(); updateBlockChip(); return; }
+    if (name === activeBlock) { renderLibrary({ preserveScroll: true }); updateBlockChip(); return; }
     if (visualController) visualController.commitFocusedEditor();
     if (visualController) visualController.resetContext();
     clearTimeout(saveTimer); clearTimeout(histTimer);
@@ -15647,7 +15652,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     pushHistory();
     updateBlockChip();
     updateUndoButtons();
-    renderLibrary();
+    renderLibrary({ preserveScroll: true });
     refreshTodo();
     refreshBlockReviewLine();
     renderReviewPanel();
@@ -22063,7 +22068,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.116</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.117</span></div>
         </div>
       </div>
     </div>

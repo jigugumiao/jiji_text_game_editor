@@ -2801,10 +2801,17 @@
     });
     filterBar.appendChild(filterInput);
 
-    libPanel.appendChild(filterBar);
-    libPanel.appendChild(tools);
-    libPanel.appendChild(countEl);
-    libPanel.appendChild(list);
+    // 结构：头部（筛选 + 工具按钮）固定在滚动区之外，只有列表滚动
+    const head = document.createElement('div');
+    head.className = 'lib-head';
+    const scroll = document.createElement('div');
+    scroll.className = 'lib-scroll';
+    head.appendChild(filterBar);
+    head.appendChild(tools);
+    scroll.appendChild(countEl);
+    scroll.appendChild(list);
+    libPanel.appendChild(head);
+    libPanel.appendChild(scroll);
     renderLibList(list, countEl, tools);
     applyLibFilter(list);
   }

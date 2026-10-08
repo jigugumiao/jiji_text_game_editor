@@ -2,6 +2,8 @@
 
 # 剧情编辑器 / Text Adventure Editor
 
+开发接手请先阅读 [开发说明.md](开发说明.md) 和 [AGENTS.md](AGENTS.md)。完整 beta 功能已并入 master，所有工具统一从根目录源码开发。
+
 ## ▶ 在线使用 / Use online
 **想直接上手？点这里打开网页版编辑器（无需安装，数据存在你的浏览器本地）：**
 👉 **https://jigugumiao.github.io/jiji_text_game_editor/**

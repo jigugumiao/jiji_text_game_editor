@@ -601,12 +601,19 @@ body.portrait .word-count { right: 8px; bottom: 8px; }
   font-size: 13px; border-bottom: 2px solid transparent; transition: .15s;
 }
 .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
-.lib-panel { flex: 1; overflow-y: auto; padding: 12px; border-radius: 10px; transition: .15s; }
+/* 素材库面板：头部（筛选 + 工具按钮）固定在滚动区之外，只有列表滚动 */
+.lib-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; border-radius: 10px; transition: .15s; overflow: hidden; }
 .lib-panel.drag-over { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.lib-head { flex: 0 0 auto; display: flex; flex-direction: column; }
+.lib-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 12px 12px; }
 .lib-footer { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg-soft); }
 .lib-footer .btn { width: auto; }
 body.portrait .lib-footer { padding: 8px 10px; }
 body.portrait .lib-footer .btn { width: 100%; }
+/* 竖屏高度紧张：工具按钮并排一行，给列表滚动区省出垂直空间 */
+body.portrait .lib-tools { flex-direction: row; padding: 8px 10px 10px; }
+body.portrait .lib-tools .btn { flex: 1 1 0; width: auto; min-width: 0; }
+body.portrait .lib-tools-row { flex-wrap: nowrap; }
 .btn-danger-ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); box-shadow: none; }
 .btn-danger-ghost:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 
@@ -664,7 +671,7 @@ body.portrait .lib-footer .btn { width: 100%; }
 .gen-note { font-size: 12px; color: var(--text-3); line-height: 1.5; margin-bottom: 12px; }
 .asset-thumb.solid-swatch { border-right: 1px solid rgba(255,255,255,0.18); box-sizing: border-box; }
 
-.lib-tools { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.lib-tools { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; }
 .lib-tools .btn { width: 100%; text-align: center; }
 .lib-tools-row { display: flex; flex-direction: row; gap: 8px; }
 .lib-tools-row .btn { width: auto; flex: 1 1 0; }
@@ -2275,7 +2282,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.115-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.116-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -14811,10 +14818,17 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     });
     filterBar.appendChild(filterInput);
 
-    libPanel.appendChild(filterBar);
-    libPanel.appendChild(tools);
-    libPanel.appendChild(countEl);
-    libPanel.appendChild(list);
+    // 结构：头部（筛选 + 工具按钮）固定在滚动区之外，只有列表滚动
+    const head = document.createElement('div');
+    head.className = 'lib-head';
+    const scroll = document.createElement('div');
+    scroll.className = 'lib-scroll';
+    head.appendChild(filterBar);
+    head.appendChild(tools);
+    scroll.appendChild(countEl);
+    scroll.appendChild(list);
+    libPanel.appendChild(head);
+    libPanel.appendChild(scroll);
     renderLibList(list, countEl, tools);
     applyLibFilter(list);
   }
@@ -22049,7 +22063,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.115</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.116</span></div>
         </div>
       </div>
     </div>

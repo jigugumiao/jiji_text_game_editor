@@ -27,3 +27,7 @@ Thumbs.db
 _dof_hdri_test/
 
 .superpowers/
+
+# 本地整理归档与浏览器验证输出
+.local-archive/
+.playwright-mcp/

@@ -1,12 +1,22 @@
 # 剧情编辑器 — Agent 工作记忆
 
-## 部署模型（2026-08-26 确认）
+## 当前开发入口（2026-10-08 更新）
+
+- **先读根目录 `开发说明.md`。用户指定的这个根目录就是日常开发入口，唯一维护主线现在是 master。**
+- 完整 beta v25.4.115 源码（变量、Agent、可视化、九宫格、时光机）已合并到 master，正式版 v25.4.116，保留原本地素材库固定头部布局修改。
+- 不要去旧 worktree 改 feature/agent、feature/story-vars 或历史 codex/* 分支；它们是历史开发线，不再是默认维护入口。
+- 开始先检查 git status，再 fetch；从最新 master 建 codex/<任务名> 短期分支，验收后合回 master。
+- 正式版直接加载根目录源码，无需将 dist 覆盖到根目录。beta/ 是产物，修复必须改根目录源码后重新构建。
+- beta 的项目不会自动迁移到正式版，需要用户通过项目包导出/导入；不能移除 test 隔离前缀来冒充迁移。
+- 本地杂项归档到 .local-archive/（gitignore），保留历史 worktree，禁止擅自删除其未提交文件。
+
+## 部署模型
 
 - 正式版：GitHub Pages 托管 **master 分支根目录** → `https://jigugumiao.github.io/jiji_text_game_editor/`。仓库无 gh CLI，验证部署用 PowerShell Invoke-WebRequest 探测。
 - 测试版：**只把 `python build_inline.py --test` 的产物放进 master 的 `beta/` 子目录**（自包含单文件 + docs.html），URL 不同→浏览器缓存分离；页面注入 `window.STORY_EDITOR_NS='test'` → localStorage/IndexedDB 与正式版完全隔离（storage.js 支持该前缀）。AI 设置（storyeditor:ai:*）与主题偏好仍共享（有意为之）。
-- 重构类源码改动走独立分支验收，不直接改 master。当前主线验收分支：`feature/agent`（Agent 对话：纯前端 DeepSeek 工具调用循环，已合并 `feature/story-vars` 变量系统，测试版 v25.4.95-TEST 起两者并存）。
+- 重构类源码改动走独立分支验收，不直接改 master。所有任务从 master 创建短期分支；feature/agent 已完成整合。
 
-## 变量系统架构（2026-08-26 重构后，已并入 feature/agent）
+## 变量系统架构（已并入 master）
 
 **单一事实源：`js/story-vars.js`（window.StoryVars / module.exports）。**
 
@@ -35,7 +45,7 @@
 `undeclared_write`（未声明赋值，附错别字改名建议）/ `undeclared_read` / `malformed_tag` / `cond_parse_error` / `type_mismatch` / info 级 `never_written`、`dead_var`。
 校验器 validateStory 只展示 error/warning；info 级只在修复面板显示。「忽略」为会话级。
 
-## Agent 对话（2026-09-11 上线，feature/agent 主线）
+## Agent 对话（已并入 master）
 
 - 入口：AI 菜单 →「Agent 对话（新功能，耗费可能较高）」。纯前端、DeepSeek API、可读写正文/变量/素材/创作设定/外观。
 - 架构：js/agent.js（window.Agent + module.exports）意图路由→场景装配→工具调用循环（≤8 轮，thinking 仅意图轮 disabled）；5 场景 polish/rewrite/design/vars/general；28 工具 5 组（文档读写+结构+创作辅助+素材元数据+变量+设置/外观）。
@@ -95,4 +105,4 @@
 ### 多工具并行开发分叉（2026-09-13 约定，防再分叉）
 
 - 教训：Codex 在 codex/* 分支开发可视化编辑、DSH 在 feature/agent 开发 Agent 对话，两线从 v25.4.60 起长期并行，可视化功能从未合入主线，v25.4.88 发布 Agent 版 beta 时把可视化构建产物覆盖掉，功能"消失"半年（实为从未进主线）。
-- **约定：所有新功能无论哪个 AI 工具（Codex/DSH/其他）开发，统一以 `feature/agent` 为共同主线，开发分支完成即合并进 feature/agent，不得长期分叉；发布 beta 只从 feature/agent 构建。**
+- **当前约定（2026-10-08）：所有工具统一以 master 为共同主线，短期任务分支完成后合回 master；beta 从这一主线的任务分支构建。feature/agent 已完成整合，不再作为维护入口。**

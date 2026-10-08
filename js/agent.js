@@ -1,0 +1,1137 @@
+// js/agent.js — Agent 对话（全能助理）：意图路由 + 工具调用循环
+// 设计文档：docs/agent-design.md
+(function () {
+  'use strict';
+
+  // ===== 正文格式知识（美化故事用）=====
+  // 精简版：常驻场景 systemPrompt（polish/rewrite/general），让模型知道正文支持哪些真实格式、
+  // 禁止自创标签；完整版：read_formatting_guide 工具按需返回（含全部语法与示例）。
+  // 事实源：js/bbcode.js（BBCode）、js/editor.js parseLine（结构指令/跳转）、js/story-vars.js（变量）。
+  var FORMAT_GUIDE_BRIEF = '\n【正文格式知识（美化时只能用这些真实语法，禁止自创标签）】\n'
+    + '· BBCode 行内美化：加粗 [b]文字[/b]；斜体 [i]…[/i]；下划线 [u]…[/u]；删除线 [s]…[/s]；'
+    + '颜色 [color=#ff0000]…[/color]（色名或 #hex）；字号 [size=18]…[/size]（数字=像素）；'
+    + '对齐 [center]…[/center] / [left]…[/left] / [right]…[/right]；换行 [br]；'
+    + '特效 [shadow=颜色]…[/shadow]（阴影）、[glow=颜色]…[/glow]（发光）、[highlight=颜色]…[/highlight]（背景高亮）；'
+    + '瞬显 [瞬显]…[/瞬显]（整段直接出现、跳过打字机）。\n'
+    + '· 结构指令（必须独占一整行）：<停顿> 或 <停顿:毫秒>；<标题:文字>；<分割线:备注>（备注可空，写 <分割线:>）；<清除叠层>；<停止音乐>。\n'
+    + '· 素材召唤（独占一行，名称须是素材库里已有的）：<召唤背景:名称>、<召唤物品:名称>、<召唤音乐:名称>、<召唤音效:名称>、<召唤叠层:名称>；召唤物品可带提示 <召唤物品:剑,"获得了一把剑">。\n'
+    + '· 跳转与分支：<剧情块:块名>（兼容旧写法 <对话块:块名>）独占一行；<随机跳转:块A,块B>（可带权重 <随机跳转:块A=50,块B=30>）独占一行；<随机句子:"文本1","文本2">（可带权重 "文本"=8）独占一行；<跳回>、<跳回重选> 独占一行；选项 <选项:"文字",块名,条件:表达式>（条件可省略，多个可同行拼接）。\n'
+    + '· 分块标记：<<剧情块:名称>>（章节分隔）。\n'
+    + '· 变量：读 {名}；写 <变量:名=值>（独占一行）；自增 <变量:名+1>；玩家输入 <玩家输入变量:名,"引导">（独占一行）。\n'
+    + '需要完整语法与示例时调用 read_formatting_guide 工具。';
+
+  // 完整版（read_formatting_guide 返回）：权威全量语法 + 示例 + 注意事项
+  var FORMAT_GUIDE_FULL = '# 正文格式与美化语法手册（权威完整版）\n'
+    + '## 一、BBCode 文字美化（行内，可嵌在普通文本中）\n'
+    + '[b]文字[/b] 加粗；[i]文字[/i] 斜体；[u]文字[/u] 下划线；[s]文字[/s] 删除线\n'
+    + '[color=值]文字[/color] 文字颜色，值可为 CSS 色名（red）或十六进制（#f00 / #ff0000）\n'
+    + '[size=18]文字[/size] 字号，数字为像素\n'
+    + '[center]文字[/center] / [left]文字[/left] / [right]文字[/right] 对齐（块级）\n'
+    + '[br] 换行\n'
+    + '[shadow=颜色]文字[/shadow] 阴影特效；[glow=颜色]文字[/glow] 发光特效；[highlight=颜色]文字[/highlight] 背景高亮（配黑字）\n'
+    + '[瞬显]文字[/瞬显] 瞬显：整段直接出现，不参与逐字打字机\n'
+    + '嵌套时按标签顺序闭合；不要自创其它 BBCode 标签。\n'
+    + '## 二、结构指令（必须独占一整行，行首行尾不得有其它文字）\n'
+    + '<停顿> 等点击继续；<停顿:2000> 等待 2000 毫秒后继续（毫秒数）\n'
+    + '<标题:文字> 浮动标题（整行指令）\n'
+    + '<分割线:备注> 分割线（备注可空，写作 <分割线:>），游戏中显示后等点击继续\n'
+    + '<清除叠层> 移除当前叠层角色、回到纯背景\n'
+    + '<停止音乐> 3 秒内渐出当前音乐\n'
+    + '## 三、素材召唤（独占一整行，名称须为素材库中已存在的素材名）\n'
+    + '<召唤背景:名称>、<召唤物品:名称>、<召唤音乐:名称>、<召唤音效:名称>、<召唤叠层:名称>\n'
+    + '召唤物品支持提示文字：<召唤物品:剑,"获得了一把剑">（物品出现时在画面中下方显示提示）\n'
+    + '## 四、跳转与分支\n'
+    + '<剧情块:块名> 跳到指定剧情块（独占一行；兼容旧写法 <对话块:块名>）\n'
+    + '<随机跳转:块A,块B> 在列出的块中平均随机跳转（独占一行）；可带权重 <随机跳转:块A=50,块B=30>（正整数权重，缺省 1）\n'
+    + '<随机句子:"文本1","文本2"> 随机显示其中一句（独占一行）；可带权重 <随机句子:"文本1"=8,"文本2"=5>\n'
+    + '<跳回> 返回上一层对话；<跳回重选> 回到上一步重新选择（两者均不可用于主剧情块，独占一行）\n'
+    + '<选项:"文字",块名> 选项跳转；带条件 <选项:"文字",块名,条件:金币>5>；条件可省略；多个选项可同行拼接；块名不可含逗号或等号\n'
+    + '## 五、分块与变量\n'
+    + '<<剧情块:名称>> 分块标记（章节/段落分隔，改写时须保留）\n'
+    + '读变量 {名}；布尔条件 {名:真文案|假文案}；转义 {{名}}\n'
+    + '写变量 <变量:名=值>（独占一行；一行可多标签 <变量:a=1><变量:b=2>；值可含空格可为空）\n'
+    + '自增自减 <变量:名+1> / <变量:名-1>\n'
+    + '玩家输入 <玩家输入变量:名,"引导语">（独占一行，运行时向玩家要输入并存入变量）\n'
+    + '选项条件表达式支持 && || ! () 与比较运算，优先级 || < && < !；字符串值加引号\n'
+    + '## 六、注意事项（铁律）\n'
+    + '1) 结构指令必须独占一行：行首不能有正文、行尾不能有正文（如 <召唤…>/<停顿>/<剧情块:…>/<标题:…>/<变量:…>）。\n'
+    + '2) 只使用本手册列出的真实语法，禁止自创标签；不确定时先按本手册核对。\n'
+    + '3) 块名不可包含逗号 , 或等号 =。\n'
+    + '4) 变量/选项条件里的 >（如 金币>5）是比较运算符，不是标签的结束符。\n'
+    + '5) <审阅:N>…</审阅> 是审阅标记（由 apply_review_marker 写入），不要把普通叙述文字包进去。\n'
+    + '6) 召唤素材名必须与素材库一致，不确定时先用 list_assets 查看。';
+
+  // 场景表：id → { systemPrompt, preload, tools }
+  // preload 取值：'full_text'|'outline'|'current_block'|'settings'|'vars'（buildMessages 按此取上下文）
+  // tools：场景允许的工具名白名单（空数组=全部工具；非空=仅白名单）
+  var AGENT_SCENARIOS = {
+    polish: {
+      systemPrompt: '你是剧情编辑器的局部改稿助手。只处理用户明确指出的片段，默认只读当前编辑块，不主动读取或修改其他块。需要修改时使用写工具：小改直接落盘；大段改写先用 apply_review_marker 逐条提出审阅建议（current 逐字照搬原文、suggestion 给出改写），用户检查后逐条应用，不要整段替换正文。不要输出整篇全文。修改正文后，若改动涉及情节/设定/伏笔变化，主动用 extract_clues 核对全文线索是否变动、是否产生新线索；有变动则用 update_creation_setting(field=\'clues\') 更新关键线索。' + FORMAT_GUIDE_BRIEF,
+      preload: ['current_block'],
+      tools: ['get_current_block', 'read_block', 'search_in_doc', 'append_to_block', 'insert_at', 'replace_selection', 'apply_review_marker', 'read_formatting_guide', 'extract_clues', 'update_creation_setting'],
+    },
+    rewrite: {
+      systemPrompt: '你是剧情编辑器的整篇改写/续写助手。可读取全文后整篇重写或续写，保留 <<剧情块:名称>> 分块标记与 <跳回>/<跳回重选> 跳转标记，只改写文字。大篇幅改写请用 apply_review_marker 逐条提出审阅建议（current 逐字照搬原文），供用户检查后应用；仅当用户明确要求直接改时才整篇重写。改写后主动用 extract_clues 核对全文线索（改结局/加伏笔通常影响线索），有变动则用 update_creation_setting(field=\'clues\') 更新关键线索。' + FORMAT_GUIDE_BRIEF,
+      preload: ['full_text', 'outline'],
+      tools: [],
+    },
+    design: {
+      systemPrompt: '你是剧情编辑器的剧情设计顾问。围绕世界观、大纲、人物与剧情走向回答问题、出主意、梳理结构。以只读为主，可写大纲类块；不要擅自动当前正在创作的正文。',
+      preload: ['outline', 'current_block'],
+      tools: [],
+    },
+    vars: {
+      systemPrompt: '你是剧情编辑器的变量/逻辑助手。专注变量库与正文中的变量语法（{名} 读取、<变量:名=值>、<变量:名+n>、<变量:名-n>、<玩家输入变量:名,"引导">、<选项:"文字",块名,条件:表达式>）。可增删改查变量，不改动正文叙事结构。',
+      preload: ['vars', 'current_block'],
+      tools: [],
+    },
+    general: {
+      systemPrompt: '你是剧情编辑器的全能助理。通过工具按需读取任意剧情块、全文、设定、变量与素材元数据，回答或执行用户请求。写操作遵循小改自动落盘；大段改写优先用 apply_review_marker 提出审阅建议供用户逐条应用；破坏性操作强制确认。修改正文后，自行判断新的正文是否让全文线索变动或产生新线索：主动用 extract_clues 核对，有变动则用 update_creation_setting(field=\'clues\') 更新关键线索。' + FORMAT_GUIDE_BRIEF,
+      preload: ['outline', 'current_block'],
+      tools: [],
+    },
+  };
+
+  // 可靠性铁律（用户要求：禁止瞎编、禁止虚报权限、禁止虚报行为）。
+  // 作为固定 system 消息追加在场景提示词之后（位置固定→前缀缓存不受影响）。
+  var AGENT_RELIABILITY_RULES = '【可靠性铁律】\n'
+    + '1) 只陈述工具返回的确定事实。引用扫描以工具返回的 references 字段为准：references 为空 = 正文中没有任何引用，绝不使用「若存在…可能…」之类的假设性提醒；references 非空时，如实列出真实扫描到的引用位置，并主动询问用户是否要一并处理。\n'
+    + '2) 没有读取过、没有执行过、不知道的事，直接说不知道，禁止编造。\n'
+    + '3) 只声称真正执行成功的操作：工具返回 {ok:true} 才算完成；未执行的不得声称已做；工具返回 error 时如实转述错误内容。\n'
+    + '4) 没有权限或未接线的能力，明确说明无法执行，绝不假装有权限，也绝不假装做了某件事。\n'
+    + '5) 用户已明确下达的指令（包括指出错误后的纠正指令），必须直接执行，不得反复确认或追问「要不要做、做哪几项」。只有出现用户不知道的新歧义（例如多个互斥方案、缺少必要信息）才允许询问，并且必须说明为什么需要问。\n'
+    + '6) 承认错误或道歉之后，必须立即按用户已经给出的指令继续行动，道歉不是重新谈判；不得在道歉后又把已明确的任务抛回给用户重新选择。\n'
+    + '7) 执行完毕后如实汇报：实际执行了哪些操作、每个操作的结果（以工具返回为准）、未执行或失败的部分。做了的说做了，没做的说没做，绝不补造结果。';
+
+  // 回复风格纪律（用户要求：信息量过高不适合思考——不要倾倒清单/能力菜单，把思考留给用户）。
+  // 与可靠性铁律并列的固定 system 消息（位置固定→前缀缓存不受影响）。
+  var REPLY_STYLE_RULES = '【回复风格】\n'
+    + '1) 信息供给要克制：只给用户当下真正需要的内容。用户没有明确要求时，不要主动复述或列举剧情块/章节清单、素材清单、变量清单、能力菜单。\n'
+    + '2) 用户只是打招呼或没有具体任务时，用一两句话自然回应即可；不要汇报「我读了什么」、不要复述读到的上下文。\n'
+    + '3) 用户明确问「有哪些/你知道什么」时，才提供完整清单；平时只给最相关的一条线索或一个方向，把思考空间留给用户。\n'
+    + '4) 需要给出选项时最多 2-3 个，且每个都要有实际意义；不要给出「比如…」式的能力说明书。\n'
+    + '5) 执行任务后的结果汇报不受本条限制，仍按可靠性铁律如实进行。\n'
+    + '6) 与用户交流一律使用自然语言，绝不暴露内部实现细节：不念出工具名（如 update_appearance、read_settings）、不出现内部参数名或字段名（如 fontSize、galBoxColor）。描述能力时用用户能直接理解的说法（如「能改正文字号、标题字体、底框颜色」）。';
+
+  // 编辑器光标/选区上下文规则（用户消息末尾会附加【编辑器当前状态】——用户说话那一刻的光标与选区快照）。
+  // 固定 system 消息（位置固定→前缀缓存不受影响）；规则声明「这里/这段」如何解析，让模型能精确执行
+  // 「给这里做什么什么」这类指代指令（用户需求：Agent 知道用户要改哪里）。
+  var AGENT_CARET_RULES = '【编辑器光标/选区定位】\n'
+    + '1) 用户消息末尾可能出现【编辑器当前状态】：它是用户发送消息那一刻编辑器里的快照（当前块、光标行、选中文字）。用户说「这里/这段/光标处/这句/那段」时，指的就是这个状态里的「选中文字」（有选中时）或「光标行」（未选中时），而不是别的位置。\n'
+    + '2) 该状态仅供定位用户所指，除非用户要求，不要在回复里复述、引用或输出它。\n'
+    + '3) 替换选中文字用 replace_selection 工具：blockName 可省略（缺省就是快照所在块），text 传替换后的完整新文字即可——原文由编辑器从快照读取，不要在 text 里抄写原文。\n'
+    + '4) 快照来自用户说话那一刻；若用户后来手动改动过编辑器，先调用 get_current_block / read_block 确认当前实际内容，再决定是否仍按快照操作或询问用户。\n'
+    + '5) 没有【编辑器当前状态】字段时，不要假设光标/选区位置；用户若用了「这里/这段」又无可定位信息，先询问用户指哪一段。';
+
+  // 用户消息 + 【编辑器当前状态】拼接（纯函数，供 buildMessages 与测试直测）。
+  // caret 结构（editor.js captureAgentCaret 产生）：{blockName, blockText, start, end, hasSel, selText, caretLine, lineText}。
+  // 刻意不附前/后文：预载上下文已含当前块全文（current_block）或全文（full_text），前后文冗余，只给行号/选中文字足够定位。
+  function buildUserTextWithCaret(userText, caret) {
+    var base = String(userText || '');
+    if (!caret) return base;
+    var parts = ['当前编辑块：《' + (caret.blockName || '主剧情') + '》'];
+    if (caret.hasSel && caret.selText) parts.push('选中文字：\n' + caret.selText);
+    parts.push('光标行（第 ' + (caret.caretLine || 1) + ' 行）：' + (caret.lineText || '（空行）'));
+    return base
+      + '\n\n【编辑器当前状态（用户说话时的光标与选区快照，仅供定位用户所指；选中文字已在上方「选中文字」给出，不要据此抄写或复述原文）】\n'
+      + parts.join('\n');
+  }
+
+  var Agent = {
+    AGENT_SCENARIOS: AGENT_SCENARIOS,
+
+    // 意图轮输出解析：提取「首个平衡的 {…} 对象」（容忍 ```json 包裹与前后闲话）
+    // 失败/未知 scenario → 兜底 general；needs 仅作提示，最终预载由场景表 preload 决定
+    intentParse: function (raw) {
+      var out = { scenario: 'general', needs: [], note: '' };
+      if (!raw || typeof raw !== 'string') return out;
+      // 从每个 '{' 起按深度匹配到其闭合 '}'，能 JSON.parse 且是对象即用；
+      // 尾随闲聊里的花括号（如变量语法 {名}）不会吞掉前面的合法 JSON，前置的 decoy 花括号也会被跳过
+      var start = raw.indexOf('{');
+      while (start >= 0) {
+        var depth = 0, end = -1;
+        for (var i = start; i < raw.length; i++) {
+          if (raw[i] === '{') depth++;
+          else if (raw[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+        }
+        if (end < 0) break; // 剩余部分没有闭合的花括号，放弃
+        var slice = raw.slice(start, end + 1);
+        try {
+          var j = JSON.parse(slice);
+          if (j && typeof j === 'object') {
+            // 只认场景表自有键（防 __proto__/constructor 等原型链键混入）
+            if (Object.prototype.hasOwnProperty.call(AGENT_SCENARIOS, j.scenario)) out.scenario = j.scenario;
+            if (Array.isArray(j.needs)) out.needs = j.needs.filter(function (n) { return typeof n === 'string'; });
+            if (typeof j.note === 'string') out.note = j.note;
+          }
+          return out;
+        } catch (e) {
+          // 该段不是合法 JSON（如 {名} 变量语法），跳到下一个 '{' 继续找
+          start = raw.indexOf('{', start + 1);
+        }
+      }
+      return out;
+    },
+
+    // 消息前缀构造（设计 §4.3 缓存纪律）：
+    // [system: 场景 system 提示词] → [system: 创作设定] → [user: 预载上下文] → [user: 用户最新消息]
+    // 预载内容按场景表 preload 固定顺序拼装、同场景同工程不变 → 前缀稳定可命中缓存；
+    // 可变内容（用户消息/工具往返）只 append 在末尾，绝不插入中段。
+    buildMessages: function (scenario, ctx, userText, opts) {
+      // 只认场景表自有键（防 __proto__/constructor 等原型链键产生 undefined systemPrompt）
+      var sc = Object.prototype.hasOwnProperty.call(AGENT_SCENARIOS, scenario) ? AGENT_SCENARIOS[scenario] : AGENT_SCENARIOS.general;
+      ctx = ctx || {};
+      var msgs = [];
+      msgs.push({ role: 'system', content: sc.systemPrompt });
+      msgs.push({ role: 'system', content: AGENT_RELIABILITY_RULES });
+      msgs.push({ role: 'system', content: REPLY_STYLE_RULES });
+      msgs.push({ role: 'system', content: AGENT_CARET_RULES });
+      var settings = ctx.settings;
+      if (settings && String(settings).trim()) {
+        msgs.push({ role: 'system', content: '【创作设定】\n' + settings });
+      }
+      // 预载上下文（固定顺序，保证前缀稳定）
+      var pre = [];
+      var want = sc.preload || [];
+      for (var i = 0; i < want.length; i++) {
+        var k = want[i];
+        if (k === 'full_text' && ctx.fullText) pre.push('【全文】\n' + ctx.fullText);
+        else if (k === 'outline' && ctx.outline) pre.push('【大纲】\n' + ctx.outline);
+        else if (k === 'current_block' && ctx.currentBlock && ctx.currentBlock.text) pre.push('【当前编辑块《' + ctx.currentBlock.name + '》】\n' + ctx.currentBlock.text);
+        else if (k === 'settings' && settings && String(settings).trim()) pre.push('【创作设定】\n' + settings);
+        else if (k === 'vars' && ctx.vars && ctx.vars.length) {
+          pre.push('【变量库】\n' + ctx.vars.map(function (v) { return v.name + ' (' + v.type + ') = ' + v.value; }).join('\n'));
+        }
+      }
+      if (pre.length) msgs.push({ role: 'user', content: pre.join('\n\n') });
+      // 用户最新消息：末尾附加【编辑器当前状态】（光标/选区快照）——可变内容只能 append，
+      // 且必须与 userText 同一条消息（runLoop 在「最后一条 user」之前插入历史，拼进同条消息不破坏插入点）。
+      // 快照来自用户发送消息那一刻（editor.js agentSend 开头捕获），供「给这里做什么」类指代定位。
+      msgs.push({ role: 'user', content: buildUserTextWithCaret(userText, ctx.caret) });
+      return msgs;
+    },
+
+    // 写操作分级判定（设计 §6）：destructive → 'destructive'；小改（chars≤500 且非整块）→ 'auto'；其余 → 'preview'
+    classifyWrite: function (impact) {
+      impact = impact || {};
+      if (impact.destructive) return 'destructive';
+      var chars = impact.chars || 0;
+      if (chars <= 500 && !impact.wholeBlock) return 'auto';
+      return 'preview';
+    },
+
+    // ===== §14: 历史摘要压缩（DSH 上下文压缩设计移植） =====
+    // 分层：超阈值时把最旧条目压成摘要（tier1），保留最近 keep 段原文（活跃内容不压）；
+    // 再次超阈值时旧摘要+更早内容一起再压（tier2 蒸馏）。纯函数，供 editor.js 触发时调用。
+    classifyHistoryCompression: function (history, opts) {
+      history = Array.isArray(history) ? history : [];
+      opts = opts || {};
+      var maxChars = (typeof opts.maxChars === 'number' && opts.maxChars > 0) ? opts.maxChars : 30000;
+      if (!history.length) return { shouldCompress: false, compress: [], keep: history };
+      var total = 0;
+      for (var i = 0; i < history.length; i++) total += String(history[i] && history[i].content || '').length;
+      if (total <= maxChars) return { shouldCompress: false, compress: [], keep: history };
+      // 从最旧开始累积压缩段，直到剩余 keep 段 ≤ 阈值；最后一条 user 永不压（活跃内容）
+      var compress = [];
+      var keep = history.slice();
+      while (keep.length > 1) {
+        var head = keep.shift();
+        compress.push(head);
+        var rem = 0;
+        for (var j = 0; j < keep.length; j++) rem += String(keep[j] && keep[j].content || '').length;
+        if (rem <= maxChars || keep.length === 1) break;
+      }
+      return { shouldCompress: compress.length > 0, compress: compress, keep: keep };
+    },
+    // 归档检索（对应 DSH search_context/decompress）：大小写不敏感、逐行匹配、上限 20；纯函数
+    searchHistoryArchive: function (archive, query) {
+      var q = String(query || '').toLowerCase();
+      if (!q) return [];
+      var arr = Array.isArray(archive) ? archive : [];
+      var out = [];
+      for (var i = 0; i < arr.length && out.length < 20; i++) {
+        var item = arr[i] || {};
+        var lines = String(item.content || '').split('\n');
+        for (var j = 0; j < lines.length && out.length < 20; j++) {
+          if (lines[j].toLowerCase().indexOf(q) >= 0) {
+            out.push({ n: i + 1, role: item.role || '', lineNo: j + 1, snippet: lines[j] });
+          }
+        }
+      }
+      return out;
+    },
+
+    // ===== Task 8: applyAgentWrite + 会话内撤销记录 =====
+    // 本模块不做实际 DOM 写入：applyAgentWrite 仅分级 + 记录到会话日志（供 UI 渲染与撤销），
+    // 返回 {block, before, after, level, impact} 让 UI（Task 15/16）决定自动落盘/预览/确认——
+    // 写入由 UI 调 deps.commit(block, after) 完成（pushHistory + setText/setBlockText）。
+    sessionWrites: [],
+    applyAgentWrite: function (w, deps, log) {
+      var level = Agent.classifyWrite(w.impact || {});
+      var rec = { block: w.block, before: w.before !== undefined ? w.before : null, after: w.resultText, level: level, impact: w.impact || {} };
+      Agent.sessionWrites.unshift(rec);
+      if (Agent.sessionWrites.length > 50) Agent.sessionWrites.pop();
+      if (log && typeof log.push === 'function') log.push(rec);
+      return rec;
+    },
+    undoWrite: function (commitDeps) {
+      var rec = Agent.sessionWrites.shift();
+      if (!rec) return null;
+      if (commitDeps && commitDeps.commit && rec.before !== null) commitDeps.commit(rec.block, rec.before);
+      return rec;
+    },
+
+    // 破坏性操作确认后的真删执行（C1 + 用户安全阀要求）：delete_block / delete_var / delete_asset
+    // 工具一律只报告影响面（不落盘），由 runLoop 确认门（onConfirm=true）后调用本方法执行真删。
+    confirmDelete: function (kind, args) {
+      if (kind === 'delete_block') {
+        var bname = String(args && args.blockName || '').trim();
+        if (Agent.toolsDeps.mainBlock && bname === Agent.toolsDeps.mainBlock) return { error: '主剧情块不可删除' };
+        if (typeof Agent.toolsDeps.saveBlocks !== 'function') return { error: '编辑器未就绪' };
+        var doc = blocksDocObj();
+        if (!(bname in doc)) return { error: '未找到剧情块「' + bname + '」' };
+        delete doc[bname];
+        Agent.toolsDeps.saveBlocks(doc);
+        return { ok: true, blockName: bname, deleted: true };
+      }
+      if (kind === 'delete_var') {
+        var vname = String(args && args.name || '');
+        var arr = getVarsArr();
+        var found = -1;
+        for (var i = 0; i < arr.length; i++) {
+          if (arr[i].name === vname) { found = i; break; }
+        }
+        if (found < 0) return { error: '未找到变量「' + vname + '」' };
+        if (typeof Agent.toolsDeps.saveVars !== 'function') return { error: '编辑器未就绪' };
+        var next = arr.slice();
+        next.splice(found, 1);
+        Agent.toolsDeps.saveVars(next);
+        return { ok: true, name: vname, deleted: true };
+      }
+      if (kind === 'delete_asset') {
+        if (typeof Agent.toolsDeps.deleteAsset !== 'function') return { error: '素材系统未接线' };
+        // deps 可能是同步或 async（真实接线走 IndexedDB）——Promise.resolve 归一，失败透传/兜底同原工具保护
+        return Promise.resolve(Agent.toolsDeps.deleteAsset(String(args && args.name || ''))).then(function (r) {
+          return r && r.ok ? { ok: true, name: String(args && args.name || ''), deleted: true } : { error: (r && r.error) || '删除失败' };
+        }).catch(function (e) {
+          return { error: '删除异常：' + ((e && e.message) || e) };
+        });
+      }
+      return { error: '未知的删除目标：' + kind };
+    },
+
+    // ===== Task 13: 意图路由 + 工具调用循环 =====
+    INTENT_SYSTEM: '你是意图识别器。根据用户对剧情编辑器（剧情块/选项/变量/素材/线索）的请求，输出 JSON：{"scenario":"polish|rewrite|design|vars|general","needs":["需要的上下文项"],"note":"一句话理解"}。polish=局部润色/改稿（只读当前块）；rewrite=整篇改写/续写（需全文）；design=剧情问答/设计（需大纲+设定）；vars=变量/逻辑操作（需变量库）；无法归类用 general。只输出 JSON，不要其它文字。',
+    isContinuation: function (text) {
+      return /^(确认|继续|再来|换一种|再多写点|然后呢|接着写|好的|可以|ok|apply|继续写|所以呢|还有呢)/i.test(String(text || '').trim());
+    },
+    buildToolDefs: function (scenario) {
+      // tools 语义（§4.4）：场景表 tools 空数组 = 全部工具可用（默认全量）；非空 = 仅白名单（硬裁剪，polish 唯一显式白名单）
+      var sc = Object.prototype.hasOwnProperty.call(AGENT_SCENARIOS, scenario) ? AGENT_SCENARIOS[scenario] : AGENT_SCENARIOS.general;
+      var allow = sc.tools || [];
+      var names = (!allow.length || allow.indexOf('*') >= 0) ? Object.keys(Agent.tools) : allow;
+      return names.filter(function (n) { return TOOL_DEFS[n]; }).map(function (n) { return TOOL_DEFS[n]; });
+    },
+    runLoop: async function (opts, deps) {
+      var cb = opts.callbacks || {};
+      var scenario = opts.activeScenario;
+      try {
+        if (!scenario) {
+          if (Agent.isContinuation(opts.userText)) {
+            scenario = 'general';
+          } else {
+            cb.onStatus && cb.onStatus('intent');
+            var intentMsgs = [{ role: 'system', content: Agent.INTENT_SYSTEM }, { role: 'user', content: opts.userText }];
+            // 意图轮非流式：意图 JSON 是内部结果不是回答——流式会把 JSON 逐字送进回复气泡（用户看到"先蹦出回答"的假象）
+            var intentRes = await deps.request(intentMsgs, { thinking: false, stream: false });
+            scenario = Agent.intentParse(typeof intentRes === 'string' ? intentRes : (intentRes && intentRes.content)).scenario;
+            cb.onStatus && cb.onStatus('scenario:' + scenario);
+          }
+        }
+        var ctx = deps.buildCtx ? deps.buildCtx() : {};
+        var messages = Agent.buildMessages(scenario, ctx, opts.userText, {});
+        // 历史对话连续性（agent-history:<pid> 持久化的 user/assistant 文本，Task 15 传入 opts.history）：
+        // 插入到 buildMessages 末尾的「当前 userText」之前——可变内容全部在末尾，保持前缀缓存纪律。
+        var hist = Array.isArray(opts.history) ? opts.history : [];
+        if (hist.length) {
+          var histMsgs = [];
+          for (var hi = 0; hi < hist.length; hi++) {
+            var hm = hist[hi];
+            if (hm && (hm.role === 'user' || hm.role === 'assistant' || hm.role === 'summary') && typeof hm.content === 'string' && hm.content) {
+              // summary 条目 = 早期对话压缩摘要（§14）：作为 user 消息前置（【早期对话摘要】标记），保持消息顺序与兼容性
+              histMsgs.push(hm.role === 'summary' ? { role: 'user', content: '【早期对话摘要】\n' + hm.content } : { role: hm.role, content: hm.content });
+            }
+          }
+          if (histMsgs.length) {
+            // 去重兜底：调用方（editor.js agentSend）先 push 当前 userText 到历史再整体传入（agentSend 习惯形状），
+            // 末条 user 消息与 opts.userText 相同属同一内容——去掉，避免当前请求把 userText 重复发两次（token 浪费）。
+            var lastHist = histMsgs[histMsgs.length - 1];
+            if (lastHist.role === 'user' && lastHist.content === opts.userText) histMsgs.pop();
+            messages.splice.apply(messages, [messages.length - 1, 0].concat(histMsgs));
+          }
+        }
+        var rounds = 0;
+        while (rounds < 8) {
+          rounds++;
+          cb.onStatus && cb.onStatus('thinking');
+          var toolDefs = Agent.buildToolDefs(scenario);
+          // ⚠️ I1：callDeepseek 的 opts.thinking 是 boolean（truthy=开启思考+max_tokens 32768，falsy=关闭+8192），
+          // 传 {type:'disabled'} 对象会被当 truthy → 反向开启 thinking；意图轮/工具轮一律传 false。
+          var resp = await deps.request(messages, { tools: toolDefs.length ? toolDefs : undefined, tool_choice: toolDefs.length ? 'auto' : undefined, thinking: false });
+          var text = typeof resp === 'string' ? resp : (resp && resp.content) || '';
+          var toolCalls = resp && resp.toolCalls;
+          if (!toolCalls || !toolCalls.length) {
+            cb.onReply && cb.onReply(text);
+            return { scenario: scenario, rounds: rounds, finalText: text };
+          }
+          // 工具轮判定成立后立即通知 UI：本轮是工具调用轮。模型在 tool_calls 前吐的过程性 content
+          // （如"好的，我先查看当前剧情块"）已流进回复气泡（editor.js request 封装 onToken 无条件渲染），
+          // UI 收到此信号应移除该气泡——否则出现"先文本后工具"的视觉错序；最终答复轮会重新创建气泡。
+          cb.onStatus && cb.onStatus('turn:tool');
+          // C2：白名单执行门——只允许本场景下发的工具（防注入工具名执行未下发工具）
+          var allowed = {};
+          for (var di = 0; di < toolDefs.length; di++) allowed[toolDefs[di].function.name] = true;
+          // I3：单轮并行工具上限 4（设计 §8）；assistant 消息与执行都用同一裁剪数组，保证 tool_call_id 匹配
+          var calls = toolCalls.slice(0, 4);
+          var results = [];
+          var writtenBlocks = {}; // I3：同块写守卫（防并行写同块导致 stale-read 覆盖）
+          for (var i = 0; i < calls.length; i++) {
+            var fn = calls[i].function;
+            var name = fn && fn.name;
+            var args = {};
+            try { args = fn.arguments ? JSON.parse(fn.arguments) : {}; } catch (e) { args = {}; }
+            var impl = Agent.tools[name];
+            var result;
+            if (!impl) result = { error: '未知工具：' + name };
+            else if (!allowed[name]) result = { error: '工具「' + name + '」不在当前场景可用范围' };
+            else {
+              var isDestructive = TOOL_DEFS[name] && TOOL_DEFS[name].destructive === true;
+              var confirmed = true;
+              if (isDestructive) {
+                // 报告型破坏性（delete_block/delete_var/delete_asset 工具一律只报告影响面不落盘）：
+                // 先执行工具拿引用报告 → onConfirm（带 result 供 UI 展示影响面）→ 确认后 confirmDelete 真删。
+                // 用户安全阀要求：任何删除都要先明确「删掉哪些部分、影响哪些部分」——影响面必须在确认前拿到。
+                try { result = await impl(args); }
+                catch (e) { result = { error: '工具执行异常：' + (e && e.message) }; }
+                if (result && result.destructive) {
+                  if (typeof cb.onConfirm === 'function') {
+                    try { confirmed = !!(await cb.onConfirm({ name: name, args: args, result: result })); }
+                    catch (e) { confirmed = false; }
+                  }
+                  if (confirmed) {
+                    try { result = await Agent.confirmDelete(name, args); }
+                    catch (e) { result = { error: '删除执行异常：' + (e && e.message) }; }
+                  } else {
+                    result = { error: '用户取消了操作：' + name };
+                  }
+                }
+              } else if (args.blockName && writtenBlocks[args.blockName]) {
+                result = { error: '同一剧情块「' + args.blockName + '」在本轮已被修改，请先 read_block 重新读取后再操作' };
+              } else {
+                // I2：单个工具抛错不得炸掉整轮（转 error 回填，模型可换招）
+                try { result = await impl(args); }
+                catch (e) { result = { error: '工具执行异常：' + (e && e.message) }; }
+                if (result && result.ok && result.resultText && args.blockName) writtenBlocks[args.blockName] = true;
+              }
+            }
+            // onTool 在工具执行后上报（含 result）：UI 渲染可折叠工具行（一行摘要，展开看参数与结果）
+            cb.onTool && cb.onTool({ name: name, args: args, result: result });
+            if (result && result.resultText) {
+              var rec = Agent.applyAgentWrite({ block: result.block, before: result.before, resultText: result.resultText, impact: result.impact }, deps, null);
+              cb.onWrite && cb.onWrite(rec);
+            }
+            results.push({ tool_call_id: calls[i].id || ('call_' + i), role: 'tool', content: JSON.stringify(result || {}) });
+          }
+          // OpenAI/DeepSeek 兼容 API 硬性要求：tool_call_id 对应的「携带 tool_calls 的 assistant 消息」
+          // 必须先于 tool 消息存在，否则 round 2+ 被拒（"tool_call_id does not exist in previous message"）
+          messages.push({ role: 'assistant', content: null, tool_calls: calls });
+          messages = messages.concat(results);
+        }
+        cb.onStatus && cb.onStatus('loop_limit');
+        cb.onReply && cb.onReply('任务步骤过多，已停止。建议拆成更小的步骤，或先撤销不想要的改动。');
+        return { scenario: scenario, rounds: rounds, finalText: null, loopLimit: true };
+      } catch (e) {
+        cb.onStatus && cb.onStatus('error', e && e.message);
+        cb.onReply && cb.onReply('出错了：' + (e && e.message));
+        return { scenario: scenario, error: e };
+      }
+    },
+  };
+
+  // ===== Task 7: 文档编辑工具纯函数 =====
+  // 工具不碰 DOM/localStorage，所有外部依赖经 toolsDeps 由 UI/runLoop 运行时注入
+  Agent.toolsDeps = {
+    getActiveBlock: null,   // () => {name, text}
+    listBlocks: null,       // () => [names]
+    getBlockText: null,     // (name) => text|null
+    fullText: null,         // () => 全文
+    settings: null,         // () => 创作设定文本
+    getVars: null, saveVars: null,
+    blocksDoc: null,       // () => {块名: 文本}（块对象视图，结构组 rename/delete 同步引用用）
+    saveBlocks: null,      // ({块名: 文本}) => void（结构组落盘）
+    extractClues: null,          // (opts) => {ok, clues|text}（创作辅助：线索提取，UI 接 window.AI.extractClues）
+    applyGeneratedBlocks: null,  // ([lines]) => {ok}（创作辅助：生成块写入，UI 接 window.StoryEditorApi.applyGeneratedBlocks）
+    getAllAssets: null,   // () => [{name, type, tags, dataURL}]（素材元数据，UI 接 window.Storage；dataURL 为二进制，工具只回元数据）
+    renameAsset: null,    // (oldName, newName) => {ok}（素材改名）
+    deleteAsset: null,    // (name) => {ok}（删除素材）
+    exportProject: null,  // () => {format, exportedAt}（整工程导出）
+    // §16: 创作设定 + 外观读写（Agent 写回 meta.creation / meta.appearance，UI 接 loadCreation/saveCreation/getAppearance/saveAppearance）
+    getCreation: null,        // () => creation 对象（{outline,intro,world,style,clues}）
+    saveCreation: null,       // (creation) => void
+    getAppearance: null,      // () => appearance 对象
+    saveAppearance: null,     // (patch) => void（合并保存）
+    appearanceFields: null,   // [string] 外观字段白名单（UI 注入 Object.keys(DEFAULT_APPEARANCE)）
+    applyReviewMarker: null,  // (opts:{blockName,current,suggestion}) => {ok,n,wrapped}|{error}（审阅标记写入：UI 接 editor 审阅管线，支持任意块）
+    getGlobalSettings: null,  // () => 全局设置对象（可写字段 + icon/fontName 只读；UI 接 globalSettings）
+    saveGlobalSettings: null, // (patch) => Promise<{ok}|{error}>（合并写入 globalSettings + saveGlobal；openingBg/openingMusic 校验素材存在）
+    getCaretRef: null,        // () => 用户发送消息时的光标/选区快照 {blockName,blockText,start,end,hasSel,selText,caretLine,lineText}|null（UI 接 agentSend 开头捕获；replace_selection 用）
+  };
+
+  // 文本操作核心（纯函数）：findAnchor（行号/文本锚定，精确优先、模糊回退）+ applyInsert + computeImpact
+  // 注（Task 7 实现时修正的计划代码缺陷）：before/after 语义为「在锚点行前/后插入一整行」——
+  // 因此 findAnchor 的 end 一律为锚点内容的末尾（不含行尾换行），并返回锚点所在行号 lineNo；
+  // applyInsert 的 before/after 按行拼接（split/splice/join），replace 仍按字符区间精确替换。
+  // 模糊回退归一化（镜像 editor.js normText）：去所有空白（含全角空格）+ 全角标点→半角
+  function normText(s) {
+    if (!s) return '';
+    return String(s)
+      .replace(/[　\s]+/g, '')
+      .replace(/[！-～]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+  }
+  function findAnchor(text, anchor, anchorType) {
+    if (anchorType === 'line') {
+      var lines = text.split('\n');
+      var idx = (typeof anchor === 'number' ? anchor : parseInt(anchor, 10)) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= lines.length) return { error: '行号超出范围（共 ' + lines.length + ' 行）' };
+      var start = 0;
+      for (var i = 0; i < idx; i++) { start += lines[i].length + 1; }
+      var end = start + lines[idx].length;
+      return { start: start, end: end, line: lines[idx], lineNo: idx + 1 };
+    }
+    var q = String(anchor);
+    var idxExact = text.indexOf(q);
+    if (idxExact >= 0) {
+      return { start: idxExact, end: idxExact + q.length, lineNo: text.slice(0, idxExact).split('\n').length };
+    }
+    // 模糊回退：归一化后包含匹配（取首个），再按「非空白字符序号」映射回原文本偏移
+    // （计划字面实现的贪心匹配从文本头重匹配 qTrim，假起点会吞掉真匹配前导字符 → 静默损坏文本；
+    //   正确做法：起点 = 原文本第 pos+1 个非空白字符，终点 = 再消费 qNorm.length 个非空白字符）
+    var qNorm = normText(q);
+    var tNorm = normText(text);
+    var pos = qNorm ? tNorm.indexOf(qNorm) : -1;
+    if (pos >= 0) {
+      var s = 0, cnt = 0;
+      while (s < text.length && cnt <= pos) {
+        if (!/\s/.test(text[s])) {
+          if (cnt === pos) break;
+          cnt++;
+        }
+        s++;
+      }
+      var e = s, consumed = 0;
+      while (e < text.length && consumed < qNorm.length) {
+        if (!/\s/.test(text[e])) consumed++;
+        e++;
+      }
+      return { start: s, end: e, lineNo: text.slice(0, s).split('\n').length, fuzzy: true };
+    }
+    return { error: '未找到锚点「' + q.slice(0, 40) + '」' };
+  }
+
+  function applyInsert(text, pos, ins, mode) {
+    if (mode === 'replace') return text.slice(0, pos.start) + ins + text.slice(pos.end);
+    // before/after：在锚点所在行（lineNo，1 起）之前/之后插入一整行
+    var lines = text.split('\n');
+    if (mode === 'after') lines.splice(pos.lineNo, 0, ins);
+    else lines.splice(pos.lineNo - 1, 0, ins); // before 默认
+    return lines.join('\n');
+  }
+
+  // impact.chars 为「变更量」= |编辑后总长 − 编辑前总长|（设计 §6：小改判定按改动幅度，
+  // 而非块总长——否则任何 ≥500 字的块编辑都会误入 preview，'小改自动落盘'失效）
+  function computeImpact(blockName, resultText, wholeBlock, beforeText) {
+    var lines = resultText.split('\n').length;
+    var delta = Math.abs(resultText.length - (beforeText ? beforeText.length : 0));
+    return { chars: delta, lines: lines, wholeBlock: !!wholeBlock, block: blockName };
+  }
+
+  // ===== Task 9: 变量工具辅助 =====
+  // 变量格式 {name, type:'number'|'text'|'boolean', value}（storage.js:602）；
+  // 命名规则同 editor.js:2886：字母/数字/下划线/中文，不得数字开头。
+  function validVarName(name) {
+    // 空值守卫：String(undefined)='undefined' 会命中正则，必须显式拒绝（防 LLM 漏传 name 落垃圾条目）
+    if (typeof name !== 'string' || !name) return false;
+    return /^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(name);
+  }
+  function getVarsArr() {
+    return Agent.toolsDeps.getVars ? Agent.toolsDeps.getVars() : [];
+  }
+
+  // 结构组辅助：获取块对象视图 {块名: 文本}。
+  // 优先用 toolsDeps.blocksDoc；缺省时回退 listBlocks+getBlockText 重建（结构组工具都经此拿当前块全量）。
+  function blocksDocObj() {
+    if (Agent.toolsDeps.blocksDoc) return Agent.toolsDeps.blocksDoc();
+    var out = {};
+    var names = Agent.toolsDeps.listBlocks ? Agent.toolsDeps.listBlocks() : [];
+    for (var i = 0; i < names.length; i++) {
+      var t = Agent.toolsDeps.getBlockText ? Agent.toolsDeps.getBlockText(names[i]) : '';
+      out[names[i]] = t == null ? '' : t;
+    }
+    return out;
+  }
+
+  // 删除安全阀影响面扫描（设计 §6.4）：在块对象视图 {块名:文本} 中扫描对「变量名 / 素材名」的正文引用。
+  // 返回 [{block, lineNo, snippet}]（cap 20，同 search_in_doc）；snippet 为行前 60 字符。
+  // 变量引用语法：{名} / {名:真|假} 读、<变量:名=值> / <变量:名+n> 写、<玩家输入变量:名,"引导">、
+  // <选项:"文字",块名,条件:表达式> 条件表达式中的名（行内含「条件:」且名以边界出现）。
+  function scanVarReferences(doc, name) {
+    var esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var reRead = new RegExp('(^|[^\\{])\\{' + esc + '(?=[}:])'); // {名} / {名:真|假}；{{名}} 转义不算引用（前字符非 {）
+    var reWrite = new RegExp('<变量:' + esc + '(?=[=+\\->])');   // <变量:名= / <变量:名+ / <变量:名- / <变量:名>
+    var reInput = new RegExp('<玩家输入变量:' + esc + '(?=[,">])');
+    var reCond = new RegExp('(^|[^A-Za-z0-9_\\u4e00-\\u9fa5])' + esc + '(?![A-Za-z0-9_\\u4e00-\\u9fa5])'); // 条件表达式内名（边界出现）
+    var refs = [];
+    for (var k in doc) {
+      if (!Object.prototype.hasOwnProperty.call(doc, k)) continue;
+      var lines = String(doc[k] == null ? '' : doc[k]).split('\n');
+      for (var i = 0; i < lines.length && refs.length < 20; i++) {
+        if (reRead.test(lines[i]) || reWrite.test(lines[i]) || reInput.test(lines[i])
+          || (lines[i].indexOf('条件:') >= 0 && reCond.test(lines[i]))) {
+          refs.push({ block: k, lineNo: i + 1, snippet: lines[i].slice(0, 60) });
+        }
+      }
+    }
+    return refs;
+  }
+  // 素材召唤引用：<召唤背景:名> / <召唤物品:名,"提示">（名后为 , 或 >）/ <召唤叠层:名> / <召唤音乐:名> / <召唤音效:名>
+  function scanAssetReferences(doc, name) {
+    var esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var re = new RegExp('<召唤(?:背景|物品|叠层|音乐|音效):\\s*' + esc + '(?=[,">])');
+    var refs = [];
+    for (var k in doc) {
+      if (!Object.prototype.hasOwnProperty.call(doc, k)) continue;
+      var lines = String(doc[k] == null ? '' : doc[k]).split('\n');
+      for (var i = 0; i < lines.length && refs.length < 20; i++) {
+        if (re.test(lines[i])) refs.push({ block: k, lineNo: i + 1, snippet: lines[i].slice(0, 60) });
+      }
+    }
+    return refs;
+  }
+
+  // 镜像引擎 extractOptionLine（editor.js:125）：一行内所有 <选项:"文字",块名[,条件:…]> 的 body 段。
+  // 闭合 > 取下一个 <选项: 之前（或行尾前）的最后一个 > ——条件表达式里的 >（如 金币>5）不算闭合。
+  // 支持同行拼接（引擎强制格式，editor.js:3280：同决策点多选项同行 <选项:"A",块A><选项:"B",块B>）。
+  function extractAgentOptions(line) {
+    var TAG = '<选项:';
+    var out = [];
+    var from = 0;
+    while (from <= line.length) {
+      var start = line.indexOf(TAG, from);
+      if (start < 0) break;
+      var next = line.indexOf(TAG, start + TAG.length);
+      var endB = next < 0 ? line.length : next;
+      var close = -1;
+      for (var k = start + TAG.length; k < endB; k++) { if (line[k] === '>') close = k; }
+      from = start + TAG.length;
+      if (close < 0) continue;
+      out.push(line.slice(start + TAG.length, close));
+    }
+    return out;
+  }
+
+  var tools = {
+    get_current_block: function () {
+      if (!Agent.toolsDeps.getActiveBlock) return { error: '编辑器未就绪' };
+      var b = Agent.toolsDeps.getActiveBlock();
+      return { blockName: b.name, text: b.text };
+    },
+    list_blocks: function () {
+      return Agent.toolsDeps.listBlocks ? Agent.toolsDeps.listBlocks() : [];
+    },
+    read_block: function (a) {
+      var t = Agent.toolsDeps.getBlockText && Agent.toolsDeps.getBlockText(a.blockName);
+      if (t === null || t === undefined) {
+        var names = (Agent.toolsDeps.listBlocks ? Agent.toolsDeps.listBlocks() : []).join('、');
+        return { error: '未找到剧情块「' + a.blockName + '」，可用块：' + names };
+      }
+      return { blockName: a.blockName, text: t };
+    },
+    search_in_doc: function (a) {
+      var q = String(a.query || '');
+      if (!q) return { error: 'query 不能为空' };
+      var out = [];
+      var names = Agent.toolsDeps.listBlocks ? Agent.toolsDeps.listBlocks() : [];
+      for (var i = 0; i < names.length && out.length < 20; i++) {
+        var t = Agent.toolsDeps.getBlockText ? Agent.toolsDeps.getBlockText(names[i]) : null;
+        if (!t) continue;
+        var lines = t.split('\n');
+        for (var j = 0; j < lines.length && out.length < 20; j++) {
+          if (lines[j].indexOf(q) >= 0) out.push({ block: names[i], lineNo: j + 1, snippet: lines[j] });
+        }
+      }
+      return out;
+    },
+    // §14: 在早期对话归档中检索（被摘要压缩的原文），经 toolsDeps.searchHistoryArchives 注入
+    search_history: function (a) {
+      var q = String(a && a.query || '');
+      if (!q) return { error: 'query 不能为空' };
+      var archive = (Agent.toolsDeps && typeof Agent.toolsDeps.searchHistoryArchives === 'function') ? Agent.toolsDeps.searchHistoryArchives() : [];
+      var hits = Agent.searchHistoryArchive(archive, q);
+      return { ok: true, query: q, hits: hits, archivedEntries: Array.isArray(archive) ? archive.length : 0 };
+    },
+    // §16: 创作设定 + 外观（Agent 全面辅助：可读可写 meta.creation 创作设定与 meta.appearance 外观）
+    read_appearance: function () {
+      if (typeof Agent.toolsDeps.getAppearance !== 'function') return { error: '编辑器未就绪' };
+      return { appearance: Object.assign({}, Agent.toolsDeps.getAppearance()) };
+    },
+    update_appearance: function (a) {
+      if (typeof Agent.toolsDeps.getAppearance !== 'function' || typeof Agent.toolsDeps.saveAppearance !== 'function') return { error: '编辑器未就绪' };
+      var patch = a && a.patch;
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return { error: 'patch 必须是对象，如 {fontSize:22}' };
+      var fields = Agent.toolsDeps.appearanceFields || ['fontSize', 'titleFont', 'bodyFont', 'dividerFont', 'galBoxColor', 'titleColor'];
+      var next = {};
+      var keys = Object.keys(patch);
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (fields.indexOf(k) === -1) return { error: '未知外观字段：' + k + '（可用 ' + fields.join('/') + '）' };
+        var v = patch[k];
+        if (k === 'fontSize') {
+          var n = Number(v);
+          if (isNaN(n) || n < 14 || n > 32) return { error: 'fontSize 须为 14-32 的数值（当前值 ' + v + '）' };
+          next[k] = n;
+        } else if (typeof v !== 'string') {
+          return { error: '字段 ' + k + ' 须为字符串（当前值 ' + String(v) + '）' };
+        } else {
+          next[k] = v;
+        }
+      }
+      Agent.toolsDeps.saveAppearance(next); // 立即生效（覆盖试玩与导出），可手动改回
+      return { ok: true, applied: Object.assign({}, Agent.toolsDeps.getAppearance()), changed: keys, note: '外观已立即生效，覆盖试玩与导出成品' };
+    },
+    update_creation_setting: function (a) {
+      if (typeof Agent.toolsDeps.getCreation !== 'function' || typeof Agent.toolsDeps.saveCreation !== 'function') return { error: '编辑器未就绪' };
+      var field = String(a && a.field || '');
+      var value = a && a.value;
+      var FIELDS = ['outline', 'intro', 'world', 'style', 'clues'];
+      if (FIELDS.indexOf(field) === -1) return { error: '未知创作设定字段：' + (field || '（空）') + '（可用 ' + FIELDS.join('/') + '）' };
+      if (typeof value !== 'string') return { error: 'value 必须是字符串' };
+      var c = Agent.toolsDeps.getCreation() || {};
+      var before = (c[field] !== undefined && c[field] !== null) ? String(c[field]) : '';
+      // 不落盘：返回 block='creation:<field>' + resultText，经 applyAgentWrite → classifyWrite（wholeBlock → preview 确认）→ commitAgentWrite 写回
+      return { ok: true, block: 'creation:' + field, before: before, resultText: value, impact: { chars: Math.abs(value.length - before.length), wholeBlock: true }, note: '整字段替换，预览确认后写入' };
+    },
+    read_full_text: function () {
+      var t = Agent.toolsDeps.fullText ? Agent.toolsDeps.fullText() : '';
+      if (t.length > 50000) return { error: '全文过长（' + t.length + ' 字符），建议用 read_block 按块读取' };
+      return { text: t };
+    },
+    read_settings: function () {
+      return { settings: Agent.toolsDeps.settings ? Agent.toolsDeps.settings() : '' };
+    },
+    append_to_block: function (a) {
+      if (!a.blockName || a.text === undefined) return { error: '缺少 blockName 或 text' };
+      var t = Agent.toolsDeps.getBlockText && Agent.toolsDeps.getBlockText(a.blockName);
+      if (t === null || t === undefined) return { error: '未找到剧情块「' + a.blockName + '」' };
+      var result = t + (t && !t.endsWith('\n') && !String(a.text).startsWith('\n') ? '\n' : '') + String(a.text);
+      return { ok: true, block: a.blockName, before: t, resultText: result, impact: computeImpact(a.blockName, result, false, t) };
+    },
+    insert_at: function (a) {
+      if (!a.blockName || a.anchor === undefined || a.text === undefined) return { error: '缺少 blockName/anchor/text' };
+      var t = Agent.toolsDeps.getBlockText && Agent.toolsDeps.getBlockText(a.blockName);
+      if (t === null || t === undefined) return { error: '未找到剧情块「' + a.blockName + '」' };
+      var mode = a.mode || 'before';
+      if (mode !== 'before' && mode !== 'after' && mode !== 'replace') return { error: 'mode 无效：' + mode + '（应为 before/after/replace）' };
+      var pos = findAnchor(t, a.anchor, a.anchorType || 'text');
+      if (pos.error) return { error: pos.error };
+      var result = applyInsert(t, pos, String(a.text), mode);
+      // 整块替换必须标记 wholeBlock → 走预览确认（设计 §6）
+      var wholeBlock = (mode === 'replace' && pos.start === 0 && pos.end === t.length);
+      return { ok: true, block: a.blockName, before: t, resultText: result, impact: computeImpact(a.blockName, result, wholeBlock, t) };
+    },
+    // 替换「用户说话时选中的文字」：原文由编辑器从光标/选区快照读取（模型无需抄写原文——根治抄错）。
+    // 定位策略：块当前文本与快照一致 → 直接用快照偏移（最精确）；已被改动 → 用选中文字做锚点（精确优先、模糊回退）。
+    replace_selection: function (a) {
+      if (a.text === undefined) return { error: '缺少 text（替换后的文字）' };
+      var ref = Agent.toolsDeps.getCaretRef ? Agent.toolsDeps.getCaretRef() : null;
+      if (!ref || !ref.hasSel || !ref.selText) return { error: '用户发送消息时编辑器没有选中文字。请让用户先选中要替换的文字再重发；未选中的位置可用 insert_at（按行号）修改' };
+      var block = a.blockName || ref.blockName;
+      if (block !== ref.blockName) return { error: '选区快照属于块《' + ref.blockName + '》，不能替换《' + block + '》——省略 blockName 即替换快照所在块，改其他块请用 insert_at' };
+      var t = Agent.toolsDeps.getBlockText && Agent.toolsDeps.getBlockText(block);
+      if (t === null || t === undefined) return { error: '未找到剧情块「' + block + '」' };
+      var pos;
+      if (t === ref.blockText) {
+        pos = { start: ref.start, end: ref.end };
+      } else {
+        pos = findAnchor(t, ref.selText, 'text');
+        if (pos.error) return { error: '块《' + block + '》内容已在快照后被改动，且找不到选中文字「' + ref.selText.slice(0, 20) + '」的原文锚点：' + pos.error };
+      }
+      var result = t.slice(0, pos.start) + String(a.text) + t.slice(pos.end);
+      var wholeBlock = (pos.start === 0 && pos.end === t.length);
+      return { ok: true, block: block, before: t, resultText: result, impact: computeImpact(block, result, wholeBlock, t) };
+    },
+    apply_review_marker: function (a) {
+      if (!a || !a.blockName) return { error: '缺少 blockName' };
+      if (!a.current || !String(a.current).trim()) return { error: '缺少 current（当前原文片段），须与正文逐字一致' };
+      if (!Agent.toolsDeps.applyReviewMarker) return { error: 'apply_review_marker 未接线，请改用 insert_at 或直接向用户给出修改建议' };
+      var r = Agent.toolsDeps.applyReviewMarker({ blockName: a.blockName, current: String(a.current), suggestion: a.suggestion === undefined ? '' : String(a.suggestion) });
+      if (r && r.error) return { error: r.error };
+      // 不返回 resultText：审阅标记已由 UI 侧落盘，避免 runLoop 二次写入或误触发预览弹窗。
+      // 标记写入是「提议」而非「改稿」——用户经审阅面板逐条应用后才真正改文（Task 15 接线后替代大改预览）。
+      return { ok: true, block: a.blockName, n: r && r.n, wrapped: r && r.wrapped ? r.wrapped : 0 };
+    },
+    // ===== Task 9: 变量工具（直接读写 master 现有格式，经 toolsDeps.getVars/saveVars 注入） =====
+    // 直接变更注入的变量数组；destructive 仅 delete_var 标记（变量写入不走 sessionWrites 撤销）
+    list_vars: function () {
+      return getVarsArr().slice();
+    },
+    read_var: function (a) {
+      var name = a && a.name;
+      var arr = getVarsArr();
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i].name === name) return { name: arr[i].name, type: arr[i].type, value: arr[i].value };
+      }
+      return { error: '未找到变量「' + name + '」' };
+    },
+    create_var: function (a) {
+      var name = a && a.name;
+      if (!validVarName(name)) return { error: '变量名只能 字母/数字/下划线/中文 且不能数字开头' };
+      var type = (a && a.type === 'text') || (a && a.type === 'boolean') ? a.type : 'number';
+      var arr = getVarsArr();
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i].name === name) return { error: '已存在同名变量「' + name + '」' };
+      }
+      var value = a && a.value !== undefined ? a.value : (type === 'number' ? 0 : type === 'boolean' ? false : '');
+      if (type === 'number') {
+        value = Number(value);
+        if (isNaN(value)) return { error: '初始值必须是数值' };
+      } else if (type === 'boolean') {
+        value = (value === true || value === 'true' || value === 1 || value === '1');
+      } else {
+        value = String(value);
+      }
+      var created = { name: name, type: type, value: value };
+      var next = arr.slice();
+      next.push(created);
+      if (!Agent.toolsDeps.saveVars) return { error: '编辑器未就绪' };
+      Agent.toolsDeps.saveVars(next);
+      return { ok: true, name: created.name, type: created.type, value: created.value };
+    },
+    delete_var: function (a) {
+      var name = a && a.name;
+      var arr = getVarsArr();
+      var found = -1;
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i].name === name) { found = i; break; }
+      }
+      if (found < 0) return { error: '未找到变量「' + name + '」' };
+      // 安全阀（用户要求：任何删除都要先明确影响面）：不落盘，只报告正文引用；
+      // 真删由 runLoop 确认后 confirmDelete('delete_var') 执行。
+      return { ok: true, name: name, destructive: true, references: scanVarReferences(blocksDocObj(), name) };
+    },
+    set_var: function (a) {
+      var name = a && a.name;
+      var arr = getVarsArr();
+      var v = null;
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i].name === name) { v = arr[i]; break; }
+      }
+      if (!v) return { error: '未找到变量「' + name + '」' };
+      var val = a && a.value;
+      if (v.type === 'number') {
+        // 先算后验：失败路径不得把 NaN 写进变量库（否则后续 update_var 会带着 NaN 继续）
+        var n = Number(val);
+        if (isNaN(n)) return { error: 'number 类型变量必须赋数值' };
+        v.value = n;
+      } else if (v.type === 'boolean') {
+        v.value = (val === true || val === 'true' || val === 1 || val === '1');
+      } else {
+        v.value = String(val);
+      }
+      if (!Agent.toolsDeps.saveVars) return { error: '编辑器未就绪' };
+      Agent.toolsDeps.saveVars(arr);
+      return { ok: true, name: v.name, value: v.value };
+    },
+    update_var: function (a) {
+      var name = a && a.name;
+      var arr = getVarsArr();
+      var v = null;
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i].name === name) { v = arr[i]; break; }
+      }
+      if (!v) return { error: '未找到变量「' + name + '」' };
+      if (v.type !== 'number') return { error: '只有 number 类型支持加减' };
+      var d = Number(a && a.delta);
+      if (isNaN(d)) return { error: 'delta 必须是数值' };
+      v.value = (a && a.op === '-') ? v.value - d : v.value + d;
+      if (!Agent.toolsDeps.saveVars) return { error: '编辑器未就绪' };
+      Agent.toolsDeps.saveVars(arr);
+      return { ok: true, name: v.name, value: v.value };
+    },
+    // ===== Task 10: 结构组工具（create/rename/delete 剧情块） =====
+    // 块名规则同 storage.js:288（只允许 中文/字母/数字/下划线）——
+    // 该字符集不含正则元字符，块名插值进 RegExp 是安全的，无需转义。
+    // 删除语义（按计划）：delete_block 只报告引用 + 标记 destructive，
+    // 真正的删块由 runLoop（Task 13）在用户确认后执行，本工具不落盘。
+    create_block: function (a) {
+      var name = String(a && a.blockName || '').trim();
+      if (!/^[A-Za-z0-9_\u4e00-\u9fa5]+$/.test(name)) return { error: '块名只允许 中文/字母/数字/下划线' };
+      if (Agent.toolsDeps.mainBlock && name === Agent.toolsDeps.mainBlock) return { error: '不能创建与主剧情同名的块' };
+      if (typeof Agent.toolsDeps.saveBlocks !== 'function') return { error: '编辑器未就绪' };
+      var doc = blocksDocObj();
+      if (name in doc) return { error: '已存在同名剧情块「' + name + '」' };
+      var next = {};
+      for (var k in doc) {
+        if (Object.prototype.hasOwnProperty.call(doc, k)) next[k] = doc[k];
+      }
+      next[name] = '';
+      Agent.toolsDeps.saveBlocks(next);
+      return { ok: true, blockName: name };
+    },
+    rename_block: function (a) {
+      var oldN = String(a && a.oldName || '').trim();
+      var newN = String(a && a.newName || '').trim();
+      if (typeof Agent.toolsDeps.saveBlocks !== 'function') return { error: '编辑器未就绪' };
+      var doc = blocksDocObj();
+      if (Agent.toolsDeps.mainBlock && oldN === Agent.toolsDeps.mainBlock) return { error: '主剧情块不可改名' };
+      if (Agent.toolsDeps.mainBlock && newN === Agent.toolsDeps.mainBlock) return { error: '不能改名为主剧情' };
+      if (!(oldN in doc)) return { error: '未找到剧情块「' + oldN + '」' };
+      // newN 必须与 create_block 同规则校验：空串会建空键块，$&/$`/$' 等会污染替换串（审查加固）
+      if (!/^[A-Za-z0-9_\u4e00-\u9fa5]+$/.test(newN)) return { error: '块名只允许 中文/字母/数字/下划线' };
+      if (newN in doc) return { error: '已存在同名剧情块「' + newN + '」' };
+      // 旧名转义（repo 惯例 storage.js:564）：块名虽无正则元字符，但旧键可能来自手工编辑/历史数据
+      var escOld = oldN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // 同步三类引用：<<剧情块:旧名>> 分块标记、<选项:"…",旧名…> 跳转目标（含条件行）、
+      // 单括号运行期跳转 <剧情块:旧名> / <对话块:旧名>（storage.js:568 同源，防止改名后运行期悬空引用）
+      var reTag = new RegExp('<<剧情块:' + escOld + '>>', 'g');
+      var reOpt = new RegExp('(<选项:"[^"]*",\\s*)' + escOld + '(?=\\s*(,|>))', 'g');
+      var reJump = new RegExp('<(?:对话块|剧情块):\\s*' + escOld + '\\s*>', 'g');
+      var next = {};
+      for (var k in doc) {
+        if (Object.prototype.hasOwnProperty.call(doc, k)) next[k] = doc[k];
+      }
+      next[newN] = next[oldN];
+      delete next[oldN];
+      // 遍历全部块（含改名块自身：其自引用旧名也会悬空，须一并同步），计数实际变更的块
+      var changed = 0;
+      for (var b in next) {
+        if (!Object.prototype.hasOwnProperty.call(next, b)) continue;
+        var t = String(next[b] == null ? '' : next[b]);
+        var t2 = t.replace(reJump, '<剧情块:' + newN + '>').replace(reTag, '<<剧情块:' + newN + '>>').replace(reOpt, '$1' + newN);
+        if (t2 !== t) { next[b] = t2; changed++; }
+      }
+      Agent.toolsDeps.saveBlocks(next);
+      return { ok: true, oldName: oldN, newName: newN, blocksUpdated: changed };
+    },
+    delete_block: function (a) {
+      var name = String(a && a.blockName || '').trim();
+      if (typeof Agent.toolsDeps.blocksDoc !== 'function' && typeof Agent.toolsDeps.listBlocks !== 'function') return { error: '编辑器未就绪' };
+      var doc = blocksDocObj();
+      if (Agent.toolsDeps.mainBlock && name === Agent.toolsDeps.mainBlock) return { error: '主剧情块不可删除' };
+      if (!(name in doc)) return { error: '未找到剧情块「' + name + '」' };
+      // 只扫其他块的跳转引用：选项 <选项:"…",旧名…> 与单括号 <剧情块:旧名>/<对话块:旧名>；
+      // 无 g 标志 → .test() 无 lastIndex 陷阱；引用数上限 20 防超长回报（同 search_in_doc）
+      var escName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var re = new RegExp('<选项:"[^"]*",\\s*' + escName + '(?=\\s*(,|>))');
+      var reJump = new RegExp('<(?:对话块|剧情块):\\s*' + escName + '\\s*>');
+      var refs = [];
+      for (var k in doc) {
+        if (!Object.prototype.hasOwnProperty.call(doc, k)) continue;
+        if (k === name) continue;
+        var lines = String(doc[k] == null ? '' : doc[k]).split('\n');
+        for (var i = 0; i < lines.length && refs.length < 20; i++) {
+          if (re.test(lines[i]) || reJump.test(lines[i])) refs.push({ block: k, lineNo: i + 1, snippet: lines[i].slice(0, 60) });
+        }
+      }
+      return { ok: true, blockName: name, destructive: true, references: refs };
+    },
+    // ===== Task 11: 创作辅助组工具（extract_clues / generate_options） =====
+    // 只调 toolsDeps + 校验结果/语法，不直接碰 AI 或文档（UI 接线：extractClues→window.AI.extractClues，
+    // applyGeneratedBlocks→window.StoryEditorApi.applyGeneratedBlocks）。
+    extract_clues: async function (a) {
+      if (!Agent.toolsDeps.extractClues) return { error: '线索提取管线未接线' };
+      try {
+        var opts = {};
+        if (a && a.blockName) opts.blockName = a.blockName;
+        if (a && a.incremental) opts.incremental = true;
+        // deps 接线是 async（editor.js 经 window.AI.extractClues）→ 必须 await，否则拿到 Promise、ok 恒 undefined
+        var r = await Agent.toolsDeps.extractClues(opts);
+        return r && r.ok ? { ok: true, clues: r.clues || r.text || '', summary: r.summary || '' } : { error: (r && r.error) || '提取失败' };
+      } catch (e) {
+        return { error: '提取异常：' + e.message };
+      }
+    },
+    generate_options: function (a) {
+      if (!a || !a.text) return { error: '缺少 text' };
+      var lines = String(a.text).split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+      var ok = [], bad = [];
+      for (var i = 0; i < lines.length; i++) {
+        // 按引擎闭合规则提取一行内全部选项（同行拼接 → 多个 body）
+        var bodies = extractAgentOptions(lines[i]);
+        if (!bodies.length) { bad.push(lines[i]); continue; }
+        for (var j = 0; j < bodies.length; j++) {
+          var m = bodies[j].match(/^\s*"([^"]*)"\s*(?:,\s*([\s\S]*))?$/);
+          // 必须有块名（m[2] 非空）；文字可为空串（<选项:""> 纯推进，引擎允许）
+          if (m && m[1] !== undefined && m[2] && String(m[2]).trim()) ok.push('<选项:' + bodies[j] + '>');
+          else bad.push(lines[i]);
+        }
+      }
+      if (!ok.length) return { error: '没有合法的 <选项:"文字",块名[,条件:…]> 行' };
+      if (typeof Agent.toolsDeps.applyGeneratedBlocks !== 'function') return { error: '编辑器未就绪' };
+      Agent.toolsDeps.applyGeneratedBlocks(ok);
+      return { ok: true, count: ok.length, invalid: bad.length };
+    },
+    // ===== Task 12: 素材组工具（list_assets / rename_asset / delete_asset / export_project） =====
+    // list_assets 必须脱敏：素材记录含 dataURL 二进制（可能是大 base64），只回 name/type/tags，
+    // 绝不让二进制进 LLM 上下文；未接线时按只读约定降级为空数组（同 list_blocks/list_vars）。
+    // rename/delete/export 需要落盘 → 未接线报错；deps 失败 error 原样透传，falsy 兜底错误。
+    // 素材 deps 接线层是 async（window.Storage 走 IndexedDB，storage.js:331/372/377/613）——
+    // 工具本身为 async（await deps），runLoop 统一 await 工具结果（同步工具返回值 await 无害）。
+    // deps 抛异常 → 转 error 返回，不让 Promise rejection 炸掉 runLoop。
+    list_assets: async function () {
+      var all = Agent.toolsDeps.getAllAssets ? await Agent.toolsDeps.getAllAssets() : [];
+      if (!Array.isArray(all)) all = [];
+      return all.map(function (a) {
+        var out = { name: a.name, type: a.type };
+        if (a.tags) out.tags = a.tags;
+        return out;
+      });
+    },
+    rename_asset: async function (a) {
+      if (!Agent.toolsDeps.renameAsset) return { error: '素材系统未接线' };
+      try {
+        var r = await Agent.toolsDeps.renameAsset(a.name, a.newName);
+        return r && r.ok ? { ok: true, name: a.name, newName: a.newName } : { error: (r && r.error) || '改名失败' };
+      } catch (e) { return { error: '改名异常：' + ((e && e.message) || e) }; }
+    },
+    delete_asset: async function (a) {
+      var name = a && a.name;
+      // 安全阀（用户要求：任何删除都要先明确影响面）：不落盘，只报告正文召唤 + 开场设置引用；
+      // 真删由 runLoop 确认后 confirmDelete('delete_asset') 执行。
+      var exists = null; // null=素材系统未接线（无法确认存在性），true/false=确认结果
+      if (typeof Agent.toolsDeps.getAllAssets === 'function') {
+        try {
+          var all = await Agent.toolsDeps.getAllAssets();
+          exists = Array.isArray(all) && all.some(function (x) { return x && x.name === name; });
+        } catch (e) { exists = null; }
+      }
+      if (exists === false) return { error: '素材不存在' };
+      var refs = scanAssetReferences(blocksDocObj(), name);
+      // 开场设置（开场背景/开场音乐）也按名称引用素材——并入影响面报告
+      if (typeof Agent.toolsDeps.openingRefs === 'function') {
+        try {
+          var opening = Agent.toolsDeps.openingRefs() || [];
+          for (var i = 0; i < opening.length; i++) {
+            if (opening[i] && opening[i].name === name) refs.push({ block: '开场设置', lineNo: 0, snippet: opening[i].setting });
+          }
+        } catch (e) {}
+      }
+      return { ok: true, name: name, destructive: true, references: refs };
+    },
+    export_project: async function () {
+      if (!Agent.toolsDeps.exportProject) return { error: '导出未接线' };
+      try {
+        var r = await Agent.toolsDeps.exportProject();
+        return r ? { ok: true, format: r.format, exportedAt: r.exportedAt } : { error: '导出失败' };
+      } catch (e) { return { error: '导出异常：' + ((e && e.message) || e) }; }
+    },
+    // 正文格式/美化语法手册：纯函数返回权威完整版（BBCode + 结构指令 + 跳转 + 变量），
+    // 不依赖 toolsDeps、无写入副作用；返回对象无 resultText，不会误触发写操作登记。
+    read_formatting_guide: function () {
+      return { ok: true, guide: FORMAT_GUIDE_FULL };
+    },
+    read_global_settings: function () {
+      if (!Agent.toolsDeps.getGlobalSettings) return { error: '读取全局设置未接线' };
+      return { ok: true, settings: Agent.toolsDeps.getGlobalSettings() };
+    },
+    update_global_setting: async function (a) {
+      if (!Agent.toolsDeps.saveGlobalSettings) return { error: '更新全局设置未接线' };
+      var patch = (a && a.patch) || null;
+      if (!patch || typeof patch !== 'object' || !Object.keys(patch).length) return { error: '缺少 patch（要更新的设置字段对象）' };
+      var allowed = { gameName: 1, subtitle: 1, authorId: 1, playMode: 1, textContrast: 1, watermark: 1, openingBg: 1, openingMusic: 1 };
+      var clean = {};
+      var changed = [];
+      for (var k in patch) {
+        if (!Object.prototype.hasOwnProperty.call(patch, k)) continue;
+        if (!allowed[k]) return { error: '不支持的字段：' + k + '（支持 gameName/subtitle/authorId/playMode/textContrast/watermark/openingBg/openingMusic）' };
+        var v = patch[k];
+        if (k === 'playMode') {
+          if (v !== 'longform' && v !== 'galgame') return { error: 'playMode 只能是 longform（长文）或 galgame' };
+          clean[k] = v; changed.push(k);
+        } else if (k === 'textContrast') {
+          if (v !== 'auto' && v !== 'off') return { error: 'textContrast 只能是 auto（自动）或 off（关）' };
+          clean[k] = v; changed.push(k);
+        } else if (k === 'watermark') {
+          if (!v || typeof v !== 'object') return { error: 'watermark 必须是对象 {text,pos,opacity}' };
+          var wm = {};
+          if (v.text !== undefined) wm.text = String(v.text);
+          if (v.pos !== undefined) {
+            if (['左上', '右上', '左下', '右下'].indexOf(v.pos) < 0) return { error: 'watermark.pos 只能是 左上/右上/左下/右下' };
+            wm.pos = v.pos;
+          }
+          if (v.opacity !== undefined) {
+            var op = Number(v.opacity);
+            if (isNaN(op) || op < 10 || op > 100) return { error: 'watermark.opacity 须为 10-100 的数字' };
+            wm.opacity = Math.round(op);
+          }
+          if (!Object.keys(wm).length) return { error: 'watermark 无有效子字段（text/pos/opacity）' };
+          clean[k] = wm; changed.push(k);
+        } else {
+          clean[k] = (v === undefined || v === null) ? '' : String(v);
+          changed.push(k);
+        }
+      }
+      try {
+        var r = await Agent.toolsDeps.saveGlobalSettings(clean);
+        if (r && r.error) return { error: r.error };
+      } catch (e) { return { error: '更新全局设置异常：' + ((e && e.message) || e) }; }
+      return { ok: true, changed: changed, note: '已更新全局设置：' + changed.join('、') };
+    },
+  };
+  Agent.tools = tools;
+  // ===== Task 13: 工具定义常量 TOOL_DEFS（OpenAI function calling 格式） =====
+  // 键与 Agent.tools 完全一致（buildToolDefs 按场景白名单过滤后下发）；description 中文说明
+  // 行为与确认语义：只读工具 →「只读操作，不修改任何数据」；写工具 →「小改自动落盘、大改走预览确认」；
+  // 破坏性工具（delete_block/delete_var/delete_asset）→「破坏性操作，触发二次确认」；export_project →「导出当前工程」。
+  var TOOL_DEFS = {
+    get_current_block: { type: 'function', function: { name: 'get_current_block', description: '获取当前正在编辑的剧情块名称与全文（含 <审阅:N> 标记）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    list_blocks: { type: 'function', function: { name: 'list_blocks', description: '列出全部剧情块名称。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    read_block: { type: 'function', function: { name: 'read_block', description: '按名称读取剧情块全文；块不存在时返回可用块列表。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称' } }, required: ['blockName'] } } },
+    search_in_doc: { type: 'function', function: { name: 'search_in_doc', description: '在全部剧情块中搜索关键词，返回命中的块、行号与片段（上限 20 条）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { query: { type: 'string', description: '搜索关键词' } }, required: ['query'] } } },
+    search_history: { type: 'function', function: { name: 'search_history', description: '在 Agent 早期对话归档中搜索关键词（已被摘要压缩的对话原文），返回命中的条目序号、角色、行号与片段（上限 20 条）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { query: { type: 'string', description: '搜索关键词' } }, required: ['query'] } } },
+    read_full_text: { type: 'function', function: { name: 'read_full_text', description: '读取整篇故事全文（超 50k 字符会拒绝）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    read_settings: { type: 'function', function: { name: 'read_settings', description: '读取创作设定（世界观/文风等）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    append_to_block: { type: 'function', function: { name: 'append_to_block', description: '在指定剧情块末尾追加文字。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称' }, text: { type: 'string', description: '要追加的文字' } }, required: ['blockName', 'text'] } } },
+    insert_at: { type: 'function', function: { name: 'insert_at', description: '按行号或原文锚点在指定块插入/替换文字。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称' }, anchor: { type: 'string', description: '锚点：行号数字（anchorType=line）或原文片段（anchorType=text）' }, text: { type: 'string', description: '要插入/替换的文字' }, mode: { type: 'string', enum: ['before', 'after', 'replace'], description: '插入模式（缺省 before）' }, anchorType: { type: 'string', enum: ['line', 'text'], description: '锚点类型（缺省 text）' } }, required: ['blockName', 'anchor', 'text'] } } },
+    replace_selection: { type: 'function', function: { name: 'replace_selection', description: '替换用户发送消息时在编辑器里选中的文字（【编辑器当前状态】的「选中文字」）。blockName 可省略（缺省=选区所在块）；text 传替换后的完整新文字即可，不要抄写原文（原文由编辑器从选区快照读取）。用于「给这里改成…/重写这段」类指令。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { text: { type: 'string', description: '替换后的完整新文字（不包含原选中文字）' }, blockName: { type: 'string', description: '剧情块名称（可省略，缺省=选区所在块）' } }, required: ['text'] } } },
+    apply_review_marker: { type: 'function', function: { name: 'apply_review_marker', description: '在指定剧情块标注审阅标记（<审阅:N>）并记录修改建议，供用户逐条审阅后应用。适合大段改写：不要整段替换正文，把要改的原文片段（current 须与正文逐字一致）与改写建议（suggestion）逐条提出，一次一个。修改文档：小改自动落盘、大改建议先进审阅。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称' }, current: { type: 'string', description: '当前原文片段（须与正文逐字一致）' }, suggestion: { type: 'string', description: '修改建议' } }, required: ['blockName'] } } },
+    list_vars: { type: 'function', function: { name: 'list_vars', description: '列出全部变量（名称/类型/值）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    read_var: { type: 'function', function: { name: 'read_var', description: '读取单个变量的名称/类型/值。只读操作，不修改任何数据。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' } }, required: ['name'] } } },
+    create_var: { type: 'function', function: { name: 'create_var', description: '新建变量（number/text/boolean，命名：字母/下划线/中文开头）。修改变量库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' }, type: { type: 'string', enum: ['number', 'text', 'boolean'], description: '变量类型' }, value: { type: 'string', description: '初始值（缺省按类型取默认，数值/布尔由工具按类型转换）' } }, required: ['name', 'type'] } } },
+    delete_var: { destructive: true, type: 'function', function: { name: 'delete_var', description: '删除变量定义。先查看工具返回的 references 字段——它是正文中真实扫描到的该变量引用位置（块名/行号/片段），references 为空则说明正文中没有引用（此时不得假设「若存在…」）。确认后才删。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' } }, required: ['name'] } } },
+    set_var: { type: 'function', function: { name: 'set_var', description: '修改已有变量的值（number 类型须数值）。修改变量库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' }, value: { type: 'string', description: '新值（数值/布尔由工具按类型转换）' } }, required: ['name', 'value'] } } },
+    update_var: { type: 'function', function: { name: 'update_var', description: '对 number 类型变量做加减运算。修改变量库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '变量名' }, op: { type: 'string', enum: ['+', '-'], description: '运算（缺省 +）' }, delta: { type: 'number', description: '增减量' } }, required: ['name', 'delta'] } } },
+    create_block: { type: 'function', function: { name: 'create_block', description: '新建空剧情块（命名校验 + 重名拒绝）。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '新块名称' } }, required: ['blockName'] } } },
+    rename_block: { type: 'function', function: { name: 'rename_block', description: '重命名剧情块并同步正文中的跳转引用。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { oldName: { type: 'string', description: '原块名' }, newName: { type: 'string', description: '新块名' } }, required: ['oldName', 'newName'] } } },
+    delete_block: { destructive: true, type: 'function', function: { name: 'delete_block', description: '删除剧情块。先查看工具返回的 references 字段——它是其他块中真实扫描到的指向该块的跳转引用位置，references 为空则说明没有引用（不得假设「若存在…」）。确认后才删。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '要删除的块名' } }, required: ['blockName'] } } },
+    extract_clues: { type: 'function', function: { name: 'extract_clues', description: '提取/更新全文线索：读取指定剧情块（缺省全文）与当前关键线索比对，返回更新后的完整线索清单（clues）与变更说明（summary，说明新增/移除/修改了哪些线索）。修改正文后应主动调用，自行判断线索是否因改动而变动或产生新线索；确认有变动时，用 update_creation_setting(field=\'clues\', value=clues) 写入新清单。只读操作，不修改任何数据。incremental=true 时基于已有线索做增量更新（body 应传本次变更段而非全文）。', parameters: { type: 'object', properties: { blockName: { type: 'string', description: '剧情块名称（缺省全文）' }, incremental: { type: 'boolean', description: 'true 时只基于本次变更段增量更新（配合 blockName 使用），缺省 false 走全文比对' } }, required: [] } } },
+    generate_options: { type: 'function', function: { name: 'generate_options', description: '校验并写入合法选项行（<选项:"文字",块名,条件>）。修改文档：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { text: { type: 'string', description: '要解析的选项行文本' } }, required: ['text'] } } },
+    list_assets: { type: 'function', function: { name: 'list_assets', description: '列出素材元数据（名称/类型/标签，不含二进制内容）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    rename_asset: { type: 'function', function: { name: 'rename_asset', description: '重命名素材。修改素材库：小改自动落盘、大改走预览确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '原素材名' }, newName: { type: 'string', description: '新素材名' } }, required: ['name', 'newName'] } } },
+    delete_asset: { destructive: true, type: 'function', function: { name: 'delete_asset', description: '删除素材。先查看工具返回的 references 字段——它是正文召唤指令与开场设置中真实扫描到的该素材引用位置，references 为空则说明没有引用（不得假设「若存在…」）。确认后才删。破坏性操作，触发二次确认。', parameters: { type: 'object', properties: { name: { type: 'string', description: '素材名' } }, required: ['name'] } } },
+    export_project: { type: 'function', function: { name: 'export_project', description: '导出当前工程备份（含素材/变量/线索，不含 AI Key）。导出当前工程。', parameters: { type: 'object', properties: {} } } },
+    read_appearance: { type: 'function', function: { name: 'read_appearance', description: '读取当前游戏外观设置（正文字号/标题·正文·分割线字体/标题默认颜色/Galgame 底框色）。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    update_appearance: { type: 'function', function: { name: 'update_appearance', description: '修改游戏外观设置（patch 对象，键可为 fontSize/titleFont/bodyFont/dividerFont/galBoxColor/titleColor）。立即生效，覆盖试玩与导出成品，用户可手动改回。', parameters: { type: 'object', properties: { patch: { type: 'object', description: '外观字段键值，如 {fontSize:22}' } }, required: ['patch'] } } },
+    update_creation_setting: { type: 'function', function: { name: 'update_creation_setting', description: '写入/更新创作设定字段（大纲 outline/简介 intro/世界观 world/文风 style/关键线索 clues）。整字段替换，大改走预览确认；影响后续所有 AI 生成与导出的上下文。', parameters: { type: 'object', properties: { field: { type: 'string', enum: ['outline', 'intro', 'world', 'style', 'clues'], description: '创作设定字段' }, value: { type: 'string', description: '新内容' } }, required: ['field', 'value'] } } },
+    read_formatting_guide: { type: 'function', function: { name: 'read_formatting_guide', description: '读取正文格式与美化语法的权威完整手册（BBCode 加粗/颜色/字号/对齐/发光阴影高亮/瞬显，结构指令 标题/分割线/停顿/召唤/停止音乐/清除叠层，跳转 剧情块/随机跳转/随机句子/跳回/选项，分块标记与变量语法，含示例与注意事项）。需要给正文排版/美化/加格式时先读本手册再动手，避免使用不存在的标签。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    read_global_settings: { type: 'function', function: { name: 'read_global_settings', description: '读取全局游戏设置：游戏名 gameName/副标题 subtitle/作者ID authorId/游玩模式 playMode（longform 长文|galgame）/文字对比度保护 textContrast（auto 自动|off 关）/开场背景 openingBg/开场音乐 openingMusic/水印 watermark（{text,pos,opacity}，pos=左上|右上|左下|右下）/图标 icon/自定义字体名 fontName。只读操作，不修改任何数据。', parameters: { type: 'object', properties: {} } } },
+    update_global_setting: { type: 'function', function: { name: 'update_global_setting', description: '更新全局游戏设置（patch 对象，一次可改多字段）。键可为：gameName/subtitle/authorId（字符串）；playMode（longform|galgame）；textContrast（auto|off）；openingBg（背景素材名，留空=清除，须存在于素材库）；openingMusic（音乐素材名，留空=清除，须存在于素材库）；watermark（{text,pos,opacity}，pos=左上|右上|左下|右下，opacity=10-100）。立即生效，覆盖试玩与导出成品。修改设置：自动落盘。', parameters: { type: 'object', properties: { patch: { type: 'object', description: '要更新的设置字段对象，如 {playMode:"galgame", watermark:{text:"demo",opacity:30}}' } }, required: ['patch'] } } },
+  };
+  Agent.TOOL_DEFS = TOOL_DEFS;
+  // 暴露 textOps 纯函数（供测试直测 & 后续 applyAgentWrite 复用）
+  Agent.textOps = { normText: normText, findAnchor: findAnchor, applyInsert: applyInsert, computeImpact: computeImpact };
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = Agent;
+  if (typeof window !== 'undefined') window.Agent = Agent;
+  // vm 测试沙箱（Node 无 window / module）下挂到 globalThis，供 runInContext 提取场景表
+  if (typeof window === 'undefined' && typeof module === 'undefined' && typeof globalThis !== 'undefined') globalThis.Agent = Agent;
+})();

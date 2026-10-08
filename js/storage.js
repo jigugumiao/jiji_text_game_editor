@@ -5,30 +5,37 @@
 
 const LIBS = ['background', 'item', 'overlay', 'music', 'sound'];
 
+// 测试版数据隔离：页面在任何 js 之前定义 window.STORY_EDITOR_NS（如 'test'），
+// 本文件所有 localStorage key 与 IndexedDB 库名都会加该前缀，测试版与正式版数据互不可见。
+// 正式版不定义该变量 → 前缀为空，行为与历史版本完全一致。
+var _NS = (typeof window !== 'undefined' && window.STORY_EDITOR_NS) ? (String(window.STORY_EDITOR_NS) + ':') : '';
+
 // 项目注册表 / 当前项目
-const LS_PROJECTS = 'story-editor:projects';
-const LS_CURRENT = 'story-editor:current';
+const LS_PROJECTS = _NS + 'story-editor:projects';
+const LS_CURRENT = _NS + 'story-editor:current';
 const PROJECT_NS_SEP = '::';
 
 // 单项目版剧情 key（带项目 id 后缀）
-const LS_STORY = 'story-editor:story';        // 节点数组
-const LS_STORY_TEXT = 'story-editor:story-text'; // 原始文本
-const LS_META = 'story-editor:meta';          // 标题等
-const LS_VARS = 'story-editor:vars';          // 变量库（名字/类型/初值）
+const LS_STORY = _NS + 'story-editor:story';        // 节点数组
+const LS_STORY_TEXT = _NS + 'story-editor:story-text'; // 原始文本
+const LS_META = _NS + 'story-editor:meta';          // 标题等
+const LS_VARS = _NS + 'story-editor:vars';          // 变量库（名字/类型/初值）
+const LS_UI = _NS + 'story-editor:ui:';             // 可按测试/正式命名空间隔离的界面偏好
 
 // 剧情块系统：主剧情 + 其它剧情块。结构 { main: 文本, blocks: { 名称: 文本 } }
-// 主剧情(__MAIN__) 始终存在、置顶、不可删除、游戏默认从它开始。
-const LS_BLOCKS = 'story-editor:blocks';       // 剧情块集合（带项目 id 后缀）
+// 主剧情(__MAIN__) 始终存在、置顶、不可删除，游戏默认从它开始。
+const LS_BLOCKS = _NS + 'story-editor:blocks';       // 剧情块集合（带项目 id 后缀）
 const MAIN_BLOCK = '__MAIN__';                 // 主剧情内部名（界面显示「主剧情」）
 
-// 旧（无项目）全局 key，用于迁移
-const LS_LEGACY_STORY = 'story-editor:story';
-const LS_LEGACY_STORY_TEXT = 'story-editor:story-text';
-const LS_LEGACY_META = 'story-editor:meta';
+// 旧（无项目）全局 key，用于迁移（同样带 NS：测试版下读不到正式版旧数据，天然隔离）
+const LS_LEGACY_STORY = _NS + 'story-editor:story';
+const LS_LEGACY_STORY_TEXT = _NS + 'story-editor:story-text';
+const LS_LEGACY_META = _NS + 'story-editor:meta';
 
-const DB_NAME = 'story-editor';
+const DB_NAME = _NS + 'story-editor';
 const STORE_ASSETS = 'assets';
 const STORE_META = 'meta';
+const STORE_BACKUPS = 'backups';
 
 let _projectId = null; // 当前项目 id；null 表示尚未进入任何项目
 
@@ -56,10 +63,26 @@ function openDB() {
         db.createObjectStore(STORE_META, { keyPath: 'key' });
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      req.result.onversionchange = () => { req.result.close(); _dbPromise = null; };
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
   });
   return _dbPromise;
+}
+
+// 独立数据库避免旧版已打开的编辑器阻塞素材数据库的版本升级。
+let _backupDBPromise = null;
+function openBackupDB() {
+  if (_backupDBPromise) return _backupDBPromise;
+  _backupDBPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME + ':time-machine', 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(STORE_BACKUPS, { keyPath: 'key' }); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  }).catch(error => { _backupDBPromise = null; throw error; });
+  return _backupDBPromise;
 }
 
 // （已移除 localStorage 回退：纯 IndexedDB，file:// 下原生支持，纯前端运行）
@@ -90,7 +113,7 @@ function _idFromKey(key) {
 
 // 以下均为纯 IndexedDB 操作；失败时直接 reject，由调用方（编辑器）捕获并提示，不再静默降级到 localStorage。
 async function idbPut(store, value) {
-  const db = await openDB();
+  const db = await (store === STORE_BACKUPS ? openBackupDB() : openDB());
   await new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readwrite');
     tx.objectStore(store).put(value);
@@ -99,7 +122,7 @@ async function idbPut(store, value) {
   });
 }
 async function idbGet(store, key) {
-  const db = await openDB();
+  const db = await (store === STORE_BACKUPS ? openBackupDB() : openDB());
   return await new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readonly');
     const r = tx.objectStore(store).get(key);
@@ -108,7 +131,7 @@ async function idbGet(store, key) {
   });
 }
 async function idbDelete(store, key) {
-  const db = await openDB();
+  const db = await (store === STORE_BACKUPS ? openBackupDB() : openDB());
   await new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readwrite');
     tx.objectStore(store).delete(key);
@@ -117,7 +140,7 @@ async function idbDelete(store, key) {
   });
 }
 async function idbGetAll(store) {
-  const db = await openDB();
+  const db = await (store === STORE_BACKUPS ? openBackupDB() : openDB());
   return await new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readonly');
     const r = tx.objectStore(store).getAll();
@@ -143,7 +166,10 @@ function createProject(name, mode) {
   const id = uid('proj');
   const safeName = (name && String(name).trim()) || ('项目 ' + (projects.length + 1));
   const m = mode === 'article' ? 'article' : 'game';
-  projects.push({ id, name: safeName, mode: m, createdAt: Date.now() });
+  // 新建剧情游戏直接使用可视化编辑器；只有历史项目才需要走复制转换。
+  const project = { id, name: safeName, mode: m, createdAt: Date.now() };
+  if (m === 'game') project.visualEditorVersion = 1;
+  projects.push(project);
   _writeProjects(projects);
   return id;
 }
@@ -162,6 +188,8 @@ function getProjectName(id) {
   return p ? p.name : '未知项目';
 }
 function getCurrentProjectId() { return localStorage.getItem(LS_CURRENT) || null; }
+function getUiPreference(key) { return localStorage.getItem(LS_UI + key); }
+function setUiPreference(key, value) { localStorage.setItem(LS_UI + key, String(value)); }
 function setCurrentProject(id) {
   localStorage.setItem(LS_CURRENT, id);
   _projectId = id;
@@ -175,6 +203,9 @@ async function deleteProject(id) {
   localStorage.removeItem(LS_META + ':' + id);
   localStorage.removeItem(LS_BLOCKS + ':' + id);
   localStorage.removeItem(LS_VARS + ':' + id);
+  const backups = await listTimeMachineBackups(id);
+  for (const backup of backups) await idbDelete(STORE_BACKUPS, _backupKey(id, backup.id));
+  await idbDelete(STORE_BACKUPS, _backupIndexKey(id));
   // 删除该项目素材
   try {
     const all = await idbGetAll(STORE_ASSETS);
@@ -216,6 +247,76 @@ async function getProjectStatsBatch(ids) {
     if (t) map[id].lineCount = t.split('\n').length;
   }
   return map;
+}
+
+// ============ 旧项目转可视化项目（复制事务） ============
+function _projectDataKeys(id) {
+  return {
+    blocks: LS_BLOCKS + ':' + id, vars: LS_VARS + ':' + id, meta: LS_META + ':' + id,
+    story: LS_STORY + ':' + id, storyText: LS_STORY_TEXT + ':' + id
+  };
+}
+function _readJson(raw, fallback) {
+  try { return raw ? JSON.parse(raw) : fallback; } catch (e) { return fallback; }
+}
+async function readProjectSnapshot(projectId) {
+  const keys = _projectDataKeys(projectId);
+  const data = {};
+  Object.keys(keys).forEach(name => { data[name] = localStorage.getItem(keys[name]); });
+  let assets = [];
+  try {
+    const prefix = projectId + PROJECT_NS_SEP;
+    assets = (await idbGetAll(STORE_ASSETS)).filter(r => r.key && r.key.indexOf(prefix) === 0)
+      .map(r => { const { key, ...rest } = r; return Object.assign({}, rest, { lib: r.lib || _libFromKey(key), id: r.id || _idFromKey(key) }); });
+  } catch (e) { throw new Error('读取项目素材失败：' + (e.message || e)); }
+  const parsedBlocks = _readJson(data.blocks, { main: data.storyText || '', blocks: {} });
+  return {
+    id: projectId, data, blocks: parsedBlocks, vars: _readJson(data.vars, []), assets
+  };
+}
+async function writeTemporaryProject(snapshot, targetId) {
+  const keys = _projectDataKeys(targetId);
+  const data = snapshot && snapshot.data || {};
+  Object.keys(keys).forEach(name => {
+    if (data[name] != null) localStorage.setItem(keys[name], data[name]);
+  });
+  for (const asset of (snapshot && snapshot.assets) || []) {
+    if (!asset || !asset.lib || !asset.id) continue;
+    await idbPut(STORE_ASSETS, Object.assign({}, asset, { key: targetId + PROJECT_NS_SEP + asset.lib + ':' + asset.id }));
+  }
+}
+async function validateTemporaryProject(targetId) {
+  const keys = _projectDataKeys(targetId);
+  const rawBlocks = localStorage.getItem(keys.blocks);
+  const blocks = _readJson(rawBlocks, null);
+  if (rawBlocks != null && (!blocks || typeof blocks !== 'object')) throw new Error('临时项目剧情块无效');
+  const rawVars = localStorage.getItem(keys.vars);
+  const vars = _readJson(rawVars, null);
+  if (rawVars != null && !Array.isArray(vars)) throw new Error('临时项目剧情状态无效');
+  try { await idbGetAll(STORE_ASSETS); } catch (e) { throw new Error('临时项目素材校验失败：' + (e.message || e)); }
+}
+async function registerTemporaryProject(targetId, name, metadata) {
+  const projects = _readProjects();
+  if (projects.some(p => p.id === targetId)) throw new Error('临时项目已注册');
+  projects.push(Object.assign({ id: targetId, name: name, mode: 'game', createdAt: Date.now() }, metadata || {}));
+  _writeProjects(projects);
+}
+async function cleanupTemporaryProject(targetId) {
+  const keys = _projectDataKeys(targetId);
+  Object.keys(keys).forEach(name => localStorage.removeItem(keys[name]));
+  const prefix = targetId + PROJECT_NS_SEP;
+  try {
+    const all = await idbGetAll(STORE_ASSETS);
+    for (const record of all) if (record.key && record.key.indexOf(prefix) === 0) await idbDelete(STORE_ASSETS, record.key);
+  } catch (e) { throw new Error('清理临时项目素材失败：' + (e.message || e)); }
+}
+async function copyProjectForVisual(sourceId, requestedName, adapter) {
+  const service = adapter || {
+    readProjectSnapshot, writeTemporaryProject, validateTemporaryProject,
+    registerTemporaryProject, cleanupTemporaryProject, createId: () => uid('proj'), listProjects
+  };
+  if (typeof ProjectConverter === 'undefined') throw new Error('转换服务未加载');
+  return ProjectConverter.copyProjectForVisual(sourceId, requestedName, service);
 }
 
 // 首次启动：把旧版无项目数据收进「默认项目」，并确保项目注册表存在
@@ -610,6 +711,100 @@ function loadMeta() {
 const BACKUP_FORMAT = 'story-editor-project';
 const BACKUP_VERSION = 1;
 
+// 时光机：完整快照与轻量目录分开存储；目录与淘汰在同一事务内更新。
+const TIME_MACHINE_LIMIT = 30;
+function _backupIndexKey(pid) { return 'index:' + pid; }
+function _backupKey(pid, id) { return 'snapshot:' + pid + ':' + id; }
+async function listTimeMachineBackups(pid) {
+  const record = await idbGet(STORE_BACKUPS, _backupIndexKey(pid));
+  return record && record.entries || [];
+}
+async function createTimeMachineBackup(pid, reason, draft) {
+  const project = listProjects().find(p => p.id === pid);
+  if (!project) throw new Error('项目不存在');
+  const snapshot = await readProjectSnapshot(pid); // 素材读取失败必须中止，不能生成不完整快照。
+  if (draft && typeof draft.text === 'string' && typeof draft.block === 'string') {
+    if (draft.block === MAIN_BLOCK) snapshot.blocks.main = draft.text;
+    else snapshot.blocks.blocks[draft.block] = draft.text;
+    snapshot.data.blocks = JSON.stringify(snapshot.blocks);
+  }
+  if (!listProjects().some(p => p.id === pid)) throw new Error('项目已删除');
+  const id = uid('backup');
+  const summary = {
+    id, createdAt: Date.now(), reason: reason || 'auto', projectName: project.name,
+    blockCount: 1 + Object.keys(snapshot.blocks.blocks || {}).length,
+    assetCount: snapshot.assets.length
+  };
+  const db = await openBackupDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_BACKUPS, 'readwrite');
+    const store = tx.objectStore(STORE_BACKUPS);
+    const request = store.get(_backupIndexKey(pid));
+    request.onsuccess = () => {
+      const entries = [summary].concat(request.result && request.result.entries || []);
+      store.put({ key: _backupKey(pid, id), project, snapshot });
+      for (const old of entries.slice(TIME_MACHINE_LIMIT)) store.delete(_backupKey(pid, old.id));
+      store.put({ key: _backupIndexKey(pid), entries: entries.slice(0, TIME_MACHINE_LIMIT) });
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = tx.onabort = () => reject(tx.error || new Error('时光机备份失败'));
+  });
+  return summary;
+}
+async function restoreTimeMachineBackup(pid, backupId) {
+  const record = await idbGet(STORE_BACKUPS, _backupKey(pid, backupId));
+  if (!record || !record.snapshot || record.snapshot.id !== pid) throw new Error('备份不存在或已过期');
+  const snapshot = record.snapshot;
+  const blocks = _readJson(snapshot.data.blocks, null);
+  if (snapshot.data.blocks != null && (!blocks || typeof blocks.main !== 'string' || !blocks.blocks)) throw new Error('备份剧情块无效');
+  if (!Array.isArray(snapshot.assets) || snapshot.assets.some(a => !a.lib || !a.id || !LIBS.includes(a.lib))) throw new Error('备份素材无效');
+  // 先读取目标快照，再备份当前内容；即使第 30 条被淘汰，目标仍在内存中。
+  await createTimeMachineBackup(pid, 'before-restore');
+  const db = await openDB();
+  const keys = _projectDataKeys(pid);
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_ASSETS, 'readwrite');
+    const store = tx.objectStore(STORE_ASSETS);
+    const request = store.getAll();
+    let previous = null, previousProjects = null, failure = null;
+    request.onsuccess = () => {
+      try {
+        previous = {};
+        Object.keys(keys).forEach(name => { previous[name] = localStorage.getItem(keys[name]); });
+        previousProjects = localStorage.getItem(LS_PROJECTS);
+        const projects = listProjects();
+        const index = projects.findIndex(p => p.id === pid);
+        if (index < 0) throw new Error('项目不存在');
+        const prefix = pid + PROJECT_NS_SEP;
+        for (const asset of request.result || []) if (asset.key && asset.key.indexOf(prefix) === 0) store.delete(asset.key);
+        for (const asset of snapshot.assets) store.put(Object.assign({}, asset, { key: prefix + asset.lib + ':' + asset.id }));
+        Object.keys(keys).forEach(name => {
+          if (snapshot.data[name] == null) localStorage.removeItem(keys[name]);
+          else localStorage.setItem(keys[name], snapshot.data[name]);
+        });
+        projects[index] = Object.assign({}, record.project, { id: pid });
+        _writeProjects(projects);
+      } catch (error) { failure = error; tx.abort(); }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => { failure = failure || tx.error; };
+    tx.onabort = () => {
+      try {
+        if (previous) Object.keys(keys).forEach(name => {
+          if (previous[name] == null) localStorage.removeItem(keys[name]);
+          else localStorage.setItem(keys[name], previous[name]);
+        });
+        if (previousProjects != null) localStorage.setItem(LS_PROJECTS, previousProjects);
+      } catch (rollbackError) {
+        reject(new Error('恢复失败，回退未完成；恢复前的完整内容已保存在时光机：' + rollbackError.message));
+        return;
+      }
+      reject(failure || tx.error || new Error('恢复失败，已保留原项目'));
+    };
+  });
+  return pid;
+}
+
 async function exportProject(pid) {
   const realPid = pid || _projectId;
   if (!realPid) throw new Error('没有可备份的项目');
@@ -679,6 +874,62 @@ function getVarNames() {
   return new Set(loadVars().map(v => (v.name || '').trim()).filter(Boolean));
 }
 
+// ============ Galgame 对话框预设（全局，不随项目切换） ============
+// 测试版与正式版的对话框预设彼此隔离；预设不属于任何具体项目。
+// 用运行时函数而非常量，是因为测试会在 require 之后改 window.STORY_EDITOR_NS。
+function _editorNamespace() {
+  if (typeof window !== 'undefined' && window.STORY_EDITOR_NS === 'test') return 'test:';
+  return '';
+}
+function _dialoguePresetKey(id) { return _editorNamespace() + 'dialogue-preset:' + id; }
+
+function _copyDialoguePreset(preset) {
+  const copy = Object.assign({}, preset || {});
+  if (copy.slices && typeof copy.slices === 'object') copy.slices = Object.assign({}, copy.slices);
+  return copy;
+}
+
+async function saveDialoguePreset(preset) {
+  const savedPreset = _copyDialoguePreset(preset);
+  const id = savedPreset.id || uid('gal');
+  const name = (savedPreset.name && String(savedPreset.name).trim()) || '未命名预设';
+  const updatedAt = Date.now();
+  savedPreset.id = id;
+  savedPreset.name = name;
+  savedPreset.updatedAt = updatedAt;
+  await idbPut(STORE_META, {
+    key: _dialoguePresetKey(id), type: 'dialogue-preset', id, name,
+    preset: savedPreset, updatedAt,
+  });
+  return id;
+}
+
+async function getAllDialoguePresets() {
+  const all = await idbGetAll(STORE_META);
+  return all
+    .filter(record => record && record.type === 'dialogue-preset' && record.id != null && record.key === _dialoguePresetKey(record.id))
+    .map(record => _copyDialoguePreset(record.preset))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN'));
+}
+
+async function deleteDialoguePreset(id) {
+  await idbDelete(STORE_META, _dialoguePresetKey(id));
+}
+
+async function renameDialoguePreset(id, name) {
+  const key = _dialoguePresetKey(id);
+  const record = await idbGet(STORE_META, key);
+  if (!record || record.type !== 'dialogue-preset' || record.key !== key) throw new Error('预设不存在');
+  const updatedAt = Date.now();
+  const nextName = (name && String(name).trim()) || record.name;
+  const preset = _copyDialoguePreset(record.preset);
+  preset.name = nextName;
+  preset.updatedAt = updatedAt;
+  const updated = Object.assign({}, record, { name: nextName, preset, updatedAt });
+  await idbPut(STORE_META, updated);
+  return Object.assign({}, updated, { preset: _copyDialoguePreset(updated.preset) });
+}
+
 const Storage = {
   LIBS, saveAsset, getAsset, getAllAssets, deleteAsset, renameAsset,
   importSceneBundle, importSceneBundleFile, saveStory, loadStory, saveStoryText, loadStoryText,
@@ -690,8 +941,14 @@ const Storage = {
   // 项目 API
   listProjects, createProject, renameProject, deleteProject, getProjectName, getProjectMode,
   getCurrentProjectId, setCurrentProject, getProjectStats, getProjectStatsBatch, migrateLegacyIfNeeded,
+  getUiPreference, setUiPreference,
+  // 旧项目安全转换：临时写入 → 校验 → 最后注册；源项目绝不改写
+  readProjectSnapshot, writeTemporaryProject, validateTemporaryProject, registerTemporaryProject, cleanupTemporaryProject, copyProjectForVisual,
   // 工程备份 / 恢复（跨设备搬运整个剧本：素材+变量+线索+设定）
   exportProject, importProject,
+  TIME_MACHINE_LIMIT, listTimeMachineBackups, createTimeMachineBackup, restoreTimeMachineBackup,
+  // Galgame 对话框预设（全局，不随项目切换）
+  saveDialoguePreset, getAllDialoguePresets, deleteDialoguePreset, renameDialoguePreset,
 };
 
 if (typeof window !== 'undefined') window.Storage = Storage;

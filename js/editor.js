@@ -13,6 +13,7 @@
   const editorBody = $('#editor-body') || storyText.parentElement;
   const lnGutter = $('#ln-gutter');
   const editorTextWrap = $('#editor-text-wrap');
+  const storyVisualEditor = $('#story-visual-editor');
   let lnTimer = null, lastLnCount = -1;
   const libPanel = $('#lib-panel');
   // 横竖屏判定（与 CSS body.portrait / @media 对齐）：竖屏=点按添加，横屏=拖动添加。
@@ -21,14 +22,15 @@
   function isPortraitNow() { return window.innerHeight > window.innerWidth; }
   function isLandscapeNow() { return !isPortraitNow(); }
   let previewMode = false;
-  let splitMode = false;
+  let visualController = null;
+  const EDITOR_MODE_KEY = 'storyeditor:editor-mode';
   let pendingEffectTag = null; // 特效按钮用的临时标签名
 
   // 全局属性
   // playMode: 'longform' 长文模式（默认，文字累积成长卷）| 'galgame' galgame模式（底部黑色文本框，逐段显示）
   let globalSettings = { gameName: '', subtitle: '', authorId: '', icon: '', font: null, openingBg: '', openingMusic: '', textContrast: 'auto', playMode: 'longform', watermark: { text: '', pos: '右下', url: '', opacity: 40 }, appearance: null, toy: null };
   // 外观默认设置（设置页「外观」标签可覆盖）。字体走系统默认字体栈，不读本地字体文件。
-  const DEFAULT_APPEARANCE = { fontSize: 20, titleFont: '', bodyFont: '', dividerFont: '', galBoxColor: 'rgba(0,0,0,0.55)', titleColor: '' };
+  const DEFAULT_APPEARANCE = { fontSize: 20, titleFont: '', bodyFont: '', dividerFont: '', galBoxColor: 'rgba(0,0,0,0.55)', titleColor: '', galPanel: null, overlayShadow: null };
   function getAppearance() { return Object.assign({}, DEFAULT_APPEARANCE, globalSettings.appearance || {}); }
   function saveAppearance(patch) { globalSettings.appearance = Object.assign({}, getAppearance(), patch); saveGlobal(); }
   // 把 meta 里的创作设定统一同步进 globalSettings（开场背景/音乐/图标等所有字段，避免 openProject 漏字段导致刷新后丢失）
@@ -78,6 +80,11 @@
   let currentProjectMode = 'game'; // 'game' 剧情游戏 | 'article' 通用文章
   let pendingAudioLib = null;
   let saveTimer = null;
+  let timeMachineController = null;
+  let timeMachineRestoring = false;
+  let timeMachineError = '';
+  let editorProjectId = null;
+  let timeMachineRenderGeneration = 0;
   let history = [];      // 撤销栈：{ text, selStart, selEnd }
   let histIndex = -1;    // 当前位置
   let histTimer = null;  // 打字合并计时器
@@ -119,43 +126,8 @@
   }
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
-  // 解析一行内所有 <选项:"文字",块名,条件:...> 指令，返回 [{text, extra, index, close, ok}]。
-  // 条件表达式允许出现 >、<、>=、<= 等运算符（如 条件:力量>=20、条件:金币<=5），
-  // 因此「闭合 >」不能取表达式里碰到的第一个 >，而是取下一个 <选项: 之前（或行尾前）的最后一个 >。
-  function extractOptionLine(line) {
-    const TAG = '<选项:';
-    const out = [];
-    let from = 0;
-    while (from <= line.length) {
-      const start = line.indexOf(TAG, from);
-      if (start < 0) break;
-      const next = line.indexOf(TAG, start + TAG.length);
-      const endB = next < 0 ? line.length : next;
-      let close = -1;
-      for (let k = start + TAG.length; k < endB; k++) { if (line[k] === '>') close = k; }
-      from = start + TAG.length;
-      if (close < 0) continue; // 无闭合 >，交给下方的「未闭合」校验报错
-      const body = line.slice(start + TAG.length, close);
-      const m = body.match(/^\s*"([^"]*)"\s*(?:,\s*([\s\S]*))?$/);
-      out.push({ text: m ? m[1] : '', extra: (m && m[2] ? m[2] : '').trim(), index: start, close: close, ok: !!m });
-    }
-    return out;
-  }
-  // 把选项的 extra 段（块名[,条件:…]）拆成 { block, condition }
-  function splitOptionExtra(extra) {
-    const e = (extra || '').trim();
-    if (!e) return { block: null, condition: null };
-    const ci = e.indexOf('条件:');
-    if (ci >= 0) {
-      return {
-        block: e.slice(0, ci).replace(/,\s*$/, '').trim() || null,
-        condition: e.slice(ci + 3).replace(/,\s*$/, '').trim() || null
-      };
-    }
-    return { block: e, condition: null };
-  }
   // 变量操作：<变量:名=值> / <变量:名+数> / <变量:名-数>（独占一行；一行可含多个，按 <变量:...> 逐个提取）
-  const RE_VAR_OP = /<变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*([=+\-])\s*([^<>]*?)\s*>/g;
+  // 解析统一走 js/story-vars.js（window.StoryVars），编辑器与导出端共用同一实现
   // 玩家输入：<玩家输入变量:变量名,"引导文字">（独占一行；引导文字可空 "")
   const RE_PLAYER_INPUT = /^<玩家输入变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*,\s*"([\s\S]*?)"\s*>$/;
 
@@ -245,14 +217,10 @@
       } else if (RE_RETURN_RECHOOSE.test(t)) {
         flush();
         story.push({ type: 'returnrechoose' });
-      } else if (t.indexOf('<变量:') === 0) {
-        // 提取整行内所有 <变量:...> 操作，合并为一个 varop 节点（与导出端 parseStoryForExport 一致）
-        const ops = [];
-        let vm; RE_VAR_OP.lastIndex = 0;
-        while ((vm = RE_VAR_OP.exec(t)) !== null) {
-          ops.push({ name: vm[1], op: vm[2], val: vm[3].trim() });
-        }
-        if (ops.length) { flush(); story.push({ type: 'varop', ops: ops }); }
+      } else if (t.indexOf('<变量:') === 0 && t.charAt(t.length - 1) === '>') {
+        // 统一走 StoryVars.parseVarLine（与导出端 parseStoryForExport 同源）
+        const pr = window.StoryVars.parseVarLine(t);
+        if (pr.ops.length) { flush(); story.push({ type: 'varop', ops: pr.ops }); }
         else buf.push(line); // 形如 <变量:...> 但格式无法识别 → 当普通文本
       } else if ((m = t.match(RE_PLAYER_INPUT))) {
         flush();
@@ -260,10 +228,9 @@
       } else if (t.indexOf('<选项:') >= 0) {
         flush();
         const options = [];
-        for (const o of extractOptionLine(t)) {
-          if (!o.ok) continue;
-          // 保留原始 extra 作为 block（含 ,条件:… 尾巴），storyToText 可原样还原，避免往返丢条件
-          options.push({ text: o.text, block: o.extra || null });
+          for (const o of window.StoryOptions.extractOptionLine(t)) {
+            if (!o.ok) continue;
+            options.push(o.option);
         }
         if (options.length) story.push({ type: 'options', options });
       } else {
@@ -295,43 +262,47 @@
       else if (n.type === 'randtext') out.push('<随机句子:' + (n.options || []).map(o => '"' + o.text + '"' + (o.weight != null ? '=' + o.weight : '')).join(',') + '>');
       else if (n.type === 'return') out.push('<跳回>');
       else if (n.type === 'returnrechoose') out.push('<跳回重选>');
-      else if (n.type === 'varop') out.push(n.ops.map(o => '<变量:' + o.name + (o.op === '=' ? '=' : o.op) + o.val + '>').join(''));
+      else if (n.type === 'varop') out.push(window.StoryVars.serializeVarOps(n.ops));
       else if (n.type === 'playerinput') out.push('<玩家输入变量:' + n.name + ',"' + (n.prompt || '') + '">');
-      else if (n.type === 'options') out.push(n.options.map(o => '<选项:"' + (o.text || '') + '"' + (o.block ? ',' + o.block : '') + '>').join(' '));
+      else if (n.type === 'options') out.push(n.options.map(function (o) {
+        const result = window.StoryOptions.serializeOption(o);
+        return result.ok ? result.value : '';
+      }).filter(Boolean).join(' '));
     }
     return out.join('\n');
   }
 
   // ============ BBCode 预览 ============
-  // 布局：编辑态 / 全屏预览态 / 分屏态（左写右渲）
-  // previewMode 由「预览」按钮或按住右 Ctrl 控制；splitMode 由「分屏」按钮控制
-  function applyLayout() {
-    const showText = !previewMode || splitMode;
-    const showPreview = previewMode || splitMode;
-    storyText.classList.toggle('hidden', !showText);
-    storyPreview.classList.toggle('hidden', !showPreview);
-    editorBody.classList.toggle('split', splitMode);
-    editorTextWrap.classList.toggle('hidden', !showText);
-    if (showText) buildLineNumbers();
-    if (showPreview) renderPreview();
-    // 仅「全屏预览且无分屏」时锁定编辑按钮
-    const lockEdit = previewMode && !splitMode;
-    $('#btn-undo').disabled = lockEdit;
-    $('#btn-redo').disabled = lockEdit;
+  // 预览独占正文区域；关闭后恢复用户当前的源码/可视化编辑模式。
+  function updatePreviewLayout() {
+    editorTextWrap.hidden = previewMode;
+    storyVisualEditor.hidden = previewMode;
+    storyPreview.hidden = !previewMode;
+    // The preview starts with a CSS `.hidden` class as well as the HTML
+    // attribute. Keep them aligned, otherwise it remains display:none.
+    storyPreview.classList.toggle('hidden', !previewMode);
+    if (!previewMode && visualController) {
+      if (visualController.getMode() === 'visual') visualController.showVisual();
+      else visualController.showSource();
+    }
+    if (!previewMode) buildLineNumbers();
+    if (previewMode) renderPreview();
+    $('#btn-undo').disabled = previewMode;
+    $('#btn-redo').disabled = previewMode;
     const pvBtn = $('#btn-bbcode-preview');
-    if (previewMode && !splitMode) { pvBtn.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg> 编辑'; pvBtn.title = '切换回纯文本编辑模式'; }
+    if (previewMode) { pvBtn.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg> 编辑'; pvBtn.title = '切换回编辑模式'; }
     else { pvBtn.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg> 预览'; pvBtn.title = '切换 BBCode 预览模式'; }
-    if (showText && !splitMode) storyText.focus();
+    if (!previewMode && (!visualController || visualController.getMode() === 'source')) storyText.focus();
   }
   function setPreviewMode(on) {
     on = !!on;
-    if (on === previewMode) { if (on || splitMode) renderPreview(); return; }
+    if (on === previewMode) { if (on) renderPreview(); return; }
     previewMode = on;
-    applyLayout();
+    updatePreviewLayout();
   }
   function togglePreview() { setPreviewMode(!previewMode); }
   function renderPreview() {
-    if (!previewMode && !splitMode) return;
+    if (!previewMode) return;
     // 每次都从 textarea 读取最新内容
     const currentText = storyText.value;
     const lines = currentText.split(/\r?\n/);
@@ -379,20 +350,18 @@
           const opts = parseRandText(m[1]).options.map(function (o) { return '「' + escapeHtml(o.text) + '」' + (o.weight != null ? '(' + o.weight + ')' : ''); }).join('，');
           html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-shuffle"/></svg> 随机句子：' + opts + '</span></div>';
         } else if (t.indexOf('<变量:') === 0) {
-          const ops = [];
-          let vm; RE_VAR_OP.lastIndex = 0;
-          while ((vm = RE_VAR_OP.exec(t)) !== null) {
-            const sym = vm[2] === '=' ? '=' : vm[2];
-            ops.push(escapeHtml(vm[1] + ' ' + sym + ' ' + vm[3].trim()));
-          }
-          html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 变量：' + (ops.join('，') || '（格式有误）') + '</span></div>';
+          const pr = window.StoryVars.parseVarLine(t);
+          const ops = pr.ops.map(function (o) {
+            return escapeHtml(o.name + ' ' + o.op + ' ' + o.val);
+          });
+          html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 变量：' + (ops.join('，') || (pr.bad.length ? '（格式有误）' : '')) + '</span></div>';
         } else if ((m = t.match(RE_PLAYER_INPUT))) {
           html += '<div class="pv-line"><span class="pv-cmd var"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 玩家输入 → 变量「' + escapeHtml(m[1]) + '」' + (m[2] ? '：' + escapeHtml(m[2]) : '') + '</span></div>';
         } else if (t.indexOf('<选项:') >= 0) {
           const opts = [];
-          for (const o of extractOptionLine(t)) {
+          for (const o of window.StoryOptions.extractOptionLine(t)) {
             if (!o.ok) continue;
-            opts.push(o.text + (o.extra ? ' → ' + o.extra : ''));
+            opts.push(window.StoryOptions.summarizeOption(o.option));
           }
           html += '<div class="pv-line"><span class="pv-cmd option"><svg class="ico" aria-hidden="true"><use href="#ic-circle-dot"/></svg> 选项：' + opts.map(o => escapeHtml(o)).join(' ｜ ') + '</span></div>';
         } else {
@@ -411,10 +380,8 @@
     // 顺序标注行号（与 textarea 行号 1:1 对应），供「光标行对齐」使用
     const pvLines = storyPreview.querySelectorAll('.pv-line');
     pvLines.forEach((el, i) => el.setAttribute('data-ln', String(i + 1)));
-    // 分屏态 / 全屏预览态（含按住右 Ctrl 预览）：渲染后把预览滚动定位到当前编辑光标所在行
-    if (splitMode || previewMode) withScrollLock(revealPreviewCursorLine);
-    // 点击预览区：仅「全屏预览（非分屏）」时用——跳回编辑并定位到点击的脚本行；
-    // 分屏模式不移动左侧编辑器（右预览左编辑同屏，点击预览不应让左侧跳到不可预料位置）
+    revealPreviewCursorLine();
+    // 点击预览区：跳回编辑并定位到点击的脚本行。
     storyPreview.onclick = function(e) {
       // 取点击的预览行号；pv-line 的 data-ln 已 1:1 对应编辑器行号
       const pvLineEl = e.target.closest ? e.target.closest('.pv-line') : null;
@@ -428,17 +395,11 @@
         lineNo = Math.floor(y / lineH) + 1;
       }
       if (!lineNo) return;
-      if (splitMode) {
-        // 分屏态：把左侧编辑器光标同步到该行并滚动可见（不切换预览/编辑模式）
-        withScrollLock(() => { gotoLine(lineNo); revealPreviewCursorLine(); });
-      } else {
-        togglePreview();
-        gotoLine(lineNo);
-      }
+      togglePreview();
+      gotoLine(lineNo);
     };
-    // 预览模式下按任意键（非修饰键）回到编辑模式；分屏模式不做（右预览左编辑同屏）
+    // 预览模式下按任意键（非修饰键）回到编辑模式。
     storyPreview.onkeydown = function(e) {
-      if (splitMode) return;
       if (e.key === 'Escape' || (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1)) {
         e.preventDefault();
         togglePreview();
@@ -447,22 +408,14 @@
     };
     storyPreview.setAttribute('tabindex', '0');
   }
-  // ---- 分屏滚动同步：让预览位置跟随编辑器 ----
-  // 三种同步：编辑器拖滚动条→预览按比例跟随；预览拖滚动条→编辑器按比例跟随；
-  //           编辑时光标所在行→预览自动滚动到可见。用锁防止双向触发死循环。
-  let _scrollLock = false;
-  function withScrollLock(fn) {
-    _scrollLock = true;
-    try { fn(); } finally { requestAnimationFrame(() => { _scrollLock = false; }); }
-  }
   function caretLine() {
     const v = storyText.value;
     const pos = storyText.selectionStart;
     return v.slice(0, pos).split('\n').length; // 1-based 行号
   }
-  // 编辑光标所在行 → 在预览区滚动到居中可见，并打上浅浅的行标记（分屏态与全屏预览态都生效）
+  // 编辑光标所在行 → 在预览区滚动到居中可见，并打上浅浅的行标记。
   function revealPreviewCursorLine() {
-    if (!splitMode && !previewMode) return;
+    if (!previewMode) return;
     const ln = caretLine();
     // 先清除所有行标记，再给当前行加（pv-line 在重渲染后会被重建，因此每次重设即可）
     const all = storyPreview.querySelectorAll('.pv-line');
@@ -475,24 +428,6 @@
     const er = el.getBoundingClientRect();
     const desired = cont.scrollTop + (er.top - cr.top) - (cr.height - er.height) / 2;
     cont.scrollTop = Math.max(0, Math.min(desired, cont.scrollHeight - cont.clientHeight));
-  }
-  // 编辑器滚动 → 预览按比例跟随
-  function syncScrollToPreview() {
-    if (_scrollLock || !splitMode) return;
-    const st = storyText, pv = storyPreview;
-    const stMax = st.scrollHeight - st.clientHeight;
-    const pvMax = pv.scrollHeight - pv.clientHeight;
-    if (stMax <= 0 || pvMax <= 0) { withScrollLock(() => { pv.scrollTop = 0; }); return; }
-    withScrollLock(() => { pv.scrollTop = (st.scrollTop / stMax) * pvMax; });
-  }
-  // 预览滚动 → 编辑器按比例跟随
-  function syncScrollToEditor() {
-    if (_scrollLock || !splitMode) return;
-    const st = storyText, pv = storyPreview;
-    const stMax = st.scrollHeight - st.clientHeight;
-    const pvMax = pv.scrollHeight - pv.clientHeight;
-    if (stMax <= 0 || pvMax <= 0) { withScrollLock(() => { st.scrollTop = 0; }); return; }
-    withScrollLock(() => { st.scrollTop = (pv.scrollTop / pvMax) * stMax; });
   }
   // 在 HTML 中渲染 BBCode（b/i/u/s/color/size/center/br）
   function renderBBCode(s) {
@@ -525,6 +460,7 @@
   // ============ 初始化 ============
   function init() {
     bindGlobal();
+    bindVisualEditorMode();
     bindTodoEvents(); // 素材待办浮动按钮事件
     bindImageProcessor(); // 背景图处理面板（滑块/下拉/按钮事件，只绑一次）
     bindAudioProcessor(); // 音频处理面板（裁切/压缩，只绑一次）
@@ -533,11 +469,82 @@
     bindThemeToggle();    // 暗色模式切换按钮（#btn-theme）
     bindContextMenu();    // 自定义右键菜单（接管原生右键，编辑器工作区）
     applyHideAllAI(); // 启动时应用「隐藏所有 AI 功能」开关
+    agentWireToolsDeps(); // Agent 工具依赖注入（一次性，window.Agent 已先行加载）
     // 先迁移旧数据并展示项目页，进入某项目后才加载其剧情
     window.Storage.migrateLegacyIfNeeded().then(() => {
       renderProjectsScreen();
       showProjectsScreen(true);
     });
+  }
+
+  function bindVisualEditorMode() {
+    const visualButton = $('#editor-mode-visual');
+    const sourceButton = $('#editor-mode-source');
+    const visualHost = $('#story-visual-editor');
+    if (!visualButton || !sourceButton || !visualHost || !window.StoryVisualUI) return;
+    visualButton.setAttribute('aria-controls', 'story-visual-editor');
+    sourceButton.setAttribute('aria-controls', 'editor-text-wrap');
+    visualController = window.StoryVisualUI.createController({
+      sourceTextarea: storyText,
+      sourceWrap: editorTextWrap,
+      visualHost: visualHost,
+      getSource: () => storyText.value,
+      getDocumentKey: () => window.Storage.getCurrentProjectId() + ':' + activeBlock,
+      setSource: (next) => { storyText.value = next; commitEdit(); },
+      getStates: () => window.Storage.getVars(),
+      getBlocks: () => window.Storage.listBlockNames(),
+      getUiPreference: (key) => window.Storage.getUiPreference(key),
+      setUiPreference: (key, value) => window.Storage.setUiPreference(key, value),
+      onDiagnostic: () => {}
+    });
+    const insertMenu = $('#visual-insert-menu');
+    const insertPopover = $('#visual-insert-popover');
+    const visualInsertItems = [
+      { label: '剧情状态', text: '<变量:变量名=值>' },
+      { label: '选项', text: '<选项:"">' },
+      { label: '背景', text: '<召唤背景:名称>' },
+      { label: '物品', text: '<召唤物品:名称,"">' },
+      { label: '音乐', text: '<召唤音乐:名称>' },
+      { label: '音效', text: '<召唤音效:名称>' },
+      { label: '标题', text: '<标题:标题>' },
+      { label: '停顿', text: '<停顿>' },
+      { label: '分割线', text: '<分割线>' },
+      { label: '剧情块', text: '<剧情块:名称>' },
+      { label: '跳回', text: '<跳回>' },
+      { label: '随机跳转', text: '<随机跳转:块A,块B>' }
+    ];
+    if (insertMenu && insertPopover) {
+      insertMenu.addEventListener('click', function (event) {
+        event.stopPropagation();
+        const opening = insertPopover.hidden;
+        insertPopover.hidden = !opening;
+        insertPopover.classList.toggle('hidden', !opening);
+        if (!opening) return;
+        insertPopover.innerHTML = '';
+        visualInsertItems.forEach(function (item) {
+          const button = document.createElement('button');
+          button.type = 'button'; button.textContent = item.label;
+          button.addEventListener('click', function () {
+            insertVisualOrSource(item.text);
+            insertPopover.hidden = true;
+            insertPopover.classList.add('hidden');
+          });
+          insertPopover.appendChild(button);
+        });
+      });
+    }
+    function setMode(next) {
+      if (next === 'visual') visualController.showVisual();
+      else visualController.showSource();
+      visualButton.setAttribute('aria-pressed', String(next === 'visual'));
+      sourceButton.setAttribute('aria-pressed', String(next === 'source'));
+      try { localStorage.setItem(EDITOR_MODE_KEY, next); } catch (_) {}
+    }
+    visualButton.addEventListener('click', () => setMode('visual'));
+    sourceButton.addEventListener('click', () => setMode('source'));
+    let preferred = 'visual';
+    try { preferred = localStorage.getItem(EDITOR_MODE_KEY) === 'source' ? 'source' : 'visual'; } catch (_) {}
+    setMode(preferred);
   }
 
   // ============ 暗色模式（#btn-theme） ============
@@ -624,7 +631,7 @@
     const ta = storyText;
     if (navigator.clipboard && navigator.clipboard.readText) {
       navigator.clipboard.readText().then(function (text) {
-        if (text) { insertAtCursor(text); toast('已粘贴'); }
+        if (text) { insertVisualOrSource(text); toast('已粘贴'); }
         else toast('剪贴板为空');
       }).catch(function (err) { toast('粘贴失败（浏览器限制了剪贴板读取）：' + (err && err.message ? err.message : err)); });
     } else {
@@ -682,7 +689,7 @@
     }
     const summonText = function () {
       const wasRO = storyText.readOnly; storyText.readOnly = false;
-      try { const s = summonTextForCard(ds); insertAtCursor(s); toast('已插入：' + s); }
+      try { const s = summonTextForCard(ds); insertVisualOrSource(s); toast('已插入：' + s); }
       finally { storyText.readOnly = wasRO; }
     };
     if (card.classList.contains('stop-music-card')) {
@@ -934,13 +941,14 @@
     } else {
       items.forEach(function (it) {
         if (it.separator) { const s = document.createElement('div'); s.className = 'ctx-sep'; menu.appendChild(s); return; }
-        const row = document.createElement('div'); row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '');
+        const row = document.createElement('div'); row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '') + (it.disabled ? ' disabled' : '');
         const ico = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         ico.setAttribute('class', 'ctx-ico'); ico.setAttribute('aria-hidden', 'true');
         const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
         use.setAttribute('href', '#' + (it.icon || 'ic-circle-dot')); ico.appendChild(use);
         const lbl = document.createElement('span'); lbl.textContent = it.label;
         row.appendChild(ico); row.appendChild(lbl);
+        if (it.disabled) { menu.appendChild(row); return; }
         if (it.submenu) { row.addEventListener('mouseenter', function () { openCtxSub(row, it.submenu); }); }
         row.addEventListener('click', function (ev) { ev.stopPropagation(); if (it.submenu) return; hideContextMenu(); try { if (it.action) it.action(); } catch (e) { console.error(e); } });
         menu.appendChild(row);
@@ -1067,6 +1075,7 @@
   }
   function buildInsertAssetMenu() {
     const cats = [
+      { kind: 'variable', label: '变量', icon: 'ic-key' },
       { kind: 'background', label: '背景', icon: 'ic-image' },
       { kind: 'overlay', label: '叠层', icon: 'ic-layers' },
       { kind: 'item', label: '3D', icon: 'ic-box' },
@@ -1077,6 +1086,9 @@
       { kind: 'randtext', label: '随机句子', icon: 'ic-type' },
     ];
     return cats.map(function (c) {
+      if (c.kind === 'variable') {
+        return { label: c.label, icon: c.icon, submenu: function () { return buildVariableSubmenu(); } };
+      }
       if (c.kind === 'block') {
         return { label: c.label, icon: c.icon, submenu: function () { return buildBlockOptionSubmenu(); }, action: function () { insertOptionEmpty(); } };
       }
@@ -1087,6 +1099,44 @@
         return { label: c.label, icon: c.icon, action: function () { insertRandTextTemplate(); } };
       }
       return { label: c.label, icon: c.icon, submenu: function () { return buildAssetSubmenu(c.kind); }, action: function () { insertSummonTemplate(c.kind); } };
+    });
+  }
+  function stateTypeLabel(type) {
+    return ({ number: '数字', text: '文字', boolean: '是 / 否' })[type] || '文字';
+  }
+  function buildVariableSubmenu() {
+    const vars = (window.Storage.getVars() || []).filter(function (state) {
+      return state && String(state.name == null ? '' : state.name).trim();
+    });
+    if (!vars.length) {
+      return [
+        { label: '变量库为空', disabled: true },
+        { separator: true },
+        { label: '前往变量库', icon: 'ic-key', action: function () { switchLib('variable'); } }
+      ];
+    }
+    const range = ctxInsertRange();
+    const includeCondition = isOptionLineAt(range.s);
+    return vars.map(function (state) {
+      return {
+        label: state.name + '（' + stateTypeLabel(state.type) + '）',
+        icon: 'ic-key',
+        submenu: function () { return buildVariableActionSubmenu(state, includeCondition); }
+      };
+    });
+  }
+  function buildVariableActionSubmenu(state, includeCondition) {
+    return window.StoryVars.getInsertActions(state, includeCondition).map(function (item) {
+      return {
+        label: item.label,
+        icon: 'ic-key',
+        action: function () {
+          const contextRange = ctxInsertRange();
+          const range = { start: contextRange.s, end: contextRange.e };
+          const optionContext = item.act === 'cond' && isOptionLineAt(range.start) ? lineCtxAt(range.start) : null;
+          applyVarChoice(item.act, state.name, state.type, range, optionContext);
+        }
+      };
     });
   }
   // 右键「插入 → 随机句子」：插入占位模板 <随机句子:"文本1","文本2">，光标落在第一个引号内等待输入
@@ -1157,7 +1207,7 @@
     items.forEach(function (it) {
       if (it.separator) { const s = document.createElement('div'); s.className = 'ctx-sep'; panel.appendChild(s); return; }
       const row = document.createElement('div');
-      row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '') + (it.checkable ? ' ctx-checkable' : '') + (it.confirm ? ' ctx-confirm' : '');
+      row.className = 'ctx-item' + (it.danger ? ' danger' : '') + (it.submenu ? ' has-sub' : '') + (it.checkable ? ' ctx-checkable' : '') + (it.confirm ? ' ctx-confirm' : '') + (it.disabled ? ' disabled' : '');
       if (it.name) row.setAttribute('data-name', it.name);
       const ico = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       ico.setAttribute('class', 'ctx-ico'); ico.setAttribute('aria-hidden', 'true');
@@ -1165,6 +1215,7 @@
       use.setAttribute('href', '#' + (it.icon || 'ic-circle-dot')); ico.appendChild(use);
       const lbl = document.createElement('span'); lbl.textContent = it.label;
       row.appendChild(ico); row.appendChild(lbl);
+      if (it.disabled) { panel.appendChild(row); return; }
       if (it.submenu) {
         row.addEventListener('mouseenter', function () {
           const myToken = ++ctxSubToken;
@@ -1377,6 +1428,10 @@
   }
 
   async function openProject(id) {
+    if (editorProjectId && !timeMachineRestoring) saveNow();
+    if (timeMachineController) await timeMachineController.stop();
+    clearTimeout(saveTimer); clearTimeout(histTimer); clearTimeout(pvTimer);
+    if (visualController) { visualController.commitFocusedEditor(); visualController.resetContext(); }
     window.Storage.setCurrentProject(id);
     await repairExampleAssetsIfNeeded(); // 就地修复旧版相对路径示例素材（按需触发 9MB 懒加载）
     currentProjectMode = window.Storage.getProjectMode(id); // 'article' | 'game'
@@ -1392,7 +1447,7 @@
       if (initial === '') initial = DEFAULT_TEXT;
       window.Storage.setBlockText(activeBlock, initial);
     }
-    text = window.Storage.getBlockText(activeBlock) || initial || DEFAULT_TEXT;
+    text = window.Storage.getBlockText(activeBlock);
     storyText.value = text;
     updateWordCount();
     history = []; histIndex = -1;
@@ -1410,6 +1465,85 @@
     refreshReviewToggleBadge();
     refreshBlockReviewLine();
     ftResetSession(); // 全文助理对话按工程隔离：切工程时重置内存态，下次开面板从本工程 key 重新加载
+    agentResetSession(); // Agent 对话同样按工程隔离：切工程时中止在途请求并重置内存态
+    // 项目切换时先清理上一个旧项目留下的提示；否则转换成功后打开
+    // 新项目，旧提示仍挂在编辑器顶部，造成“已转换却仍提示”的错觉。
+    document.querySelectorAll('.project-conversion-hint').forEach(function (hint) { hint.remove(); });
+    const project = window.Storage.listProjects().find(p => p.id === id);
+    if (project && project.mode !== 'article' && !project.visualEditorVersion) showOldProjectConversionHint(project);
+    if (!timeMachineController) {
+      timeMachineController = window.TimeMachine.createController({
+        flush: (pid) => { if (window.Storage.getCurrentProjectId() === pid) saveNow(false); },
+        backup: (pid, reason) => window.Storage.createTimeMachineBackup(pid, reason,
+          window.Storage.getCurrentProjectId() === pid ? { block: activeBlock, text: visualController ? visualController.getSnapshotSource() : storyText.value } : null),
+        onStatus: (error) => {
+          const previousError = timeMachineError;
+          timeMachineError = error ? (error.message || String(error)) : '';
+          if (error && timeMachineError !== previousError) toast('时光机备份失败：' + timeMachineError);
+          const panel = $('#settings-time-machine');
+          if (panel && !panel.parentElement.classList.contains('hidden')) renderTimeMachine();
+        }
+      });
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && timeMachineController && !timeMachineRestoring) timeMachineController.checkDue();
+      });
+    }
+    timeMachineError = '';
+    editorProjectId = id;
+    if (visualController && visualController.getMode() === 'visual') visualController.refresh();
+    timeMachineController.start(id);
+  }
+
+  let conversionProjectId = null;
+  function closeProjectConversionModal() {
+    $('#project-convert-modal').classList.add('hidden');
+    conversionProjectId = null;
+  }
+  function openProjectConversionModal(project) {
+    if (!project || project.mode === 'article' || project.visualEditorVersion) return;
+    conversionProjectId = project.id;
+    $('#project-convert-name').value = window.ProjectConverter.nextConvertedName(project.name, window.Storage.listProjects());
+    $('#project-convert-status').textContent = '';
+    const run = $('#project-convert-run'); run.textContent = '开始转换'; run.disabled = false;
+    $('#project-convert-modal').classList.remove('hidden');
+  }
+  function showOldProjectConversionHint(project) {
+    const existing = document.querySelector('.project-conversion-hint');
+    if (existing) existing.remove();
+    const prefKey = 'conversion-hint-dismissed:' + project.id;
+    if (window.Storage.getUiPreference(prefKey)) return;
+    const hint = document.createElement('div');
+    hint.className = 'project-conversion-hint';
+    hint.innerHTML = '<span>试试可视化编辑：先复制这份旧项目，原项目保持不变。</span><button type="button" class="mini-btn">转换为可视化项目</button><button type="button" class="modal-x" title="不再提示">✕</button>';
+    hint.querySelector('.mini-btn').onclick = () => openProjectConversionModal(project);
+    hint.querySelector('.modal-x').onclick = () => { window.Storage.setUiPreference(prefKey, '1'); hint.remove(); };
+    $('#editor-body').prepend(hint);
+  }
+  function bindProjectConversionModal() {
+    const modal = $('#project-convert-modal');
+    const close = closeProjectConversionModal;
+    $('#project-convert-x').addEventListener('click', close);
+    $('#project-convert-cancel').addEventListener('click', close);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    $('#project-convert-run').addEventListener('click', async () => {
+      if (!conversionProjectId) return close();
+      const source = window.Storage.listProjects().find(p => p.id === conversionProjectId);
+      if (!source) return close();
+      const name = ($('#project-convert-name').value || '').trim() || window.ProjectConverter.nextConvertedName(source.name, window.Storage.listProjects());
+      const run = $('#project-convert-run'); const status = $('#project-convert-status');
+      run.disabled = true; status.textContent = '正在复制并校验项目…';
+      try {
+        const result = await window.Storage.copyProjectForVisual(source.id, name);
+        await openProject(result.projectId);
+        const counts = result.report.counts;
+        status.textContent = '转换完成：已复制 ' + counts.options + ' 个选项、' + counts.stateChanges + ' 个剧情状态变化、' + counts.effects + ' 个选项效果；未丢失内容。新项目已打开。';
+        run.textContent = '完成'; run.disabled = false;
+        conversionProjectId = null;
+      } catch (error) {
+        status.textContent = '转换失败，临时数据已清理：' + (error && error.message ? error.message : error) + '。可立即重试。';
+        run.disabled = false;
+      }
+    });
   }
   // 记录已渲染的项目签名（各项目 id 拼串），用于判断「返回项目页」时是否需要整页重建
   let _projectsSignature = null;
@@ -1420,6 +1554,9 @@
   }
   function returnToProjects() {
     saveNow();
+    if (timeMachineController) timeMachineController.stop();
+    if (visualController) visualController.resetContext();
+    editorProjectId = null;
     const list = $('#projects-list');
     // 结构未变（仍是同一批项目）→ 直接显示已渲染的卡片，不整页重刷；仅后台刷新统计数字
     if (_projectsSignature && list && list.querySelector('.project-card') && projectsSignatureMatches()) {
@@ -1461,11 +1598,14 @@
       '</div>' +
       '<div class="project-card-actions">' +
         '<button class="btn btn-ghost btn-p-open">打开</button>' +
+        (!isArticle && !p.visualEditorVersion ? '<button class="btn btn-ghost btn-p-convert">转换为可视化项目</button>' : '') +
         '<button class="btn btn-ghost btn-p-backup">备份</button>' +
         '<button class="btn btn-ghost btn-p-rename">重命名</button>' +
         '<button class="btn btn-ghost btn-p-del">删除</button>' +
       '</div>';
     card.querySelector('.btn-p-open').onclick = () => openProject(p.id);
+    const convert = card.querySelector('.btn-p-convert');
+    if (convert) convert.onclick = () => openProjectConversionModal(p);
     card.querySelector('.btn-p-backup').onclick = () => exportProjectBackup(p.id);
     card.querySelector('.btn-p-rename').onclick = () => {
       const name = prompt('项目新名称', p.name);
@@ -1583,6 +1723,7 @@
     $('#btn-projects').addEventListener('click', returnToProjects);
     $('#btn-new-project').addEventListener('click', openNewProjectModal);
     bindNewProjectModal();
+    bindProjectConversionModal();
     // 工程备份导入：点按钮选文件 → 解析 → 新建独立项目
     const importInput = $('#file-import-project');
     $('#btn-import-project').addEventListener('click', () => { if (importInput) importInput.click(); });
@@ -1597,8 +1738,7 @@
       scheduleSave();
       hideCompileBar(); // 用户已动手修改，旧红字条失效
       updateErrorHighlights([]); // 清除错误高亮
-      // 分屏/预览态下实时刷新右栏
-      if (splitMode || previewMode) { clearTimeout(pvTimer); pvTimer = setTimeout(renderPreview, 200); }
+      if (previewMode) { clearTimeout(pvTimer); pvTimer = setTimeout(renderPreview, 200); }
       scheduleOutline(); // 导航栏随注释变化实时刷新
       updateWordCount(); // 右下角字数统计实时刷新
       refreshClueHint(); // 正文变化后检查是否需提示更新线索
@@ -1606,8 +1746,6 @@
       clearTimeout(histTimer);
       histTimer = setTimeout(pushHistory, 500);
     });
-    // 分屏滚动同步：编辑器滚动/光标移动 → 预览跟随
-    storyText.addEventListener('scroll', syncScrollToPreview);
     // 行号槽：输入（防抖重建行数）+ 滚动同步 + 网页字体加载/窗口尺寸变化后重算行高
     storyText.addEventListener('input', scheduleLineNumbers);
     storyText.addEventListener('scroll', syncGutterScroll);
@@ -1622,13 +1760,14 @@
       Object.defineProperty(storyText, 'value', {
         configurable: true,
         get() { return desc.get.call(this); },
-        set(v) { desc.set.call(this, v); scheduleLineNumbers(); }
+        set(v) {
+          desc.set.call(this, v);
+          scheduleLineNumbers();
+          if (visualController && visualController.getMode() === 'visual') visualController.refresh();
+        }
       });
     })();
     buildLineNumbers();
-    storyText.addEventListener('click', () => { if (splitMode) withScrollLock(revealPreviewCursorLine); });
-    storyText.addEventListener('keyup', () => { if (splitMode) withScrollLock(revealPreviewCursorLine); });
-    storyPreview.addEventListener('scroll', syncScrollToEditor);
     storyText.addEventListener('keydown', (e) => {
       // 仅「文本框聚焦时」拦截 Tab：在下方插入一行 <停顿>
       if (e.key === 'Tab' && !e.shiftKey) {
@@ -1640,6 +1779,7 @@
     // 全局快捷键：Ctrl/⌘+Z 撤销、Ctrl/⌘+Y 或 Ctrl/⌘+Shift+Z 重做、Ctrl/⌘+S 保存、F12 预览
     // 绑定在 document（而非 storyText）上，使文本框未聚焦（光标不显示）时撤销/重做也生效
     document.addEventListener('keydown', (e) => {
+      if (timeMachineRestoring) { e.preventDefault(); return; }
       if (e.ctrlKey || e.metaKey) {
         const k = e.key.toLowerCase();
         const t = e.target;
@@ -1652,10 +1792,13 @@
         if (k === 's') { e.preventDefault(); saveNow(); toast('已保存'); return; }
       }
       if (e.key === 'F12') { e.preventDefault(); openPreview(); }
-      // 右侧 Ctrl：按住=预览，松开=编辑
-      if (e.code === 'ControlRight' && !e.repeat) { setPreviewMode(true); }
+      // 右侧 Ctrl：按住=预览，松开=编辑（焦点在 AI 对话框内时忽略——Agent/全文助理输入不应触发画布预览）
+      const inAiDialog = (t) => t && t.closest && !!(t.closest('#agent-assistant') || t.closest('#fulltext-assistant'));
+      if (e.code === 'ControlRight' && !e.repeat && !inAiDialog(e.target)) { setPreviewMode(true); }
     });
     document.addEventListener('keyup', (e) => {
+      // keyup 不做对话框内判断：即使在对话框内按下（keydown 已忽略），无条件解除预览也安全（关闭无副作用，
+      // 且避免"框外按下→焦点移入框内→keyup 被忽略"导致预览卡在按住态）
       if (e.code === 'ControlRight') { setPreviewMode(false); }
     });
     // 窗口失焦时强制松开，避免卡在预览态
@@ -1663,19 +1806,6 @@
     $('#btn-undo').addEventListener('click', undo);
     $('#btn-redo').addEventListener('click', redo);
         $('#btn-bbcode-preview').addEventListener('click', togglePreview);
-        $('#btn-split').addEventListener('click', () => {
-          splitMode = !splitMode;
-          const btn = $('#btn-split');
-          btn.classList.toggle('active', splitMode);
-          btn.textContent = splitMode ? '▣ 退出分屏' : '▥ 分屏';
-          btn.title = splitMode ? '退出分屏预览' : '左写右渲分屏预览';
-          // 与「审阅」面板互斥：进入分屏时关闭审阅列，避免三重栏挤压正文显示区
-          if (splitMode) {
-            const rc = $('#review-col');
-            if (rc && !rc.classList.contains('hidden')) rc.classList.add('hidden');
-          }
-          applyLayout();
-        });
 
         // 左侧导航：折叠 / 展开（折叠后不占正文编辑器空间）
         const outlineCol = $('#outline-col');
@@ -1818,17 +1948,6 @@
       const col = $('#review-col');
       if (col) col.classList.toggle('hidden');
       renderReviewPanel();
-      // 与「分屏」互斥：打开审阅列时强制退出分屏，避免三重栏挤压正文显示区
-      if (col && !col.classList.contains('hidden') && splitMode) {
-        splitMode = false;
-        const sb = $('#btn-split');
-        if (sb) {
-          sb.classList.remove('active');
-          sb.textContent = '▥ 分屏';
-          sb.title = '左写右渲分屏预览';
-        }
-        applyLayout();
-      }
     });
 
     // 编译检查红字条按钮
@@ -2354,6 +2473,10 @@
 
   // 在光标处插入文本（自动补换行，保持每行为一个单元）
   // caretFromEnd：插入后光标从末尾往前回退的字符数（用于把光标停在某个占位符中间）
+  function insertVisualOrSource(text) {
+    if (visualController && visualController.getMode() === 'visual') return visualController.insert(text);
+    return insertAtCursor(text);
+  }
   function insertAtCursor(str, caretFromEnd) {
     const ta = storyText;
     const st = ta.scrollTop;
@@ -2497,7 +2620,8 @@
     const v = storyText.value;
     const ls = v.lastIndexOf('\n', off - 1) + 1;
     let le = v.indexOf('\n', off); if (le === -1) le = v.length;
-    return v.slice(ls, le).indexOf('<选项:') >= 0;
+    const line = v.slice(ls, le);
+    return window.StoryOptions.extractOptionLine(line).some(function (option) { return option.ok; });
   }
   function lineCtxAt(off) {
     const v = storyText.value;
@@ -2541,50 +2665,34 @@
     if (_varPopOutside) { document.removeEventListener('mousedown', _varPopOutside); _varPopOutside = null; }
     if (_varPopEsc) { document.removeEventListener('keydown', _varPopEsc); _varPopEsc = null; }
   }
-  function escapeHtml(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function replaceVarChoiceRange(choice, range) {
+    const ta = storyText;
+    const scrollTop = ta.scrollTop;
+    const result = window.StoryVars.applyInsertChoice(ta.value, range.start, range.end, choice);
+    ta.value = result.source;
+    try { ta.setSelectionRange(result.caret, result.caret); } catch (_) {}
+    ta.scrollTop = scrollTop;
+    commitEdit();
+  }
   function applyVarChoice(act, name, type, range, optCtx) {
-    const ta = storyText, v = ta.value;
-    const setVal = function (s, caretFromStart) {
-      ta.value = v.slice(0, range.start) + s + v.slice(range.end);
-      const pos = (caretFromStart != null) ? range.start + caretFromStart : (range.start + s.length);
-      try { ta.setSelectionRange(pos, pos); } catch (e) {}
-      if (document.activeElement === ta) ta.blur();
-      commitEdit();
-    };
-    if (act === 'read') { setVal((type === 'boolean') ? '{' + name + ':是|否}' : '{' + name + '}'); }
-    else if (act === 'assign') { setVal('<变量:' + name + '=>', ('<变量:' + name + '=').length); }
-    else if (act === 'inc') { setVal('<变量:' + name + '+1>'); }
-    else if (act === 'dec') { setVal('<变量:' + name + '-1>'); }
-    else if (act === 'input') {
-      const open = '<玩家输入变量:' + name + ',"';
-      const close = '">';
-      const before = v.slice(0, range.start);
-      const after = v.slice(range.end);
-      const lineStart = before.lastIndexOf('\n') + 1;
-      const afterNl = after.indexOf('\n');
-      const lineEnd = afterNl === -1 ? v.length : range.end + afterNl;
-      const lineText = v.slice(lineStart, lineEnd).trim();
-      const placeholder = v.slice(range.start, range.end).trim();
-      let pre = '', post = '';
-      // 当前行只有占位符/空白 → 整行替换为指令；否则把指令放到独立新行，避免混入正文
-      if (lineText !== '' && lineText !== placeholder) { pre = '\n'; post = '\n'; }
-      ta.value = before + pre + open + close + post + after;
-      const caret = (before + pre + open).length; // 落在两个引号之间，方便直接输入引导文字
-      try { ta.setSelectionRange(caret, caret); } catch (e) {}
-      if (document.activeElement === ta) ta.blur();
-      commitEdit();
+    const ta = storyText;
+    if (act !== 'cond') {
+      const choice = window.StoryVars.buildInsertChoice(act, name, type);
+      replaceVarChoiceRange(choice, range);
       return;
     }
-    else if (act === 'cond') {
+    if (act === 'cond') {
+      const v = ta.value;
       let nv = v.slice(0, range.start) + v.slice(range.end);
       const ls = optCtx.lineStart;
       const le = optCtx.lineEnd - (range.end - range.start);
       const line = nv.slice(ls, le);
       // 本行可能含多个 <选项:...>（同一行多个选项），需定位 drop 点所在 / 最近的那个。
-      // 用 extractOptionLine 拿到每个选项的真实闭合位置（条件表达式里的 > 不算闭合）。
+      // 共享语法模块提供真实标签边界（条件里的 > 不会提前截断）。
       const segs = [];
-      for (const o of extractOptionLine(line)) {
-        segs.push({ s: o.index, e: o.close + 1, seg: line.slice(o.index, o.close + 1), extra: o.extra });
+      for (const o of window.StoryOptions.extractOptionLine(line)) {
+        segs.push({ s: o.start, e: o.end, seg: o.raw, extra: o.raw.slice('<选项:'.length, -1) });
       }
       let target = null;
       for (const sg of segs) { if (range.start >= ls + sg.s && range.start <= ls + sg.e) { target = sg; break; } }
@@ -2766,14 +2874,19 @@
       renderDialogueBlocks(list);
     } else if (activeLib === 'variable') {
       tools.innerHTML = '<button class="btn" id="t-var-add"><svg class="ico" aria-hidden="true"><use href="#ic-plus"/></svg> 新建变量</button>'
+        + '<button class="btn" id="t-var-fix" style="margin-left:8px"><svg class="ico" aria-hidden="true"><use href="#ic-alert"/></svg> 修复检查</button>'
         + '<div class="lib-tools-row lib-hint">正文用 {变量名} 读取、&lt;变量:名=值&gt; 赋值、&lt;选项:"文字",块名,条件:表达式&gt; 做条件选项</div>';
+      tools.querySelector('#t-var-fix').onclick = () => openVarFixer();
       tools.querySelector('#t-var-add').onclick = () => {
         const vars = window.Storage.getVars();
-        vars.push({ name: '', type: 'number', value: 0 });
+        let base = '新变量', name = base, suffix = 2;
+        while (vars.some(v => v.name === name)) name = base + suffix++;
+        vars.push({ name: name, type: 'number', value: 0 });
         window.Storage.saveVars(vars);
         renderVariableList(list);
-        const first = list.querySelector('.var-name');
-        if (first) first.focus();
+        const inputs = list.querySelectorAll('.var-name');
+        const created = inputs[inputs.length - 1];
+        if (created) { created.focus(); created.select(); }
       };
       const vars = window.Storage.getVars();
       setLibCount(countEl, vars.length, '变量库');
@@ -2783,19 +2896,194 @@
 
   // 变量改名：把所有剧情块正文里对该变量的引用一并改掉（全局变量，需遍历所有块）
   // 覆盖：{旧名} / {旧名:格式}、<变量:旧名=…> / +N / -N、<玩家输入变量:旧名,…>、<选项:…,条件:旧名…> 条件中的变量名
-  function renameVarEverywhere(oldName, newName) {
-    if (!oldName || oldName === newName) return 0;
+  // ============ 变量修复检查器（旧内容迁移 / 跨模块一致性修复） ============
+  // StoryVars.analyze 扫描全部剧情块（主剧情 + 各分支块）后，在这里集中展示与一键修复。
+  // 多模块注意：每个问题都携带所属块名与行号；修复时按块写回，
+  // 当前编辑中的块走 textarea + commitEdit（保持撤销栈），其它块直接写 Storage。
+  let _varFixPanel = null;
+  const _varFixDismissed = new Set(); // 会话级忽略：kind|block|line|name|raw
+
+  function _varFixKey(is) {
+    return is.kind + '|' + (is.block || '') + '|' + (is.line || 0) + '|' + (is.name || '') + '|' + (is.raw || '');
+  }
+
+  function collectVarFixIssues() {
+    const blocksMap = {};
+    window.Storage.listBlockNames().forEach(nm => {
+      blocksMap[nm] = (nm === activeBlock) ? storyText.value : (window.Storage.getBlockText(nm) || '');
+    });
+    return window.StoryVars.analyze(blocksMap, window.Storage.getVars()).issues
+      .filter(is => !_varFixDismissed.has(_varFixKey(is)));
+  }
+
+  function ensureVarFixPanel() {
+    if (_varFixPanel) return _varFixPanel;
+    const panel = document.createElement('div');
+    panel.id = 'var-fix-panel';
+    panel.className = 'hidden';
+    panel.innerHTML =
+      '<div class="vfx-head">' +
+        '<div class="vfx-title"><svg class="ico" aria-hidden="true"><use href="#ic-key"/></svg> 变量修复检查</div>' +
+        '<button id="vfx-close" class="vfx-close" title="关闭">✕</button>' +
+      '</div>' +
+      '<div class="vfx-summary" id="vfx-summary"></div>' +
+      '<div class="vfx-body" id="vfx-list"></div>' +
+      '<div class="vfx-foot"><span class="vfx-hint">扫描范围：主剧情 + 全部剧情块。「忽略」仅本次会话生效 · ESC 关闭</span></div>';
+    document.body.appendChild(panel);
+    panel.querySelector('#vfx-close').addEventListener('click', closeVarFixer);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && _varFixPanel && !_varFixPanel.classList.contains('hidden')) closeVarFixer();
+    });
+    _varFixPanel = panel;
+    return panel;
+  }
+
+  function closeVarFixer() { if (_varFixPanel) _varFixPanel.classList.add('hidden'); }
+
+  function openVarFixer() {
+    ensureVarFixPanel();
+    renderVarFixer();
+    _varFixPanel.classList.remove('hidden');
+  }
+
+  const VFX_KIND_LABEL = {
+    undeclared_write: '未声明赋值', undeclared_read: '未定义读取', malformed_tag: '坏指令',
+    cond_parse_error: '条件异常', type_mismatch: '类型混用',
+    never_written: '从未赋值', dead_var: '死变量',
+  };
+
+  function renderVarFixer() {
+    const all = collectVarFixIssues();
+    const order = { error: 0, warning: 1, info: 2 };
+    all.sort((a, b) => (order[a.severity] - order[b.severity]));
+    const errN = all.filter(i => i.severity === 'error').length;
+    const warnN = all.filter(i => i.severity === 'warning').length;
+    const infoN = all.length - errN - warnN;
+    $('#vfx-summary').innerHTML =
+      (errN ? '<b style="color:#ff6677">' + errN + ' 个错误</b>' : '<b style="color:#4ade80">无错误</b>')
+      + (warnN ? ' &nbsp;<b style="color:#f0b429">' + warnN + ' 个提醒</b>' : '')
+      + (infoN ? ' &nbsp;<span style="color:#9aa3b2">' + infoN + ' 条建议</span>' : '');
+    const list = $('#vfx-list');
+    list.innerHTML = '';
+    if (!all.length) {
+      list.innerHTML = '<div class="empty-tip" style="padding:30px;text-align:center">没有发现变量问题，所有剧情块的变量引用都是干净的。</div>';
+      return;
+    }
+    all.forEach(is => {
+      const row = document.createElement('div');
+      row.className = 'vfx-item vfx-' + is.severity;
+      const loc = is.block ? ('【' + escapeHtml(is.block) + '】' + (is.line ? ('第 ' + is.line + ' 行') : '')) : '';
+      const meta = [];
+      if (loc) meta.push(loc);
+      meta.push(VFX_KIND_LABEL[is.kind] || is.kind);
+      row.innerHTML = '<div class="vfx-msg">' + escapeHtml('[' + meta.join(' · ') + '] ' + is.message) + '</div>';
+      const btns = document.createElement('div');
+      btns.className = 'vfx-actions';
+      (is.fixes || []).forEach(fix => {
+        const b = document.createElement('button');
+        b.className = 'btn btn-sm';
+        if (fix.type === 'create_var') {
+          b.textContent = '创建变量「' + fix.name + '」（' + ({ number: '数字', boolean: '布尔', text: '文本' }[fix.varType] || fix.varType) + '）';
+          b.onclick = () => { if (applyVarFixCreate(fix)) renderVarFixer(); };
+        } else if (fix.type === 'rename_var') {
+          b.textContent = '改名为「' + fix.to + '」';
+          b.onclick = () => {
+            if (!confirm('把全部剧情块里的「' + fix.from + '」改名为「' + fix.to + '」？')) return;
+            const result = renameVarEverywhere(fix.from, fix.to);
+            toast(result.ok ? (result.changed ? ('已更新 ' + result.changed + ' 个剧情块中的引用') : '没有需要更新的引用') : result.error);
+            renderVarFixer();
+          };
+        } else if (fix.type === 'remove_tag') {
+          b.textContent = '删除该指令';
+          b.onclick = () => { if (applyVarFixRemoveTag(fix)) renderVarFixer(); };
+        }
+        btns.appendChild(b);
+      });
+      if (is.block && is.line) {
+        const jump = document.createElement('button');
+        jump.className = 'btn btn-sm';
+        jump.textContent = '定位';
+        jump.onclick = () => {
+          closeVarFixer();
+          if (is.block !== activeBlock) switchBlock(is.block);
+          setTimeout(() => gotoLine(is.line), 50);
+        };
+        btns.appendChild(jump);
+      }
+      const ignore = document.createElement('button');
+      ignore.className = 'btn btn-sm';
+      ignore.textContent = '忽略';
+      ignore.onclick = () => { _varFixDismissed.add(_varFixKey(is)); renderVarFixer(); };
+      btns.appendChild(ignore);
+      row.appendChild(btns);
+      list.appendChild(row);
+    });
+  }
+
+  function applyVarFixCreate(fix) {
+    const vars = window.Storage.getVars();
+    if (vars.some(v => v.name === fix.name)) { toast('变量「' + fix.name + '」已存在'); return false; }
+    vars.push({ name: fix.name, type: fix.varType, value: fix.value });
+    window.Storage.saveVars(vars);
+    toast('已创建变量「' + fix.name + '」');
+    renderLibrary();
+    refreshTodo();
+    return true;
+  }
+
+  function applyVarFixRemoveTag(fix) {
+    const isActive = fix.block === activeBlock;
+    const src = isActive ? storyText.value : (window.Storage.getBlockText(fix.block) || '');
+    const lines = src.split('\n');
+    if (!(fix.line >= 1 && fix.line <= lines.length)) { toast('行号已失效，请重新打开修复检查'); return false; }
+    const idx = lines[fix.line - 1].indexOf(fix.raw);
+    if (idx < 0) { toast('未找到目标指令，请重新打开修复检查'); return false; }
+    lines[fix.line - 1] = lines[fix.line - 1].slice(0, idx) + lines[fix.line - 1].slice(idx + fix.raw.length);
+    const nt = lines.join('\n');
+    if (isActive) { storyText.value = nt; commitEdit(); }
+    else window.Storage.setBlockText(fix.block, nt);
+    toast('已删除无法识别的变量指令');
+    refreshTodo();
+    return true;
+  }
+
+  function collectStateBlockMap() {
+    const out = {};
+    window.Storage.listBlockNames().forEach((name) => {
+      out[name] = name === activeBlock ? storyText.value : (window.Storage.getBlockText(name) || '');
+    });
+    return out;
+  }
+
+  function saveStateBlockMap(blockMap) {
+    const blocks = window.Storage.loadBlocks();
+    blocks.main = blockMap[MAIN_BLOCK] || '';
+    blocks.blocks = blocks.blocks || {};
+    Object.keys(blocks.blocks).forEach((name) => { blocks.blocks[name] = blockMap[name] || ''; });
+    window.Storage.saveBlocks(blocks);
+  }
+
+  function stateValidationMessage(issues) {
+    const first = issues[0];
+    return first ? ('改动后无法保存：' + (first.message || '剧情变量校验失败')) : '';
+  }
+
+  // All replacements are prepared and checked before either story blocks or
+  // the library is persisted. This prevents half-renamed projects.
+  function renameVarEverywhere(oldName, newName, nextVars) {
+    if (!oldName || oldName === newName) return { ok: true, changed: 0 };
     const names = window.Storage.listBlockNames();
     const escOld = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const reInterp = new RegExp('\\{\\s*(' + escOld + ')(?=[\\s}:]|\\})', 'g');   // {旧名} 或 {旧名:…}
     const reVarOp = new RegExp('<变量:\\s*(' + escOld + ')(?=\\s*[=+\\-])', 'g'); // <变量:旧名=值> 等
     const reInput = new RegExp('<玩家输入变量:\\s*(' + escOld + ')(?=\\s*,)', 'g'); // <玩家输入变量:旧名,"…">
     const reCond = new RegExp('(^|[^A-Za-z0-9_\\u4e00-\\u9fa5])(' + escOld + ')(?=[^A-Za-z0-9_\\u4e00-\u9fa5]|$)', 'g'); // 条件表达式里的变量名（整词）
+    const original = {};
+    const rewritten = {};
     let changed = 0;
     names.forEach((nm) => {
-      let text, save;
-      if (nm === activeBlock) { text = storyText.value; save = function (v) { storyText.value = v; commitEdit(); }; }
-      else { text = window.Storage.getBlockText(nm) || ''; save = function (v) { window.Storage.setBlockText(nm, v); }; }
+      const text = nm === activeBlock ? storyText.value : (window.Storage.getBlockText(nm) || '');
+      original[nm] = text;
       let nt = text
         .replace(reInterp, function () { return '{' + newName; })
         .replace(reVarOp, function () { return '<变量:' + newName; })
@@ -2808,9 +3096,23 @@
         if (rw.changed) { lines[i] = rw.line; lineChanged = true; }
       }
       if (lineChanged) nt = lines.join('\n');
-      if (nt !== text) { save(nt); changed++; }
+      rewritten[nm] = nt;
+      if (nt !== text) changed++;
     });
-    return changed;
+    const currentVars = window.Storage.getVars();
+    const beforeErrors = window.StoryVars.analyze(original, currentVars).issues.filter((issue) => issue.severity === 'error');
+    const afterErrors = window.StoryVars.analyze(rewritten, nextVars || currentVars).issues.filter((issue) => issue.severity === 'error');
+    const introducedErrors = window.StoryVisualDoc.findIntroducedStateIssues(beforeErrors, afterErrors);
+    if (introducedErrors.length) return { ok: false, changed: 0, error: stateValidationMessage(introducedErrors) };
+    saveStateBlockMap(rewritten);
+    if (rewritten[activeBlock] !== storyText.value) {
+      storyText.value = rewritten[activeBlock];
+      text = storyText.value;
+      pushHistory();
+      updateWordCount();
+      scheduleOutline();
+    }
+    return { ok: true, changed: changed };
   }
 
   // 选项条件指令里的变量名改写（<选项:"文字",块名,条件:…>），返回 { line, changed }
@@ -2818,19 +3120,17 @@
     let newLine = line;
     // 选项行的条件变量：<选项:"文字",块名,条件:金币>=5>（整词规则；条件允许 < > <= >= 运算符）
     if (newLine.indexOf('<选项:') >= 0) {
-      const TAG = '<选项:';
       const repls = [];
-      for (const o of extractOptionLine(newLine)) {
+      for (const o of window.StoryOptions.extractOptionLine(newLine)) {
         if (!o.ok) continue;
-        const sp = splitOptionExtra(o.extra);
-        if (!sp.condition) continue;
-        const newCond = sp.condition.replace(reCond, function (m, pre) { return pre + newName; });
-        if (newCond !== sp.condition) {
-          const body = newLine.slice(o.index + TAG.length, o.close);
-          const bStart = body.indexOf(sp.condition);
+        const condition = o.option.condition;
+        if (!condition) continue;
+        const newCond = condition.replace(reCond, function (m, pre) { return pre + newName; });
+        if (newCond !== condition) {
+          const bStart = o.raw.indexOf(condition);
           if (bStart >= 0) {
-            const abs = o.index + TAG.length + bStart;
-            repls.push({ start: abs, end: abs + sp.condition.length, text: newCond });
+            const abs = o.start + bStart;
+            repls.push({ start: abs, end: abs + condition.length, text: newCond });
           }
         }
       }
@@ -2838,6 +3138,23 @@
       for (const r of repls) { newLine = newLine.slice(0, r.start) + r.text + newLine.slice(r.end); }
     }
     return { line: newLine, changed: newLine !== line };
+  }
+
+  function showStateRowError(row, message) {
+    let error = row.querySelector('.var-error');
+    if (!error) { error = document.createElement('div'); error.className = 'var-error'; row.appendChild(error); }
+    row.classList.add('var-invalid');
+    error.textContent = message;
+  }
+
+  function clearStateRowError(row) {
+    row.classList.remove('var-invalid');
+    const error = row.querySelector('.var-error');
+    if (error) error.remove();
+  }
+
+  function formatStateReferences(refs) {
+    return refs.map(ref => '【' + (ref.block === MAIN_BLOCK ? '主剧情' : ref.block) + '】第 ' + ref.line + ' 行').join('、');
   }
 
   // 变量库：集中定义变量（名字/类型/初值）。正文用 {名} 读取、<变量:名=值> 赋值。
@@ -2873,7 +3190,7 @@
         if (!v.name) return;
         const wasRO = storyText.readOnly; storyText.readOnly = false;
         const ph = (v.type === 'boolean') ? '{' + v.name + ':是|否}' : '{' + v.name + '}';
-        insertAtCursor(ph);
+        insertVisualOrSource(ph);
         const pos = storyText.selectionStart;
         const at = pos - ph.length;
         openVarPopover(v.name, v.type, { start: at, end: pos }, isOptionLineAt(at) ? lineCtxAt(at) : null);
@@ -2883,39 +3200,59 @@
       name.onchange = () => {
         const oldName = vars[idx].name;
         const nm = name.value.trim();
+        clearStateRowError(row);
+        if (!nm) {
+          showStateRowError(row, '变量名不能为空。');
+          name.focus();
+          return;
+        }
         // 变量名合法性：与解析端一致（字母/下划线/中文开头，可含数字，不能以数字开头）
-        if (nm && !/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(nm)) {
-          if (/^[0-9]/.test(nm)) alert('不可以用纯数字开头作为变量名。');
-          else alert('变量名只能包含 字母 / 数字 / 下划线 / 中文，且不能以数字开头。');
-          name.value = oldName; // 还原为上次合法名
+        if (!/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(nm)) {
+          showStateRowError(row, /^[0-9]/.test(nm) ? '变量名不能以数字开头。' : '变量名只能包含字母、数字、下划线或中文。');
           name.focus();
           return;
         }
         if (nm === oldName) return; // 没改
         // 同名冲突：变量名全局唯一，重名会把引用指错
-        if (nm && window.Storage.getVars().some((v2, i2) => i2 !== idx && v2.name === nm)) {
-          alert('已存在同名变量「' + nm + '」，请换一个名字。');
-          name.value = oldName;
+        if (window.Storage.getVars().some((v2, i2) => i2 !== idx && v2.name === nm)) {
+          showStateRowError(row, '已存在同名变量「' + nm + '」。');
           name.focus();
           return;
         }
-        vars[idx].name = nm; window.Storage.saveVars(vars);
-        // 同步更新正文所有剧情块里对该变量的引用（{旧名} / <变量:旧名=…> / <玩家输入变量:旧名,…> / <选项:…,条件:旧名…> 条件）
-        if (oldName) {
-          const changed = renameVarEverywhere(oldName, nm);
-          if (changed) toast('已同步更新文本中 ' + changed + ' 处对该变量的「' + oldName + '」的引用');
+        const nextVars = vars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { name: nm } : {}));
+        const result = renameVarEverywhere(oldName, nm, nextVars);
+        if (!result.ok) {
+          showStateRowError(row, result.error);
+          name.focus();
+          return;
         }
+        window.Storage.saveVars(nextVars);
+        if (result.changed) toast('已同步更新 ' + result.changed + ' 个剧情块中对「' + oldName + '」的引用');
         renderVariableList(list); refreshTodo();
       };
       const type = document.createElement('select'); type.className = 'var-type';
-      [['number', '数字'], ['text', '文本'], ['boolean', '布尔']].forEach(([val, lab]) => {
+      [['number', '数字'], ['boolean', '是 / 否'], ['text', '文字']].forEach(([val, lab]) => {
         const o = document.createElement('option'); o.value = val; o.textContent = lab; if (v.type === val) o.selected = true; type.appendChild(o);
       });
       type.onchange = () => {
-        v.type = type.value;
-        if (v.type === 'boolean') v.value = (v.value === true || v.value === 'true');
-        else if (v.type === 'number') v.value = Number(v.value) || 0;
-        window.Storage.saveVars(vars); renderVariableList(list);
+        clearStateRowError(row);
+        const nextType = type.value;
+        const index = window.StoryVisualDoc.buildStateReferenceIndex(collectStateBlockMap(), vars);
+        const conflicts = window.StoryVisualDoc.findIncompatibleStateReferences(index, v.name, nextType);
+        if (conflicts.length) {
+          type.value = v.type;
+          showStateRowError(row, '不能改为「' + ({ number: '数字', boolean: '是 / 否', text: '文字' }[nextType]) + '」：' + formatStateReferences(conflicts));
+          return;
+        }
+        const nextVars = vars.map((item, itemIdx) => {
+          if (itemIdx !== idx) return Object.assign({}, item);
+          const next = Object.assign({}, item, { type: type.value });
+          if (next.type === 'boolean') next.value = (next.value === true || next.value === 'true');
+          else if (next.type === 'number') next.value = Number.isFinite(Number(next.value)) ? Number(next.value) : 0;
+          else next.value = next.value == null ? '' : String(next.value);
+          return next;
+        });
+        window.Storage.saveVars(nextVars); renderVariableList(list); refreshTodo();
       };
       const valWrap = document.createElement('div'); valWrap.className = 'var-val';
       function renderVal() {
@@ -2925,20 +3262,43 @@
           [['true', '真'], ['false', '假']].forEach(([val, lab]) => {
             const o = document.createElement('option'); o.value = val; o.textContent = lab; if (String(v.value) === val) o.selected = true; s.appendChild(o);
           });
-          s.onchange = () => { v.value = (s.value === 'true'); window.Storage.saveVars(vars); refreshTodo(); };
+          s.onchange = () => {
+            const nextVars = vars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { value: s.value === 'true' } : {}));
+            window.Storage.saveVars(nextVars); refreshTodo();
+          };
           valWrap.appendChild(s);
         } else {
           const inp = document.createElement('input'); inp.className = 'var-value';
           inp.type = (v.type === 'number') ? 'number' : 'text';
           inp.value = (v.value == null ? '' : v.value);
-          inp.onchange = () => { v.value = (v.type === 'number') ? Number(inp.value) : inp.value; window.Storage.saveVars(vars); refreshTodo(); };
+          inp.onchange = () => {
+            clearStateRowError(row);
+            if (v.type === 'number' && (inp.value.trim() === '' || !Number.isFinite(Number(inp.value)))) {
+              showStateRowError(row, '数字初值必须是有限数字。');
+              inp.focus();
+              return;
+            }
+            const value = v.type === 'number' ? Number(inp.value) : inp.value;
+            const nextVars = vars.map((item, itemIdx) => Object.assign({}, item, itemIdx === idx ? { value: value } : {}));
+            window.Storage.saveVars(nextVars); refreshTodo();
+          };
           valWrap.appendChild(inp);
         }
       }
       renderVal();
       const del = document.createElement('button'); del.className = 'var-del'; del.title = '删除变量'; del.type = 'button';
       del.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#ic-trash"/></svg>';
-      del.onclick = () => { vars.splice(idx, 1); window.Storage.saveVars(vars); renderVariableList(list); refreshTodo(); };
+      del.onclick = () => {
+        clearStateRowError(row);
+        const index = window.StoryVisualDoc.buildStateReferenceIndex(collectStateBlockMap(), vars);
+        const refs = index.byName[v.name] || [];
+        if (refs.length) {
+          showStateRowError(row, '变量正在被引用，不能删除：' + formatStateReferences(refs));
+          return;
+        }
+        const nextVars = vars.filter((_, itemIdx) => itemIdx !== idx);
+        window.Storage.saveVars(nextVars); renderVariableList(list); refreshTodo();
+      };
       row.appendChild(handle); row.appendChild(name); row.appendChild(type); row.appendChild(valWrap); row.appendChild(del);
       list.appendChild(row);
     });
@@ -3129,14 +3489,12 @@
     const edges = [];
     names.forEach((name) => {
       const raw = window.Storage.getBlockText(name) || '';
-      // 选项解析必须按行进行：extractOptionLine 以「行内最后一个 > 才算闭合」为边界，
-      // 跨整块多行文本会误把后续行（如 <停顿>）的 > 当作选项闭合符。
+      // 选项解析必须按行进行，避免跨行把后续指令当成标签内容。
       let lineOff = 0;
       raw.split(/\r?\n/).forEach((line) => {
-        for (const o of extractOptionLine(line)) {
+        for (const o of window.StoryOptions.extractOptionLine(line)) {
           if (!o.ok) continue;
-          const sp = splitOptionExtra(o.extra);
-          edges.push({ from: name, to: sp.block, label: o.text || '选项', charIndex: lineOff + o.index, kind: 'option' });
+          edges.push({ from: name, to: o.option.block, label: o.option.text || '选项', charIndex: lineOff + o.start, kind: 'option' });
         }
         lineOff += line.length + 1;
       });
@@ -3252,6 +3610,9 @@
   // 切换到某个剧情块编辑（先提交当前块文本）
   function switchBlock(name) {
     if (name === activeBlock) { renderLibrary(); updateBlockChip(); return; }
+    if (visualController) visualController.commitFocusedEditor();
+    if (visualController) visualController.resetContext();
+    clearTimeout(saveTimer); clearTimeout(histTimer);
     window.Storage.setBlockText(activeBlock, storyText.value);
     activeBlock = name;
     text = window.Storage.getBlockText(name) || '';
@@ -3267,9 +3628,10 @@
     refreshBlockReviewLine();
     renderReviewPanel();
     refreshReviewToggleBadge();
+    if (visualController && visualController.getMode() === 'visual') visualController.refresh();
   }
   // 在光标处插入「进入剧情块」指令
-  function insertBlockJump(name) { insertAtCursor('<剧情块:' + name + '>'); }
+  function insertBlockJump(name) { insertVisualOrSource('<剧情块:' + name + '>'); }
   // 在光标处（或指定字符偏移）插入「选项」指令，并把光标选中占位文字「文字」，方便直接覆盖
   function insertBlockOption(name, offset) {
     const ta = storyText; const st = ta.scrollTop;
@@ -3392,6 +3754,9 @@
   }
   async function handleDeleteBlock(name) {
     if (!confirm('确定删除剧情块「' + name + '」？\n注意：其它块里指向它的 <剧情块:名称> / <选项:...,名称> 会变成无效引用。')) return;
+    saveNow();
+    if (activeBlock === name && visualController) { visualController.commitFocusedEditor(); visualController.resetContext(); }
+    clearTimeout(saveTimer); clearTimeout(histTimer);
     window.Storage.deleteBlock(name);
     if (activeBlock === name) {
       activeBlock = MAIN_BLOCK;
@@ -3403,6 +3768,7 @@
     renderLibrary();
     refreshTodo();
     toast('已删除剧情块「' + name + '」');
+    if (visualController && visualController.getMode() === 'visual') visualController.refresh();
   }
 
   function renderBgCards(list, assets) {
@@ -3436,7 +3802,7 @@
     stop.draggable = true;
     stop.innerHTML = '<div class="asset-meta"><div class="asset-name"><svg class="ico" aria-hidden="true"><use href="#ic-stop"/></svg> 清除叠层</div>'
       + '<div class="asset-sub">插入 &lt;清除叠层&gt; 指令（移除当前叠层角色，回到纯背景）</div></div>';
-    stop.addEventListener('click', () => insertAtCursor('<清除叠层>'));
+    stop.addEventListener('click', () => insertVisualOrSource('<清除叠层>'));
     stop.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('application/x-asset', JSON.stringify({ kind: 'clearoverlay', name: '__CLEAR__' }));
       e.dataTransfer.effectAllowed = 'copy';
@@ -3619,6 +3985,231 @@
     return { r: parseInt(h.slice(1,3),16), g: parseInt(h.slice(3,5),16), b: parseInt(h.slice(5,7),16), a: 0.55 };
   }
 
+  // ===== Galgame 图片对话框预设（草稿始终只在弹窗内；点击「应用」才写入项目） =====
+  let galPresetDragCleanup = null;
+  let galPresetSession = 0;
+  function cloneGalPreset(value) { return value ? JSON.parse(JSON.stringify(value)) : null; }
+  function isSafeGalImageSrc(src) { return typeof src === 'string' && /^data:image\/(?:png|jpeg|webp|svg\+xml)(?:;[^,]*)?,/i.test(src) && !/[\r\n\f\\"]/.test(src); }
+  function galPanelBorder(panel) {
+    if (!panel || !isSafeGalImageSrc(panel.imageSrc) || !panel.slices) return '';
+    const s = panel.slices;
+    return 'url("' + panel.imageSrc.replace(/"/g, '%22') + '") ' + s.top + ' ' + s.right + ' ' + s.bottom + ' ' + s.left + ' fill / 1 / 0 stretch';
+  }
+  function fitGalPreviewBorders(el, slices) {
+    const fitted = ['top', 'right', 'bottom', 'left'].reduce(function(result, side) {
+      result[side] = Math.max(0, Number(slices[side]) || 0);
+      return result;
+    }, {});
+    if (!el || !el.classList.contains('gal-stretch-preview')) return fitted;
+    const width = el.getBoundingClientRect().width;
+    if (!(width > 0)) return fitted;
+    const ratio = 16 / 3;
+    const height = width / ratio;
+    const style = getComputedStyle(el);
+    const horizontalSpace = Math.max(0, width - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0) - 24);
+    const verticalSpace = Math.max(0, height - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0) - 24);
+    const scaleX = Math.min(1, horizontalSpace / Math.max(1, fitted.left + fitted.right));
+    const scaleY = Math.min(1, verticalSpace / Math.max(1, fitted.top + fitted.bottom));
+    fitted.left *= scaleX; fitted.right *= scaleX;
+    fitted.top *= scaleY; fitted.bottom *= scaleY;
+    return fitted;
+  }
+  function closeGalPresetManager() {
+    if (galPresetDragCleanup) galPresetDragCleanup();
+    galPresetSession++;
+    const modal = $('#gal-preset-manager');
+    if (modal) modal.classList.add('hidden');
+  }
+  function applyGalPanelPreview(el, panel, fallback, forceEnabled) {
+    if (!el) return;
+    if (panel && isSafeGalImageSrc(panel.imageSrc) && (forceEnabled || panel.enabled)) {
+      el.style.background = 'transparent';
+      el.style.borderImage = galPanelBorder(panel);
+      el.style.borderStyle = 'solid';
+      const s = panel.slices;
+      const previewSlices = fitGalPreviewBorders(el, s);
+      el.style.borderWidth = previewSlices.top + 'px ' + previewSlices.right + 'px ' + previewSlices.bottom + 'px ' + previewSlices.left + 'px';
+    } else {
+      el.style.borderImage = '';
+      el.style.borderStyle = '';
+      el.style.borderWidth = '';
+      el.style.background = fallback;
+    }
+  }
+  function applyGalPresetToProject(draft) {
+    if (!draft) return;
+    if (!isSafeGalImageSrc(draft.imageSrc)) { toast('对话框图片无效，未应用'); return; }
+    let snapshot;
+    try { snapshot = window.GalgameDialogue.createSnapshot(draft); }
+    catch (error) { toast(error.message || '预设无效'); return; }
+    saveAppearance({ galPanel: snapshot });
+    closeGalPresetManager();
+    renderAppearance();
+    toast('已应用对话框图片：' + snapshot.name);
+  }
+  async function openGalPresetManager() {
+    const modal = $('#gal-preset-manager');
+    const body = $('#gal-preset-manager-body');
+    if (!modal || !body || !window.GalgameDialogue || !window.Storage) return;
+    if (galPresetDragCleanup) galPresetDragCleanup();
+    const session = ++galPresetSession;
+    const builtins = window.GalgameDialogue.BUILTIN_PRESETS.map(cloneGalPreset);
+    let personal;
+    try { personal = await window.Storage.getAllDialoguePresets(); if (session !== galPresetSession) return; }
+    catch (error) { toast(error.message || '读取个人预设失败'); return; }
+    const project = getAppearance().galPanel ? [cloneGalPreset(getAppearance().galPanel)] : [];
+    let selectedScope = project.length ? 'project' : 'built-in';
+    let selected = project[0] || builtins[0] || null;
+    let draft = cloneGalPreset(selected);
+    let draftRevision = 0;
+    function replaceDraft(value) { draft = cloneGalPreset(value); draftRevision++; }
+    function selectedTargetId() { return selected ? (selected.id || selected.name || null) : null; }
+    function isCurrentGalPresetOperation(revision, targetId) { return session === galPresetSession && revision === draftRevision && selectedTargetId() === targetId; }
+    const safeName = value => escapeHtml(value || '未命名预设');
+    const selectedId = () => selected && (selected.id || selected.name);
+    function items(scope, list) {
+      return '<section class="gal-preset-scope" data-gal-preset-scope="' + scope + '"><h4>' + ({ 'built-in': '内置', personal: '我的预设', project: '当前项目' })[scope] + '</h4>' +
+        (list.length ? list.map(function(item) { const on = scope === selectedScope && selectedId() === (item.id || item.name); return '<button type="button" class="gal-preset-item' + (on ? ' active' : '') + '" data-gal-select="' + scope + '" data-gal-id="' + escapeHtml(item.id || item.name) + '">' + safeName(item.name) + '</button>'; }).join('') : '<p class="gal-preset-empty">暂无</p>') + '</section>';
+    }
+    function render() {
+      const draftSrc = draft && isSafeGalImageSrc(draft.imageSrc) ? draft.imageSrc : '';
+      body.innerHTML = '<div class="gal-preset-layout"><aside class="gal-preset-rail">' + items('built-in', builtins) + items('personal', personal) + items('project', project) +
+        '<button class="btn" type="button" id="gal-new-personal">新建个人预设</button></aside><main class="gal-preset-editor">' +
+        '<div class="gal-preset-toolbar"><input id="gal-preset-name" value="' + safeName(draft && draft.name) + '" aria-label="预设名称"><button class="btn" type="button" id="gal-copy-personal">复制为个人预设</button><button class="btn" type="button" id="gal-save-personal">保存个人预设</button><button class="btn" type="button" id="gal-rename-personal">重命名</button><button class="btn btn-ghost" type="button" id="gal-delete-personal">删除</button></div>' +
+        '<div class="gal-image-editor"><div class="gal-image-stage" id="gal-image-stage"><div class="gal-image-canvas" id="gal-image-canvas"><img id="gal-draft-image" src="' + escapeHtml(draftSrc) + '" alt="对话框图片切片编辑预览"></div></div><div class="gal-slice-inputs">' +
+          ['top','right','bottom','left'].map(function(side) { return '<label>' + side + '<input id="gal-slice-' + side + '" type="number" min="0" value="' + (draft ? draft.slices[side] : 0) + '"></label>'; }).join('') +
+        '</div></div><div class="gal-preview-pair"><div><small>预览</small><div id="gal-preview-desktop" class="gal-stretch-preview gal-stretch-desktop">示例对话文字</div></div></div>' +
+        '<div class="gal-preset-actions"><label class="btn">上传图片<input id="gal-upload-image" type="file" accept="image/png,image/jpeg,image/webp" hidden></label><label class="btn">导入 .jgpreset<input id="gal-import-preset" type="file" accept=".jgpreset,application/json" hidden></label><button class="btn" type="button" id="gal-export-preset">导出 .jgpreset</button><button class="btn btn-primary" type="button" id="gal-apply-preset">应用到本项目</button></div>' +
+        '<p class="gal-preset-hint">拖动图片上的四条线，或输入像素数调整九宫格切片。内置和个人预设只会成为草稿；应用后，项目保存独立快照。</p></main></div>';
+      bind(); updateDraftUI();
+    }
+    function normalize(active) {
+      if (!draft) return;
+      draft.slices = window.GalgameDialogue.normalizeSlices(draft.slices, draft.imageWidth, draft.imageHeight, active);
+    }
+    function updateDraftUI() {
+      if (!draft) return;
+      const name = $('#gal-preset-name'); if (name && document.activeElement !== name) name.value = draft.name || '';
+      ['top','right','bottom','left'].forEach(function(side) { const input = $('#gal-slice-' + side); if (input) input.value = draft.slices[side]; });
+      ['#gal-preview-desktop'].forEach(function(sel) { const el = $(sel); if (el) applyGalPanelPreview(el, draft, 'rgba(0,0,0,.55)', true); });
+      const stage = $('#gal-image-stage'); const canvas = $('#gal-image-canvas'); const image = $('#gal-draft-image');
+      if (!stage || !canvas || !image) return;
+      canvas.querySelectorAll('.gal-slice-guide').forEach(function(el) { el.remove(); });
+      if (!image.complete || !image.naturalWidth) return;
+      const rect = image.getBoundingClientRect(), sx = rect.width / draft.imageWidth, sy = rect.height / draft.imageHeight;
+      [['top', draft.slices.top * sy, 'y'], ['bottom', rect.height - draft.slices.bottom * sy, 'y'], ['left', draft.slices.left * sx, 'x'], ['right', rect.width - draft.slices.right * sx, 'x']].forEach(function(info) {
+        const guide = document.createElement('button'); guide.type = 'button'; guide.className = 'gal-slice-guide gal-slice-' + info[0]; guide.dataset.side = info[0];
+        if (info[2] === 'y') guide.style.top = (info[1] / rect.height * 100) + '%'; else guide.style.left = (info[1] / rect.width * 100) + '%';
+        canvas.appendChild(guide);
+      });
+      canvas.querySelectorAll('.gal-slice-guide').forEach(function(guide) { guide.addEventListener('pointerdown', startDrag); });
+    }
+    function startDrag(event) {
+      const side = event.currentTarget.dataset.side, image = $('#gal-draft-image'); if (!image || !draft) return;
+      if (galPresetDragCleanup) galPresetDragCleanup();
+      const pointerId = event.pointerId;
+      event.preventDefault(); event.currentTarget.setPointerCapture && event.currentTarget.setPointerCapture(event.pointerId);
+      const move = function(e) { if (e.pointerId !== pointerId) return; const rect = image.getBoundingClientRect(); let value;
+        if (side === 'top') value = (e.clientY - rect.top) / rect.height * draft.imageHeight;
+        else if (side === 'bottom') value = (rect.bottom - e.clientY) / rect.height * draft.imageHeight;
+        else if (side === 'left') value = (e.clientX - rect.left) / rect.width * draft.imageWidth;
+        else value = (rect.right - e.clientX) / rect.width * draft.imageWidth;
+        draft.slices[side] = Math.round(value); normalize(side); updateDraftUI(); };
+      const end = function(e) { if (e && e.pointerId !== pointerId) return; document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', end); document.removeEventListener('pointercancel', end); galPresetDragCleanup = null; };
+      galPresetDragCleanup = end; document.addEventListener('pointermove', move); document.addEventListener('pointerup', end); document.addEventListener('pointercancel', end);
+    }
+    async function savePersonal(forceNew) {
+      if (!draft) return;
+      draft.name = ($('#gal-preset-name').value || '').trim() || '未命名预设';
+      const next = cloneGalPreset(draft); if (forceNew || selectedScope !== 'personal') delete next.id;
+      const revision = draftRevision;
+      const targetId = selected ? (selected.id || selected.name || null) : null;
+      try {
+        const id = await window.Storage.saveDialoguePreset(next);
+        if (!isCurrentGalPresetOperation(revision, targetId)) return;
+        personal = await window.Storage.getAllDialoguePresets();
+        if (!isCurrentGalPresetOperation(revision, targetId)) return;
+        selectedScope = 'personal'; selected = personal.find(function(p) { return p.id === id; }) || Object.assign({}, next, { id: id }); replaceDraft(selected); render(); toast('个人预设已保存');
+      }
+      catch (error) { toast(error.message || '保存失败'); }
+    }
+    function decodeImage(src) { return new Promise(function(resolve, reject) { const img = new Image(); img.onload = function() { resolve({ width: img.naturalWidth, height: img.naturalHeight }); }; img.onerror = reject; img.src = src; }); }
+    function bind() {
+      body.querySelectorAll('[data-gal-select]').forEach(function(button) { button.addEventListener('click', function() { const scope = this.dataset.galSelect, id = this.dataset.galId; const source = (scope === 'built-in' ? builtins : scope === 'personal' ? personal : project).find(function(p) { return String(p.id || p.name) === id; }); if (source) { selectedScope = scope; selected = source; replaceDraft(source); render(); } }); });
+      $('#gal-preset-name').addEventListener('input', function() { if (draft) { draft.name = this.value; draftRevision++; } });
+      ['top','right','bottom','left'].forEach(function(side) { $('#gal-slice-' + side).addEventListener('input', function() { if (!draft) return; draft.slices[side] = this.value; normalize(side); draftRevision++; updateDraftUI(); }); });
+      $('#gal-draft-image').addEventListener('load', updateDraftUI);
+      $('#gal-new-personal').addEventListener('click', function() { const base = cloneGalPreset(builtins[0]); base.name = '新建对话框'; delete base.id; selectedScope = 'personal'; selected = null; replaceDraft(base); render(); });
+      $('#gal-copy-personal').addEventListener('click', function() { savePersonal(true); });
+      $('#gal-save-personal').addEventListener('click', function() { savePersonal(false); });
+      $('#gal-rename-personal').addEventListener('click', async function() {
+        if (selectedScope !== 'personal' || !selected || !selected.id) { toast('请选择个人预设'); return; }
+        const name = window.prompt('预设名称', draft.name || ''); if (name == null) return;
+        const revision = draftRevision;
+        const targetId = selected.id;
+        try {
+          await window.Storage.renameDialoguePreset(targetId, name);
+          if (!isCurrentGalPresetOperation(revision, targetId)) return;
+          personal = await window.Storage.getAllDialoguePresets();
+          if (!isCurrentGalPresetOperation(revision, targetId)) return;
+          const renamed = personal.find(function(p) { return p.id === targetId; }); if (!renamed) { toast('预设已不存在'); return; }
+          selected = renamed; replaceDraft(selected); render();
+        } catch (error) { toast(error.message || '重命名失败'); }
+      });
+      $('#gal-delete-personal').addEventListener('click', async function() {
+        if (selectedScope !== 'personal' || !selected || !selected.id) { toast('内置和项目快照不能删除'); return; }
+        if (!window.confirm('删除这个个人预设？')) return;
+        const revision = draftRevision;
+        const targetId = selected.id;
+        try {
+          await window.Storage.deleteDialoguePreset(targetId);
+          if (!isCurrentGalPresetOperation(revision, targetId)) return;
+          personal = await window.Storage.getAllDialoguePresets();
+          if (!isCurrentGalPresetOperation(revision, targetId)) return;
+          selectedScope = 'built-in'; selected = builtins[0]; replaceDraft(selected); render();
+        } catch (error) { toast(error.message || '删除失败'); }
+      });
+      $('#gal-upload-image').addEventListener('change', async function() {
+        const file = this.files && this.files[0]; if (!file) return;
+        if (!/^image\/(png|jpeg|webp)$/i.test(file.type || '')) { toast('仅支持 PNG、JPEG、WebP 图片'); return; }
+        const revision = ++draftRevision;
+        const uploadSession = session;
+        try {
+          const src = await readFileAsDataUrl(file); const size = await decodeImage(src);
+          if (uploadSession !== galPresetSession || revision !== draftRevision) return;
+          if (!isSafeGalImageSrc(src)) throw new Error('图片格式无效');
+          draft.imageSrc = src; draft.imageWidth = size.width; draft.imageHeight = size.height;
+          draft.slices = window.GalgameDialogue.normalizeSlices({}, size.width, size.height); draftRevision++; updateDraftUI();
+        } catch (error) { if (uploadSession === galPresetSession && revision === draftRevision) toast('图片无法读取，请换一张图片'); }
+      });
+      $('#gal-import-preset').addEventListener('change', function() {
+        const file = this.files && this.files[0]; if (!file) return;
+        const revision = ++draftRevision;
+        const importSession = session;
+        const reader = new FileReader();
+        reader.onload = async function() {
+          try {
+            if (importSession !== galPresetSession || revision !== draftRevision) return;
+            const incoming = window.GalgameDialogue.parsePreset(reader.result);
+            if (!isSafeGalImageSrc(incoming.imageSrc)) { toast('导入预设图片无效'); return; }
+            delete incoming.id;
+            const id = await window.Storage.saveDialoguePreset(incoming);
+            if (importSession !== galPresetSession || revision !== draftRevision) return;
+            personal = await window.Storage.getAllDialoguePresets();
+            if (importSession !== galPresetSession || revision !== draftRevision) return;
+            selectedScope = 'personal'; selected = personal.find(function(p) { return p.id === id; }); replaceDraft(selected); render(); toast('预设已导入');
+          } catch (error) { if (importSession === galPresetSession && revision === draftRevision) toast(error.message || '导入失败'); }
+        };
+        reader.onerror = function() { if (importSession === galPresetSession && revision === draftRevision) toast('文件读取失败'); };
+        reader.readAsText(file);
+      });
+      $('#gal-export-preset').addEventListener('click', function() { try { const blob = new Blob([window.GalgameDialogue.serializePreset(draft)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = (draft.name || 'galgame') + '.jgpreset'; a.click(); setTimeout(function() { URL.revokeObjectURL(url); }, 0); } catch (error) { toast(error.message || '导出失败'); } });
+      $('#gal-apply-preset').addEventListener('click', function() { applyGalPresetToProject(draft); });
+    }
+    modal.classList.remove('hidden'); render();
+    const close = $('#gal-preset-close'); if (close) close.onclick = closeGalPresetManager;
+  }
+
   // ===== 设置：外观（游戏整体默认外观覆盖）=====
   function renderAppearance() {
     const box = $('#settings-appearance');
@@ -3640,33 +4231,70 @@
     const optHtml = FONT_PRESETS.map(o => '<option value="' + escapeHtml(o[0]) + '"' + (ap.bodyFont === o[0] ? ' selected' : '') + '>' + escapeHtml(o[1]) + '</option>').join('');
     const optTitle = FONT_PRESETS.map(o => '<option value="' + escapeHtml(o[0]) + '"' + (ap.titleFont === o[0] ? ' selected' : '') + '>' + escapeHtml(o[1]) + '</option>').join('');
     const optDivider = FONT_PRESETS.map(o => '<option value="' + escapeHtml(o[0]) + '"' + (ap.dividerFont === o[0] ? ' selected' : '') + '>' + escapeHtml(o[1]) + '</option>').join('');
+    const wmText = wm.text || '';
+    const wmOpacity = wm.opacity || 40;
     box.innerHTML =
       '<div class="ai-section">' +
         '<h4><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>游戏整体外观 <span class="ai-sub-tip">统一覆盖全部剧情块</span></h4>' +
-        '<div class="ai-hint">设置默认外观，覆盖试玩与导出成品。</div>' +
-        '<div class="field"><label>正文字号 <span id="ap-fs-val">' + ap.fontSize + 'px</span></label>' +
-          '<input type="range" id="ap-fontsize" min="14" max="32" step="1" value="' + ap.fontSize + '"></div>' +
-        '<div class="field"><label>浮动标题字体</label><select id="ap-titlefont">' + optTitle + '</select></div>' +
-        '<div class="field"><label>正文字体</label><select id="ap-bodyfont">' + optHtml + '</select></div>' +
-        '<div class="field"><label>分割线字体</label><select id="ap-dividerfont">' + optDivider + '</select></div>' +
-        '<div class="field"><label>浮动标题默认颜色</label>' +
-          '<div style="display:flex;align-items:center;gap:10px">' +
-            '<input type="color" id="ap-titlecolor" value="' + (ap.titleColor ? toHexColor(ap.titleColor) : '#ffffff') + '" style="width:42px;height:30px;border:0;background:none;cursor:pointer;padding:0">' +
-            '<input type="text" id="ap-titlecolor-text" value="' + escapeHtml(ap.titleColor || '') + '" style="flex:1;min-width:0" placeholder="留空=默认白色 #fff">' +
-          '</div></div>' +
-        '<div class="field"><label>Galgame 底框色</label>' +
-          '<div style="display:flex;align-items:center;gap:10px">' +
-            '<input type="color" id="ap-galbox" value="' + toHexColor(ap.galBoxColor) + '" style="width:42px;height:30px;border:0;background:none;cursor:pointer;padding:0">' +
-            '<input type="text" id="ap-galbox-text" value="' + escapeHtml(ap.galBoxColor) + '" style="flex:1;min-width:0" placeholder="rgba(0,0,0,0.55)">' +
-          '</div></div>' +
-        '<div class="field"><label>Galgame 底框透明度 <span id="ap-galop-val">' + Math.round(galBoxParts(ap.galBoxColor).a * 100) + '%</span></label>' +
-          '<input type="range" id="ap-galop" min="10" max="100" step="1" value="' + Math.round(galBoxParts(ap.galBoxColor).a * 100) + '"></div>' +
+        '<div class="ai-hint">点击下方预览框中的元素（标题 / 正文 / 分割线 / Galgame 对话框 / 水印），只显示对应的设置；点击预览框空白处收起。</div>' +
+        '<div class="ap-preview-row">' +
+          '<div class="ap-preview ap-preview-long" data-preview-zone="long">' +
+            '<div class="ap-prev-overlay ap-edit-target" data-edit="overlay" id="ap-prev-overlay-long"' + (window.OVERLAY_SAMPLE_DATA ? ' style="background-image:url(&quot;' + window.OVERLAY_SAMPLE_DATA + '&quot;)"' : '') + '></div>' +
+            '<div class="ap-edit-target ap-prev-title" data-edit="title" id="ap-prev-title">第一章 · 启程</div>' +
+            '<div class="ap-edit-target ap-msg" data-edit="body" id="ap-prev-long">这是长文模式的示例正文，用来预览正文字体与字号的整体观感。</div>' +
+            '<div class="ap-edit-target ap-prev-divider" data-edit="divider"><span class="divider-line"></span><span class="divider-text" id="ap-prev-divider">分隔小标题</span><span class="divider-line"></span></div>' +
+            '<div class="ap-prev-wm ap-edit-target" data-edit="wm" id="ap-prev-wm-long">' + escapeHtml(wmText || '水印') + '</div>' +
+          '</div>' +
+          '<div class="ap-preview ap-preview-gal" data-preview-zone="gal">' +
+            '<div class="ap-prev-overlay ap-edit-target" data-edit="overlay" id="ap-prev-overlay-gal"' + (window.OVERLAY_SAMPLE_DATA ? ' style="background-image:url(&quot;' + window.OVERLAY_SAMPLE_DATA + '&quot;)"' : '') + '></div>' +
+            '<div class="ap-edit-target ap-galbox" data-edit="galbox" id="ap-prev-gal"><div class="ap-msg ap-edit-target" data-edit="body" id="ap-prev-gal-msg">这是 Galgame 底部对话框的示例文字，底框颜色可点击编辑。</div></div>' +
+            '<div class="ap-prev-wm ap-edit-target" data-edit="wm" id="ap-prev-wm-gal">' + escapeHtml(wmText || '水印') + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ap-settings-panel">' +
+          '<div class="ap-active-label" id="ap-active-label">点击预览框中的元素开始编辑</div>' +
+          '<div class="field" data-groups="body"><label>正文字号 <span id="ap-fs-val">' + ap.fontSize + 'px</span></label>' +
+            '<input type="range" id="ap-fontsize" min="14" max="32" step="1" value="' + ap.fontSize + '"></div>' +
+          '<div class="field" data-groups="body title"><label>浮动标题字体</label><select id="ap-titlefont">' + optTitle + '</select></div>' +
+          '<div class="field" data-groups="body"><label>正文字体</label><select id="ap-bodyfont">' + optHtml + '</select></div>' +
+          '<div class="field" data-groups="title"><label>浮动标题默认颜色</label>' +
+            '<div style="display:flex;align-items:center;gap:10px">' +
+              '<input type="color" id="ap-titlecolor" value="' + (ap.titleColor ? toHexColor(ap.titleColor) : '#ffffff') + '" style="width:42px;height:30px;border:0;background:none;cursor:pointer;padding:0">' +
+              '<input type="text" id="ap-titlecolor-text" value="' + escapeHtml(ap.titleColor || '') + '" style="flex:1;min-width:0" placeholder="留空=默认白色 #fff">' +
+            '</div></div>' +
+          '<div class="field" data-groups="divider"><label>分割线字体</label><select id="ap-dividerfont">' + optDivider + '</select></div>' +
+          '<div class="field" data-groups="galbox"><label>Galgame 底框色</label>' +
+            '<div style="display:flex;align-items:center;gap:10px">' +
+              '<input type="color" id="ap-galbox" value="' + toHexColor(ap.galBoxColor) + '" style="width:42px;height:30px;border:0;background:none;cursor:pointer;padding:0">' +
+              '<input type="text" id="ap-galbox-text" value="' + escapeHtml(ap.galBoxColor) + '" style="flex:1;min-width:0" placeholder="rgba(0,0,0,0.55)">' +
+            '</div></div>' +
+          '<div class="field" data-groups="galbox"><label>Galgame 底框透明度 <span id="ap-galop-val">' + Math.round(galBoxParts(ap.galBoxColor).a * 100) + '%</span></label>' +
+            '<input type="range" id="ap-galop" min="10" max="100" step="1" value="' + Math.round(galBoxParts(ap.galBoxColor).a * 100) + '"></div>' +
+          '<div class="field ap-galpanel-field" data-groups="galbox"><label><input id="ap-galpanel-enabled" type="checkbox"' + (ap.galPanel && ap.galPanel.enabled ? ' checked' : '') + '> 使用图片对话框</label>' +
+            '<span class="ap-galpanel-current">' + (ap.galPanel ? (isSafeGalImageSrc(ap.galPanel.imageSrc) ? '<img src="' + escapeHtml(ap.galPanel.imageSrc) + '" alt="">' : '') + '<span>' + escapeHtml(ap.galPanel.name) + '</span>' : '<span>未选择（使用上方颜色）</span>') + '</span>' +
+            '<button class="btn" type="button" id="ap-open-gal-presets">管理图片预设</button></div>' +
+          '<div class="ai-hint" data-groups="galbox">图片对话框未启用时继续使用底框色和透明度；应用图片后会保存独立快照。</div>' +
+          '<div class="field" data-groups="wm"><label>水印文字</label><input type="text" id="wm-text" value="' + escapeHtml(wmText) + '" placeholder="水印文字（留空=不显示）"></div>' +
+          '<div class="field" data-groups="wm"><label>水印位置</label><select id="wm-pos">' +
+            ['左上','右上','左下','右下'].map(function(p){ return '<option value="' + p + '"' + (wm.pos===p?' selected':'') + '>' + p + '</option>'; }).join('') +
+          '</select></div>' +
+          '<div class="field" data-groups="wm"><label>水印不透明度 <span id="wm-op-val">' + wmOpacity + '%</span></label>' +
+            '<input type="range" id="wm-opacity" min="10" max="100" value="' + wmOpacity + '"></div>' +
+          '<div class="field" data-groups="overlay"><label><input id="ap-ov-shadow-enabled" type="checkbox"' + (ap.overlayShadow && ap.overlayShadow.enabled ? ' checked' : '') + '> 叠层投影</label>' +
+            '<span class="ai-sub-tip">给叠层（透明 PNG 角色/物件）加柔和阴影，使其从背景中浮出</span></div>' +
+          '<div class="field" data-groups="overlay"><label>投影模糊 <span id="ap-ov-blur-val">' + ((ap.overlayShadow && ap.overlayShadow.blur) || 18) + 'px</span></label>' +
+            '<input type="range" id="ap-ov-blur" min="0" max="60" step="1" value="' + ((ap.overlayShadow && ap.overlayShadow.blur) || 18) + '"></div>' +
+          '<div class="field" data-groups="overlay"><label>投影距离 <span id="ap-ov-dist-val">' + ((ap.overlayShadow && ap.overlayShadow.dist) || 10) + 'px</span></label>' +
+            '<input type="range" id="ap-ov-dist" min="0" max="40" step="1" value="' + ((ap.overlayShadow && ap.overlayShadow.dist) || 10) + '"></div>' +
+          '<div class="field" data-groups="overlay"><label>投影不透明度 <span id="ap-ov-op-val">' + ((ap.overlayShadow && ap.overlayShadow.opacity) || 45) + '%</span></label>' +
+            '<input type="range" id="ap-ov-op" min="0" max="90" step="1" value="' + ((ap.overlayShadow && ap.overlayShadow.opacity) || 45) + '"></div>' +
+        '</div>' +
       '</div>' +
       '<div class="ai-section">' +
         '<h4><svg class="ico" aria-hidden="true"><use href="#ic-image"/></svg> 开场背景</h4>' +
         '<div class="field"><label>开场背景图案</label>' +
           '<select id="gs-opening"><option value="">（使用默认深色开场）</option></select>' +
-          (globalSettings.openingBg ? (String(globalSettings.openingBg).indexOf('data:') === 0 ? ' <span style="font-size:12px;color:#8b96a8">（旧版上传图，仍生效）</span>' : ' <span style="font-size:12px;color:#88c0ff">已选择：' + escapeHtml(globalSettings.openingBg) + '</span>') : ' <span style="font-size:12px;color:#8b96a8">（从素材库的背景中选取；留空=默认深色开场）</span>') + '</div>' +
+          (globalSettings.openingBg ? (String(globalSettings.openingBg).indexOf('data:') === 0 ? ' <span style="font-size:12px;color:#8b96a8">（旧版上传图，仍生效）</span>' : ' <span style="font-size:12px;color:#88c0ff">已选择：' + escapeHtml(globalSettings.openingBg) + '</span>') : ' <span style="font-size:12px;color:#8b96a8">（从素材库的背景中选取；留空=默认深色开场，预览框同步显示）</span>') + '</div>' +
         (globalSettings.openingBg && String(globalSettings.openingBg).indexOf('data:') === 0 ? '<div class="field"><img id="gs-opening-preview" src="' + globalSettings.openingBg + '" style="max-width:140px;max-height:80px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);object-fit:cover"></div>' : '') +
       '</div>' +
       '<div class="ai-section">' +
@@ -3675,29 +4303,8 @@
         '<div class="field"><label>保护强度</label><select id="gs-textcontrast">' +
           [['off','关（保持原样）'],['auto','自动（选字色 + 调亮暗背景，默认）']].map(function(o){ return '<option value="' + o[0] + '"' + (globalSettings.textContrast === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></div>' +
-      '</div>' +
-      '<div class="ai-section">' +
-        '<h4><svg class="ico" aria-hidden="true"><use href="#ic-lock"/></svg> 水印设置</h4>' +
-        '<div class="field"><label>文字</label><input type="text" id="wm-text" value="' + escapeHtml(wm.text) + '" placeholder="水印文字（留空=不显示）"></div>' +
-        '<div class="field"><label>位置</label><select id="wm-pos">' +
-          ['左上','右上','左下','右下'].map(function(p){ return '<option value="' + p + '"' + (wm.pos===p?' selected':'') + '>' + p + '</option>'; }).join('') +
-        '</select></div>' +
-        '<div class="field"><label>不透明度</label><input type="range" id="wm-opacity" min="10" max="100" value="' + (wm.opacity || 40) + '"><span id="wm-op-val" style="font-size:12px;color:#9aa3b2;min-width:30px">' + (wm.opacity || 40) + '%</span></div>' +
-      '</div>' +
-      '<div class="ai-section">' +
-        '<h4><svg class="ico" aria-hidden="true"><use href="#ic-eye"/></svg>实时预览</h4>' +
-        '<div class="ai-hint">左长文 / 右 Galgame，改设置即时反映。</div>' +
-        '<div class="ap-preview-row">' +
-          '<div class="ap-preview ap-preview-long">' +
-            '<div class="ap-prev-title" id="ap-prev-title">第一章 · 启程</div>' +
-            '<div class="ap-msg" id="ap-prev-long">这是长文模式的示例正文，用来预览正文字体与字号的整体观感。</div>' +
-            '<div class="ap-prev-divider"><span class="divider-line"></span><span class="divider-text" id="ap-prev-divider">分隔小标题</span><span class="divider-line"></span></div>' +
-          '</div>' +
-          '<div class="ap-preview ap-preview-gal">' +
-            '<div class="ap-galbox" id="ap-prev-gal"><div class="ap-msg" id="ap-prev-gal-msg">这是 Galgame 底部对话框的示例文字，底框颜色可在上方调整。</div></div>' +
-          '</div>' +
-        '</div>' +
       '</div>';
+    const apActive = { group: null };
     function applyPreview() {
       const a = getAppearance();
       const fs = (a.fontSize || 20) + 'px';
@@ -3709,9 +4316,42 @@
       if (div) div.style.fontFamily = a.dividerFont || 'inherit';
       const galBox = $('#ap-prev-gal');
       const galMsg = $('#ap-prev-gal-msg');
-      if (galBox) galBox.style.background = a.galBoxColor;
+      if (galBox) applyGalPanelPreview(galBox, a.galPanel, a.galBoxColor);
       if (galMsg) { galMsg.style.fontFamily = a.bodyFont || 'inherit'; galMsg.style.fontSize = fs; }
+      const gw = globalSettings.watermark;
+      ['long','gal'].forEach(function(zone) {
+        const el = $('#ap-prev-wm-' + zone);
+        if (!el) return;
+        if (gw && gw.text) { el.textContent = gw.text; el.style.opacity = (gw.opacity || 40) / 100; el.style.display = ''; }
+        else { el.style.display = 'none'; }
+        const posMap = { '左上':['top','12px','left','16px'], '右上':['top','12px','right','16px'], '左下':['bottom','12px','left','16px'], '右下':['bottom','12px','right','16px'] };
+        const p = posMap[gw && gw.pos] || posMap['右下'];
+        el.style[p[0]] = p[1]; el.style[p[2]] = p[3];
+        el.style.top = p[0] === 'top' ? p[1] : ''; el.style.bottom = p[0] === 'bottom' ? p[1] : '';
+        el.style.left = p[2] === 'left' ? p[3] : ''; el.style.right = p[2] === 'right' ? p[3] : '';
+      });
+      const os = a.overlayShadow || {};
+      const ovFilter = (os.enabled)
+        ? 'drop-shadow(' + (typeof os.dist === 'number' ? os.dist : 10) + 'px ' + (typeof os.dist === 'number' ? os.dist : 10) + 'px ' + (typeof os.blur === 'number' ? os.blur : 18) + 'px rgba(0,0,0,' + ((typeof os.opacity === 'number' ? os.opacity : 45) / 100) + '))'
+        : 'none';
+      box.querySelectorAll('.ap-prev-overlay').forEach(function(el) { el.style.filter = ovFilter; });
     }
+    function setActiveGroup(group) {
+      apActive.group = group;
+      const label = { title: '浮动标题', body: '正文', divider: '分割线', galbox: 'Galgame 对话框', wm: '水印', overlay: '叠层' }[group] || '';
+      const lbl = $('#ap-active-label');
+      if (lbl) lbl.textContent = label ? ('正在编辑：' + label) : '点击预览框中的元素开始编辑';
+      box.querySelectorAll('[data-groups]').forEach(function(el) {
+        el.style.display = (!group || (el.getAttribute('data-groups') || '').split(' ').indexOf(group) >= 0) ? '' : 'none';
+      });
+      box.querySelectorAll('[data-edit]').forEach(function(el) { el.classList.toggle('ap-edit-active', el.getAttribute('data-edit') === group); });
+    }
+    box.querySelectorAll('[data-edit]').forEach(function(el) {
+      el.addEventListener('click', function(e) { e.stopPropagation(); setActiveGroup(this.getAttribute('data-edit')); });
+    });
+    box.querySelectorAll('[data-preview-zone]').forEach(function(zone) {
+      zone.addEventListener('click', function() { setActiveGroup(null); });
+    });
     function galParts() { return galBoxParts(getAppearance().galBoxColor); }
     function setGal(r,g,b,a){ return 'rgba(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ',' + a + ')'; }
     box.querySelector('#ap-fontsize').addEventListener('input', function() { $('#ap-fs-val').textContent = this.value + 'px'; saveAppearance({ fontSize: parseInt(this.value, 10) }); applyPreview(); });
@@ -3729,6 +4369,14 @@
     galColor.addEventListener('input', function() { const p = galParts(); const nc = toHexColor(this.value); const r=parseInt(nc.slice(1,3),16),g=parseInt(nc.slice(3,5),16),b=parseInt(nc.slice(5,7),16); const rgba=setGal(r,g,b,p.a); galText.value=rgba; galOp.value=Math.round(p.a*100); galOpVal.textContent=Math.round(p.a*100)+'%'; saveAppearance({ galBoxColor: rgba }); applyPreview(); });
     galText.addEventListener('input', function() { const v=this.value.trim(); if(!v) return; const p=galBoxParts(v); galColor.value=toHexColor(v); galOp.value=Math.round(p.a*100); galOpVal.textContent=Math.round(p.a*100)+'%'; saveAppearance({ galBoxColor: v }); applyPreview(); });
     galOp.addEventListener('input', function() { const p=galParts(); const a=parseInt(this.value,10)/100; const rgba=setGal(p.r,p.g,p.b,a); galText.value=rgba; galOpVal.textContent=this.value+'%'; saveAppearance({ galBoxColor: rgba }); applyPreview(); });
+    const galPanelEnabled = box.querySelector('#ap-galpanel-enabled');
+    if (galPanelEnabled) galPanelEnabled.addEventListener('change', function() {
+      if (!this.checked) { saveAppearance({ galPanel: Object.assign({}, getAppearance().galPanel, { enabled: false }) }); applyPreview(); toast('已改用 Galgame 底框色'); }
+      else if (getAppearance().galPanel) { saveAppearance({ galPanel: Object.assign({}, getAppearance().galPanel, { enabled: true }) }); applyPreview(); }
+      else { this.checked = false; openGalPresetManager(); }
+    });
+    const galOpenPresets = box.querySelector('#ap-open-gal-presets');
+    if (galOpenPresets) galOpenPresets.addEventListener('click', openGalPresetManager);
     // 开场背景（从通用迁入）
     const obSel = box.querySelector('#gs-opening');
     if (obSel) {
@@ -3738,6 +4386,18 @@
           if (a && a.name) opts.push('<option value="' + escapeHtml(a.name) + '"' + (globalSettings.openingBg === a.name ? ' selected' : '') + '>' + escapeHtml(a.name) + '</option>');
         });
         obSel.innerHTML = opts.join('');
+        // 同步到预览框背景：素材名按名解析 src/纯色；旧版 data: 直链直接用。图片上叠深色渐变保证文字可读。
+        function setZoneBackground(z, src, color) {
+          if (src) { z.style.backgroundImage = 'linear-gradient(rgba(10,12,18,0.62), rgba(10,12,18,0.62)), url("' + src + '")'; z.style.backgroundSize = 'cover'; z.style.backgroundPosition = 'center'; }
+          else if (color) { z.style.backgroundImage = ''; z.style.backgroundColor = color; }
+        }
+        const bg = globalSettings.openingBg;
+        if (bg && String(bg).indexOf('data:') === 0) {
+          box.querySelectorAll('[data-preview-zone]').forEach(function(z) { setZoneBackground(z, bg, ''); });
+        } else if (bg) {
+          const hit = (list || []).find(function(a) { return a && a.name === bg; });
+          if (hit) box.querySelectorAll('[data-preview-zone]').forEach(function(z) { setZoneBackground(z, hit.src || '', (hit.kind === 'solid' && hit.color) ? hit.color : ''); });
+        }
       }).catch(function() {});
       obSel.addEventListener('change', function() {
         globalSettings.openingBg = this.value; saveGlobal();
@@ -3747,9 +4407,21 @@
     }
     const tcSel = box.querySelector('#gs-textcontrast');
     if (tcSel) tcSel.addEventListener('change', function() { globalSettings.textContrast = this.value; saveGlobal(); toast('文字对比度保护：' + this.options[this.selectedIndex].text); });
-    box.querySelector('#wm-text').addEventListener('input', function() { globalSettings.watermark.text = this.value; saveGlobal(); });
-    box.querySelector('#wm-pos').addEventListener('change', function() { globalSettings.watermark.pos = this.value; saveGlobal(); });
-    box.querySelector('#wm-opacity').addEventListener('input', function() { globalSettings.watermark.opacity = parseInt(this.value); box.querySelector('#wm-op-val').textContent = this.value + '%'; saveGlobal(); });
+    box.querySelector('#wm-text').addEventListener('input', function() { globalSettings.watermark.text = this.value; saveGlobal(); applyPreview(); });
+    box.querySelector('#wm-pos').addEventListener('change', function() { globalSettings.watermark.pos = this.value; saveGlobal(); applyPreview(); });
+    box.querySelector('#wm-opacity').addEventListener('input', function() { globalSettings.watermark.opacity = parseInt(this.value); box.querySelector('#wm-op-val').textContent = this.value + '%'; saveGlobal(); applyPreview(); });
+    // 叠层投影
+    function curOverlayShadow() { return Object.assign({ enabled: false, blur: 18, dist: 10, opacity: 45 }, getAppearance().overlayShadow || {}); }
+    function saveOverlayShadow(patch) { saveAppearance({ overlayShadow: Object.assign(curOverlayShadow(), patch) }); applyPreview(); }
+    const ovEnabled = box.querySelector('#ap-ov-shadow-enabled');
+    if (ovEnabled) ovEnabled.addEventListener('change', function() { saveOverlayShadow({ enabled: this.checked }); });
+    const ovBlur = box.querySelector('#ap-ov-blur');
+    if (ovBlur) ovBlur.addEventListener('input', function() { box.querySelector('#ap-ov-blur-val').textContent = this.value + 'px'; saveOverlayShadow({ blur: parseInt(this.value, 10) }); });
+    const ovDist = box.querySelector('#ap-ov-dist');
+    if (ovDist) ovDist.addEventListener('input', function() { box.querySelector('#ap-ov-dist-val').textContent = this.value + 'px'; saveOverlayShadow({ dist: parseInt(this.value, 10) }); });
+    const ovOp = box.querySelector('#ap-ov-op');
+    if (ovOp) ovOp.addEventListener('input', function() { box.querySelector('#ap-ov-op-val').textContent = this.value + '%'; saveOverlayShadow({ opacity: parseInt(this.value, 10) }); });
+    setActiveGroup(null);
     applyPreview();
   }
 
@@ -3814,7 +4486,7 @@
       card.draggable = true;
       card.innerHTML = '<div class="asset-meta"><div class="asset-name"><svg class="ico" aria-hidden="true"><use href="#ic-stop"/></svg> 停止音乐</div>'
         + '<div class="asset-sub">插入 &lt;停止音乐&gt; 指令（3 秒内渐出当前音乐）</div></div>';
-      card.addEventListener('click', () => insertAtCursor('<停止音乐>'));
+      card.addEventListener('click', () => insertVisualOrSource('<停止音乐>'));
       card.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('application/x-asset', JSON.stringify({ kind: 'stopmusic', name: '__STOP__' }));
         e.dataTransfer.effectAllowed = 'copy';
@@ -3935,14 +4607,16 @@
       try {
         if (info.kind === 'item') {
           const str = '<召唤物品:' + info.name + ',"">';
-          if (imeLock && pendingInsertOffset != null) insertAtOffset(str, pendingInsertOffset, 2);
-          else insertAtCursor(str, 2);
+          if (visualController && visualController.getMode() === 'visual') insertVisualOrSource(str);
+          else if (imeLock && pendingInsertOffset != null) insertAtOffset(str, pendingInsertOffset, 2);
+          else insertVisualOrSource(str);
           toast('已插入：<召唤物品:' + info.name + '>');
         } else {
           const cn = KIND_TO_CN[info.kind] || info.kind;
           const str = '<召唤' + cn + ':' + info.name + '>';
-          if (imeLock && pendingInsertOffset != null) insertAtOffset(str, pendingInsertOffset, 0);
-          else insertAtCursor(str);
+          if (visualController && visualController.getMode() === 'visual') insertVisualOrSource(str);
+          else if (imeLock && pendingInsertOffset != null) insertAtOffset(str, pendingInsertOffset, 0);
+          else insertVisualOrSource(str);
           toast('已插入：<召唤' + cn + ':' + info.name + '>');
         }
       } finally {
@@ -5698,9 +6372,6 @@ self.onmessage = function (e) {
   }
 
   // ============ 编译检查 ============
-  function escapeHtml(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
   // 预览 / 导出前的「编译」：返回问题列表 [{line,type:'error'|'warning',msg}]
   async function validateStory() {
     const issues = [];
@@ -5710,34 +6381,13 @@ self.onmessage = function (e) {
       arr.forEach(a => assetNames[lib].add((a.name || '').trim()));
     }
     const blockNames = new Set(window.Storage.listBlockNames());
-    // 变量：变量库定义 + 正文 <变量:名=...> 赋值，二者并集为“已知变量”
-    const definedVarNames = window.Storage.getVarNames();
+    // 变量类型表（供玩家输入等局部检查用）；变量专项校验统一由 StoryVars.analyze 完成（见函数末尾）
     const varTypeMap = {};
     window.Storage.getVars().forEach(v => { const nm = (v.name || '').trim(); if (nm) varTypeMap[nm] = v.type; });
-    const assignedVarNames = new Set();
-    window.Storage.listBlockNames().forEach(nm => {
-      const txt = window.Storage.getBlockText(nm) || '';
-      (txt.match(/<变量:([\s\S]*?)>/g) || []).forEach(m => {
-        const body = m.replace(/^<变量:/, '').replace(/>$/, '');
-        body.split(';').forEach(seg => {
-          const nm2 = seg.trim().match(/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*/);
-          if (nm2) assignedVarNames.add(nm2[0]);
-        });
-      });
-    });
-    const knownVars = new Set([...definedVarNames, ...assignedVarNames]);
     // 逐块校验（主剧情 + 其它剧情块）；块名作为前缀标注，便于定位
     const blocksToCheck = window.Storage.listBlockNames().map(nm => ({ name: nm, text: window.Storage.getBlockText(nm) || '' }));
     function pushIssue(prefix, n, type, msg) {
       issues.push({ line: n, type: type, msg: (prefix ? prefix + ' ' : '') + msg });
-    }
-    // 校验条件表达式：非空，且至少引用一个已定义变量
-    function checkCond(prefix, n, condStr) {
-      const c = (condStr || '').trim();
-      if (!c) { pushIssue(prefix, n, 'error', '条件选项缺少条件表达式（如 <选项:"文字",块名,条件:金币>=10>）'); return; }
-      const toks = c.match(/[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*/g) || [];
-      const known = toks.filter(tk => knownVars.has(tk));
-      if (!known.length) pushIssue(prefix, n, 'warning', '条件「' + c + '」似乎没有引用任何已定义的变量');
     }
     for (const blk of blocksToCheck) {
       const prefix = blk.name === MAIN_BLOCK ? '' : ('【' + blk.name + '】');
@@ -5747,19 +6397,7 @@ self.onmessage = function (e) {
         if (/^\s*\/\//.test(raw)) return;
         const t = raw.trim();
         if (!t) return;
-        // 变量引用 {名} / {名:真|假}
-        const refMatches = raw.match(/\{[^{}]+\}/g);
-        if (refMatches) {
-          refMatches.forEach(r => {
-            let inner = r.slice(1, -1).trim();
-            let vname = inner, disp = false;
-            const ci = inner.indexOf(':');
-            if (ci >= 0) { vname = inner.slice(0, ci).trim(); disp = true; }
-            if (!vname) return;
-            if (!knownVars.has(vname)) pushIssue(prefix, n, 'warning', '未定义的变量「' + vname + '」（请在素材库·变量库定义，或用 <变量:' + vname + '=值> 赋值）');
-            else if (disp && varTypeMap[vname] && varTypeMap[vname] !== 'boolean') pushIssue(prefix, n, 'warning', '显示映射 {' + vname + ':真|假} 仅用于布尔变量');
-          });
-        }
+        // 变量引用 {名} / {名:真|假} 的检查由 StoryVars.analyze 统一处理
         if (t.includes('<') && !t.includes('>')) {
           pushIssue(prefix, n, 'error', '「<」没有对应的「>」（指令未闭合，指令用尖括号）');
           return;
@@ -5850,17 +6488,14 @@ self.onmessage = function (e) {
               });
             }
           } else if (t.indexOf('<选项:') >= 0) {
-            const opts = extractOptionLine(t).filter(o => o.ok);
+            const opts = window.StoryOptions.extractOptionLine(t).filter(o => o.ok);
             if (!opts.length) pushIssue(prefix, n, 'error', '选项指令格式不正确（如 <选项:"文字"> 或 <选项:"文字",块名>）');
             else {
               if (opts.length > 6) pushIssue(prefix, n, 'error', '一行最多放置 6 个选项，当前 ' + opts.length + ' 个');
               for (const o of opts) {
-                // 条件选项：<选项:"文字",块名,条件:金币>=20>（条件里允许 < > <= >=，解析时已按「真正的闭合 >」取整段 extra）
-                const sp = splitOptionExtra(o.extra);
-                const bn = sp.block;
-                if (bn === MAIN_BLOCK) pushIssue(prefix, n, 'warning', '不建议选项跳到主剧情块');
-                else if (bn && !blockNames.has(bn)) pushIssue(prefix, n, 'warning', '选项指向的剧情块「' + bn + '」未找到，点击可能无效');
-                if (sp.condition) checkCond(prefix, n, sp.condition);
+                const bn = o.option.block;
+                if (bn && !blockNames.has(bn)) pushIssue(prefix, n, 'warning', '选项指向的剧情块「' + bn + '」未找到，点击可能无效');
+                // 条件表达式的检查（空条件/语法/未定义变量）由 StoryVars.analyze 统一处理
               }
             }
           } else if (t === '<跳回>') {
@@ -5879,20 +6514,10 @@ self.onmessage = function (e) {
             pushIssue(prefix, n, 'error', '「' + t + '」是已移除的条件块指令；条件功能请用 <选项:"文字",块名,条件:表达式> 实现');
           } else if ((m = t.match(RE_PLAYER_INPUT))) {
             const vn = m[1];
-            if (!knownVars.has(vn)) pushIssue(prefix, n, 'warning', '玩家输入指向的变量「' + vn + '」未定义（请在素材库·变量库定义，或用 <变量:' + vn + '=值> 赋值）');
-            else if (varTypeMap[vn] && varTypeMap[vn] !== 'text') pushIssue(prefix, n, 'warning', '玩家输入只能用于「文本」类型变量，「' + vn + '」是 ' + varTypeMap[vn] + ' 类型');
-          } else if (t.startsWith('<变量')) {
-            const vm = t.match(/^<变量:([\s\S]*)>$/);
-            if (!vm) pushIssue(prefix, n, 'error', '变量指令格式不正确（如 <变量:金币=10> 或 <变量:金币-3>）');
-            else {
-              vm[1].split(';').forEach(seg => {
-                const s = seg.trim();
-                if (!s) return;
-                if (!/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*\s*([=+\-]\s*[^\s]+)?$/.test(s)) {
-                  pushIssue(prefix, n, 'error', '变量指令片段「' + s + '」格式不正确（应为 名=值 / 名+n / 名-n）');
-                }
-              });
-            }
+            // 未定义检查由 StoryVars.analyze 处理；这里只保留类型约束
+            if (varTypeMap[vn] && varTypeMap[vn] !== 'text') pushIssue(prefix, n, 'warning', '玩家输入只能用于「文本」类型变量，「' + vn + '」是 ' + varTypeMap[vn] + ' 类型');
+          } else if (t.indexOf('<变量:') === 0) {
+            // 变量指令格式由 StoryVars.parseVarLine 判定，问题（malformed_tag）由 analyze 统一报告
           } else {
             pushIssue(prefix, n, 'error', '无法识别的指令「' + t + '」（识别的指令：停顿/召唤/剧情块/随机跳转/随机句子/选项/跳回/跳回重选）');
           }
@@ -5915,6 +6540,16 @@ self.onmessage = function (e) {
         if (open !== close) pushIssue(prefix, 0, 'warning', 'BBCode [' + tag + '=…] 与 [/]' + tag + ' 数量不一致（' + open + ' 开 / ' + close + ' 闭）');
       }
     }
+    // 变量专项校验：StoryVars.analyze 扫描全部剧情块
+    // （未声明就赋值 / 幻影读取 / 坏标签 / 条件解析 / 类型混用；info 级只在「修复检查」面板展示）
+    const blocksMap = {};
+    blocksToCheck.forEach(b => { blocksMap[b.name] = b.text; });
+    const analysis = window.StoryVars.analyze(blocksMap, window.Storage.getVars());
+    analysis.issues.forEach(is => {
+      if (is.severity === 'info') return;
+      const prefix = is.block && is.block !== MAIN_BLOCK ? ('【' + is.block + '】') : '';
+      pushIssue(prefix, is.line || 0, is.severity, is.message);
+    });
     return issues;
   }
   // 把光标定位到指定行行首，并尽量滚入视野
@@ -6001,7 +6636,7 @@ self.onmessage = function (e) {
       el.title = '跳到第 ' + it.line + ' 行';
       el.addEventListener('click', () => {
         // 纯预览态下先切回编辑态，再定位
-        if (previewMode && !splitMode) setPreviewMode(false);
+        if (previewMode) setPreviewMode(false);
         gotoLine(it.line);
         // 竖屏浮动面板：点选某块后自动缩回
         if (document.body.classList.contains('portrait')) outlineCol.classList.remove('portrait-open');
@@ -6032,7 +6667,7 @@ self.onmessage = function (e) {
         + (hasLine ? '<span class="cissue-jump" aria-hidden="true"><svg class="ico"><use href="#ic-corner-up-left"/></svg></span>' : '');
       if (hasLine) {
         div.addEventListener('click', () => {
-          if (previewMode && !splitMode) setPreviewMode(false); // 确保在纯文本编辑视图里能看到这行
+          if (previewMode) setPreviewMode(false); // 确保在编辑视图里能看到这行
           gotoLine(it.line);
         });
       }
@@ -6140,9 +6775,13 @@ self.onmessage = function (e) {
   // ============ 保存 ============
   function scheduleSave() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveNow, 400);
+    saveTimer = setTimeout(() => saveNow(false), 400);
   }
-  function saveNow() {
+  function saveNow(flushFocused = true) {
+    if (timeMachineRestoring) return;
+    if (flushFocused && visualController) visualController.commitFocusedEditor();
+    clearTimeout(saveTimer);
+    text = storyText.value;
     window.Storage.setBlockText(activeBlock, text);
     const existing = window.Storage.loadMeta() || {};
     window.Storage.saveMeta(existing);
@@ -6186,6 +6825,7 @@ self.onmessage = function (e) {
     el.textContent = '总字数：' + countNarrativeChars(storyText.value);
   }
   function commitEdit() {
+    if (visualController) visualController.commitFocusedEditor();
     clearTimeout(histTimer);
     text = storyText.value;
     pushHistory();
@@ -7341,12 +7981,1013 @@ self.onmessage = function (e) {
     });
   }
 
+  // ============ Agent 对话（全能助理）：意图路由 + 工具循环接线 ============
+  // 契约见 js/agent.js：runLoop(opts, deps) 不向外抛错（内部 catch 后走 onStatus('error') + onReply('出错了：…')）；
+  // onStatus 收到的是字符串：'intent' / 'scenario:<id>' / 'thinking' / 'loop_limit' / 'error'；最终回复经 onReply 送达（无 'reply' 状态）。
+  // onWrite(rec) 的 rec={block,before,after,level,impact}；applyAgentWrite 只分级并记录到 sessionWrites、不碰 DOM，
+  // DOM 写入在本节 onWrite 回调里经 commitAgentWrite 完成（Task 16 已实现分级渲染：auto 立即落盘 / preview diff 预览卡 / destructive 二次确认）。
+  let agentAbort = null;       // 当前轮次的 AbortController（「停止」按钮用）
+  let agentStopping = false;   // 用户手动停止标记：abort 触发 runLoop 内部 catch → onReply('出错了：…')，据此显示「已停止」
+  let agentSessionGen = 0;     // 会话代次：切工程/重开会话时自增，使遗留异步回调失效、不写回旧工程历史（同 ftSessionGen 语义）
+  let agentStarted = false;    // 是否已「开始对话」（显示输入行）
+  let agentBusy = false;       // 是否生成中（禁用发送/输入，显示停止按钮）
+  let agentBound = false;      // 面板事件只绑定一次（防重复绑定）
+  let agentCtxWarnDismissed = false; // 会话级：当前对话是否已手动关闭「上下文过长」弱提醒
+
+  function agentHistoryKey() {
+    // 用真实工程 id 作 key：每个工程独立存对话历史（同 ftHistoryKey editor.js:6676）
+    let pid = 'default';
+    try { const id = window.Storage && window.Storage.getCurrentProjectId && window.Storage.getCurrentProjectId(); if (id) pid = id; } catch (e) {}
+    return 'agent-history:' + pid;
+  }
+  // ---- 多对话：agent-convs:<pid> 对话列表 + agent-current:<pid> 当前对话 id；旧单对话 agent-history:<pid> 首次访问时迁移 ----
+  function agentPid() {
+    let pid = 'default';
+    try { const id = window.Storage && window.Storage.getCurrentProjectId && window.Storage.getCurrentProjectId(); if (id) pid = id; } catch (e) {}
+    return pid;
+  }
+  function agentConvsKey() { return 'agent-convs:' + agentPid(); }
+  function agentCurrentKey() { return 'agent-current:' + agentPid(); }
+  function agentLoadConvs() {
+    try {
+      let list = null;
+      const raw = localStorage.getItem(agentConvsKey());
+      if (raw) {
+        try { const p = JSON.parse(raw); if (Array.isArray(p)) list = p; } catch (e) { list = null; }
+      }
+      if (!list) {
+        // 迁移旧单对话：agent-history:<pid> → 第一条对话（id 'legacy'）
+        const legacy = localStorage.getItem(agentHistoryKey());
+        if (legacy) {
+          try {
+            const arr = JSON.parse(legacy);
+            if (Array.isArray(arr) && arr.length) {
+              list = [{ id: 'legacy', title: agentConvTitle(arr), messages: arr, updatedAt: Date.now() }];
+              localStorage.removeItem(agentHistoryKey()); // 迁移完成，旧键清掉防重复迁移
+            }
+          } catch (e) {}
+        }
+      }
+      if (!list) list = [];
+      return list.filter(c => c && typeof c.id === 'string' && Array.isArray(c.messages));
+    } catch (e) { return []; }
+  }
+  function agentSaveConvs(list) {
+    try { localStorage.setItem(agentConvsKey(), JSON.stringify(list.slice(-30))); } catch (e) {} // cap 30 条对话
+  }
+  function agentGetCurrentId() {
+    try { return localStorage.getItem(agentCurrentKey()) || ''; } catch (e) { return ''; }
+  }
+  function agentSetCurrentId(id) {
+    try { localStorage.setItem(agentCurrentKey(), id); } catch (e) {}
+  }
+  function agentFindConv(id) {
+    const list = agentLoadConvs();
+    for (let i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+  // 保证存在一个可用的当前对话：无 id 或 id 失效 → 用列表第一条；列表空则新建
+  function agentEnsureCurrent() {
+    const list = agentLoadConvs();
+    let cur = agentGetCurrentId();
+    if (!cur || !list.some(c => c.id === cur)) {
+      if (list.length) {
+        cur = list[0].id;
+        agentSetCurrentId(cur);
+      } else {
+        cur = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        list.unshift({ id: cur, title: '新对话', messages: [], updatedAt: Date.now() });
+        agentSaveConvs(list);
+        agentSetCurrentId(cur);
+      }
+    }
+    return cur;
+  }
+  // 对话标题：第一条 user 消息内容前 20 字
+  function agentConvTitle(msgs) {
+    const arr = Array.isArray(msgs) ? msgs : [];
+    let t = '';
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i] && arr[i].role === 'user' && typeof arr[i].content === 'string') { t = arr[i].content.replace(/\s+/g, ' ').trim(); break; }
+    }
+    if (!t) return '新对话';
+    return t.length > 20 ? t.slice(0, 20) + '…' : t;
+  }
+  function agentLoadHistory() {
+    try {
+      const c = agentFindConv(agentEnsureCurrent());
+      if (!c) return [];
+      const arr = Array.isArray(c.messages) ? c.messages : [];
+      return arr.filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string');
+    } catch (e) { return []; }
+  }
+  function agentSaveHistory(arr) {
+    try {
+      const cur = agentEnsureCurrent();
+      const list = agentLoadConvs();
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].id === cur) {
+          list[i].messages = arr.slice(-50);
+          list[i].title = agentConvTitle(arr);
+          list[i].updatedAt = Date.now();
+          break;
+        }
+      }
+      agentSaveConvs(list);
+      agentRenderConvList();
+    } catch (e) {}
+  }
+  // ---- §14: 早期对话摘要压缩（DSH 上下文压缩设计移植：分层摘要 + 原文归档可检索 + 活跃内容不压）----
+  function agentArchiveKey() {
+    let pid = 'default';
+    try { const id = window.Storage && window.Storage.getCurrentProjectId && window.Storage.getCurrentProjectId(); if (id) pid = id; } catch (e) {}
+    return 'agent-history-archive:' + pid;
+  }
+  function agentLoadArchive() {
+    try {
+      const raw = localStorage.getItem(agentArchiveKey());
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+  }
+  function agentSaveArchive(arr) {
+    try {
+      let list = Array.isArray(arr) ? arr : [];
+      // cap 总字符 100K：超限从最旧开始丢（归档仅用于 search_history 找回被压缩的早期细节）
+      while (list.length && list.reduce((s, it) => s + String(it && it.content || '').length, 0) > 100000) list.shift();
+      localStorage.setItem(agentArchiveKey(), JSON.stringify(list.slice(-200)));
+    } catch (e) {}
+  }
+  // 历史超阈值（30000 字符）→ 压缩最旧段：原文存档 + LLM 生成摘要；失败静默回滚（不丢历史）。
+  // 摘要写回后保持稳定（不重生成）→ 前缀缓存可命中；再次超阈值时旧摘要+更早内容一起再压（tier2 蒸馏）。
+  async function agentMaybeCompressHistory(hist) {
+    if (!window.Agent || !window.AI) return hist;
+    const plan = window.Agent.classifyHistoryCompression(hist, { maxChars: 30000 });
+    if (!plan.shouldCompress || !plan.compress.length) return hist;
+    const saved = plan.compress.length;
+    const note = agentAppendToolBubble('🧠 正在压缩早期对话（' + saved + ' 条）…');
+    try {
+      const srcText = plan.compress.map(m => '【' + (m.role === 'assistant' ? '助手' : '用户') + '】\n' + (m.content || '')).join('\n\n');
+      const sys = '你是对话摘要器。把用户与 AI 助手在剧情编辑器中的早期对话压缩成紧凑中文摘要（要点列表，200-400 字）。必须逐字保留：用户原始指令与偏好、涉及的剧情块名、变量名与数值、已确认的修改与撤销、未解决的问题。不要编造任何内容。';
+      const out = await window.AI.callDeepseek(
+        [{ role: 'system', content: sys }, { role: 'user', content: srcText }],
+        { stream: false, thinking: false, onUsage: (u) => agentAccumUsage(u) }
+      );
+      const summary = String((out && out.content) || out || '').trim();
+      if (!summary) { note.textContent = '🧠 早期对话压缩失败（空摘要），保留原文'; return hist; }
+      // 原文归档（保留时间序；与已有归档合并后整体截断）
+      const archive = agentLoadArchive();
+      plan.compress.forEach(m => archive.push({ role: m.role, content: m.content, ts: Date.now() }));
+      agentSaveArchive(archive);
+      const next = [{ role: 'summary', content: summary }].concat(plan.keep);
+      agentSaveHistory(next);
+      note.textContent = '🧠 已压缩早期对话 ' + saved + ' 条（原文已归档，可让 Agent 用 search_history 检索）';
+      return next;
+    } catch (e) {
+      note.textContent = '🧠 早期对话压缩失败（' + ((e && e.message) || '未知错误') + '），保留原文';
+      return hist;
+    }
+  }
+  function agentAppendBubble(role, text) {
+    const box = $('#agent-messages');
+    const el = document.createElement('div');
+    el.className = 'fta-msg ' + (role === 'user' ? 'user' : (role === 'tool' ? 'tool' : 'assistant'));
+    el.textContent = text || '';
+    box.appendChild(el);
+    box.scrollTop = box.scrollHeight;
+    return el;
+  }
+  // 工具活动气泡（🔧/✏️/🔄）：瞬态提示，不落历史；复用 fta-msg 容器 + 内联弱化样式（不新增 CSS 文件改动）
+  function agentAppendToolBubble(text) {
+    const el = agentAppendBubble('tool', text);
+    el.style.fontSize = '12.5px';
+    el.style.opacity = '.8';
+    return el;
+  }
+  // ---- Agent 用量统计与全文指纹（缓存命中可见性）----
+  // DSH 上下文压缩的设计借鉴：稳定内容保持恒定前缀以命中 DeepSeek 前缀缓存（$0.014/M vs $0.14/M）；
+  // 全文指纹用于向用户解释本次请求的缓存命中来源（「全文未变」= 稳定前缀可命中，而非占位跳过——占位会破坏前缀缓存且模型拿不到全文）。
+  let agentUsageAgg = { reqs: 0, prompt: 0, cacheHit: 0, cacheMiss: 0, completion: 0 };
+  let agentCtxFullHash = null; // 会话级：上次 runLoop 的全文指纹
+  let agentCtxStatus = '';     // 会话级：本次上下文的全文状态（首次上下文/全文未变/全文已更新）
+  let agentCaretRef = null;    // 会话级：用户发送消息那一刻的光标/选区快照（Agent「这里/这段」指代定位 + replace_selection 原文来源）
+  function agentUsageReset() {
+    agentUsageAgg = { reqs: 0, prompt: 0, cacheHit: 0, cacheMiss: 0, completion: 0 };
+  }
+  function agentAccumUsage(u) {
+    if (!u) return;
+    agentUsageAgg.reqs++;
+    agentUsageAgg.prompt += u.prompt_tokens || 0;
+    agentUsageAgg.cacheHit += u.prompt_cache_hit_tokens || 0;
+    agentUsageAgg.cacheMiss += u.prompt_cache_miss_tokens || 0;
+    agentUsageAgg.completion += u.completion_tokens || 0;
+  }
+  // 回复气泡下的小字用量行：请求数 / prompt（缓存命中%）/ 输出 / 全文状态；无请求则不渲染
+  function agentAppendUsage(bubble, ctxStatus) {
+    if (!bubble || !agentUsageAgg.reqs) return;
+    const hitPct = (agentUsageAgg.prompt > 0) ? Math.round((agentUsageAgg.cacheHit / agentUsageAgg.prompt) * 100) : 0;
+    let txt = 'ⓘ 请求 ' + agentUsageAgg.reqs + ' 次 · prompt ' + agentFmtK(agentUsageAgg.prompt);
+    if (hitPct > 0) txt += '（缓存命中 ' + hitPct + '% ' + agentFmtK(agentUsageAgg.cacheHit) + '）';
+    txt += ' · 输出 ' + agentFmtK(agentUsageAgg.completion);
+    if (ctxStatus) txt += ' · ' + ctxStatus;
+    const meta = document.createElement('div');
+    meta.textContent = txt;
+    meta.style.fontSize = '12px';
+    meta.style.opacity = '.65';
+    meta.style.marginTop = '4px';
+    bubble.appendChild(meta);
+  }
+  function agentFmtK(n) {
+    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+  // djb2 字符串指纹（字符级，中文全文 O(n) 足够快）；仅用于"全文是否变化"的会话内比较，非加密
+  function agentHashStr(s) {
+    let h = 5381;
+    const str = String(s || '');
+    for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+    return h;
+  }
+  // 流式增量渲染：只追加新 token 的文本节点，避免每 token 重设 textContent（同 ftStreamAppend editor.js:7079）
+  function agentStreamAppend(bubble, d) {
+    if (d == null || d === '') return;
+    let tn = bubble._streamNode;
+    if (!tn) {
+      tn = document.createTextNode('');
+      bubble.insertBefore(tn, bubble.firstChild);
+      bubble._streamNode = tn;
+    }
+    tn.textContent += d;
+    const box = $('#agent-messages');
+    if (box) box.scrollTop = box.scrollHeight;
+  }
+  // 分级写入辅助（Task 16）：行数差 / 撤销按钮 / diff 预览卡片
+  // 行数差：|afterLines - beforeLines|（split on \n，null 安全），用于「已改《块》变更 N 行」提示
+  function agentCountLines(before, after) {
+    const b = (before == null) ? '' : String(before);
+    const a = (after == null) ? '' : String(after);
+    return Math.abs(a.split('\n').length - b.split('\n').length);
+  }
+  // 「撤销」按钮：挂到工具气泡上；点击撤销最近一次 sessionWrite（undoWrite 出栈 + 经 commitAgentWrite 还原 before）
+  function agentAttachUndo(bubbleEl, rec) {
+    const undoBtn = document.createElement('button');
+    undoBtn.type = 'button';
+    undoBtn.className = 'agent-undo';
+    undoBtn.textContent = '撤销';
+    undoBtn.addEventListener('click', function () {
+      const u = window.Agent.undoWrite({ commit: commitAgentWrite });
+      if (u) bubbleEl.textContent = '↩️ 已撤销对《' + u.block + '》的修改';
+      else bubbleEl.textContent = '没有可撤销的修改';
+    });
+    bubbleEl.appendChild(undoBtn);
+    return undoBtn;
+  }
+  // diff 预览卡片（preview/destructive 级别）：before/after 按行对齐（索引对齐，非 LCS），
+  // 变化行加 .changed；标题/两个 pane/操作按钮齐备后追加到消息区并返回，供调用方接事件
+  function agentDiffCard(rec) {
+    const box = $('#agent-messages');
+    const card = document.createElement('div');
+    card.className = 'agent-diff-card';
+    const title = document.createElement('div');
+    title.className = 'agent-diff-title';
+    title.textContent = '修改《' + rec.block + '》预览（apply 后生效）';
+    card.appendChild(title);
+    const panes = document.createElement('div');
+    panes.className = 'agent-diff-panes';
+    const bLines = (rec.before == null ? '' : String(rec.before)).split('\n');
+    const aLines = (rec.after == null ? '' : String(rec.after)).split('\n');
+    const n = Math.max(bLines.length, aLines.length);
+    const beforePane = document.createElement('pre');
+    beforePane.className = 'agent-diff-pane before';
+    const afterPane = document.createElement('pre');
+    afterPane.className = 'agent-diff-pane after';
+    for (let i = 0; i < n; i++) {
+      const bl = i < bLines.length ? bLines[i] : '';
+      const al = i < aLines.length ? aLines[i] : '';
+      const changed = (bl !== al) ? ' changed' : '';
+      const bd = document.createElement('div');
+      bd.className = 'agent-diff-line' + changed;
+      bd.textContent = bl;
+      beforePane.appendChild(bd);
+      const ad = document.createElement('div');
+      ad.className = 'agent-diff-line' + changed;
+      ad.textContent = al;
+      afterPane.appendChild(ad);
+    }
+    panes.appendChild(beforePane);
+    panes.appendChild(afterPane);
+    card.appendChild(panes);
+    const actions = document.createElement('div');
+    actions.className = 'agent-diff-actions';
+    const apply = document.createElement('button');
+    apply.type = 'button';
+    apply.className = 'btn btn-primary agent-diff-apply';
+    apply.textContent = '应用';
+    const ignore = document.createElement('button');
+    ignore.type = 'button';
+    ignore.className = 'btn btn-ghost agent-diff-ignore';
+    ignore.textContent = '忽略';
+    actions.appendChild(apply);
+    actions.appendChild(ignore);
+    card.appendChild(actions);
+    box.appendChild(card);
+    box.scrollTop = box.scrollHeight;
+    return card;
+  }
+  // 切换工程时调用：重置 Agent 会话态，使其按工程独立（同 ftResetSession editor.js:6707，openProject 里一并调用）
+  function agentResetSession() {
+    agentSessionGen++;   // 使在途请求的遗留回调全部失效，绝不写回旧工程历史
+    if (agentAbort) { try { agentAbort.abort(); } catch (e) {} agentAbort = null; }
+    agentStopping = false;
+    agentStarted = false;
+    agentBusy = false;
+    agentCtxFullHash = null; // 跨工程重置：全文指纹/用量统计不得串工程
+    agentCtxStatus = '';
+    agentCaretRef = null;    // 光标/选区快照不得串工程
+    agentUsageReset();
+    // 清空跨工程遗留的会话写入记录（sessionWrites 是 Agent 模块级，切工程必须重置，否则撤销/忽略会污染新工程）
+    if (window.Agent && window.Agent.sessionWrites) window.Agent.sessionWrites.length = 0;
+    const box = $('#agent-messages');
+    if (box) box.innerHTML = '';
+    const startWrap = $('#agent-start-wrap');
+    if (startWrap) startWrap.classList.remove('hidden');
+    const inputRow = $('#agent-input-row');
+    if (inputRow) inputRow.classList.add('hidden');
+    const actions = $('#agent-actions');
+    if (actions) actions.classList.add('hidden');
+    const tag = $('#agent-scenario-tag');
+    if (tag) { tag.textContent = ''; tag.classList.add('hidden'); }
+    const send = $('#agent-send'); if (send) send.disabled = false;
+    const stop = $('#agent-stop'); if (stop) stop.classList.add('hidden');
+    const input = $('#agent-input'); if (input) input.disabled = false;
+    agentCtxWarnDismissed = false; // 跨工程重置：提醒关闭态不串工程
+    const warn = $('#agent-ctx-warn');
+    if (warn) warn.classList.add('hidden');
+  }
+  // 场景中文名：polish→润色改稿 / rewrite→整篇改写 / design→剧情设计 / vars→变量逻辑 / general→通用
+  function agentShowScenario(id) {
+    const names = { polish: '润色改稿', rewrite: '整篇改写', design: '剧情设计', vars: '变量逻辑', general: '通用' };
+    const tag = $('#agent-scenario-tag');
+    if (!tag) return;
+    tag.textContent = '场景：' + (names[id] || id);
+    tag.classList.remove('hidden');
+  }
+  // 工具活动描述（拆成 name/args 两段，onTool 气泡把工具名加粗高亮，spec Task 16）
+  function agentToolName(t) { return (t && t.name) || '工具'; }
+  function agentToolArgs(t) {
+    const args = (t && t.args) ? t.args : {};
+    const parts = [];
+    for (const k in args) {
+      if (Object.prototype.hasOwnProperty.call(args, k)) {
+        // 统一先序列化再截断（对象/数组等非字符串参数也可能超长，不能只截字符串）
+        let v = JSON.stringify(args[k]);
+        if (typeof v === 'string' && v.length > 80) v = v.slice(0, 80) + '…';
+        parts.push(k + '=' + v);
+      }
+    }
+    return (parts.length ? '（' + parts.join(' ') + '）' : '') + ' → 已执行';
+  }
+  // 工具活动气泡：🔧 + 工具名加粗 + 参数描述；瞬态提示，不落历史（复用 fta-msg tool 弱化样式）
+  // 工具调用行（可折叠）：一行显示 🔧 工具名 + 参数摘要；点击展开查看完整参数与执行结果（用户可见内部步骤，但不刷屏）
+  function agentToolBubble(t) {
+    const el = agentAppendToolBubble('');
+    el.textContent = '';
+    const det = document.createElement('details');
+    det.className = 'agent-tool-row';
+    const sum = document.createElement('summary');
+    sum.appendChild(document.createTextNode('🔧 '));
+    const nm = document.createElement('b');
+    nm.textContent = agentToolName(t);
+    sum.appendChild(nm);
+    sum.appendChild(document.createTextNode(agentToolArgs(t)));
+    det.appendChild(sum);
+    const body = document.createElement('div');
+    body.className = 'agent-tool-detail';
+    const p1 = document.createElement('pre');
+    let argsText = '';
+    try { argsText = JSON.stringify(t.args || {}, null, 2); } catch (e) { argsText = String(t.args); }
+    p1.textContent = '参数：\n' + argsText;
+    body.appendChild(p1);
+    if (t.result !== undefined) {
+      let resText = '';
+      try { resText = JSON.stringify(t.result, null, 2); } catch (e) { resText = String(t.result); }
+      const p2 = document.createElement('pre');
+      p2.textContent = '结果：\n' + resText;
+      body.appendChild(p2);
+    }
+    det.appendChild(body);
+    el.appendChild(det);
+    return el;
+  }
+  // 渲染当前对话到消息区（打开/切换/新建共用）：直接进入输入态；空对话给引导气泡
+  function agentOpenConv() {
+    agentStarted = true;
+    agentCtxWarnDismissed = false; // 切换/新对话重置提醒关闭态
+    agentCtxFullHash = null;       // 全文指纹/用量统计不跨对话
+    agentCtxStatus = '';
+    agentCaretRef = null;          // 光标/选区快照不跨对话
+    agentUsageReset();
+    if (window.Agent && window.Agent.sessionWrites) window.Agent.sessionWrites.length = 0; // 会话写入记录不跨对话
+    const box = $('#agent-messages');
+    if (box) box.innerHTML = '';
+    const hist = agentLoadHistory();
+    hist.forEach(function (t) { agentAppendBubble(t.role === 'user' ? 'user' : 'assistant', t.content); });
+    if (!hist.length) agentAppendBubble('assistant', 'Agent 已就绪：可直接改稿（追加/插入/替换正文）、管理变量与素材、创建/重命名/删除剧情块。直接描述你想做的事。');
+    $('#agent-start-wrap').classList.add('hidden');
+    $('#agent-input-row').classList.remove('hidden');
+    $('#agent-actions').classList.remove('hidden');
+    const warn = $('#agent-ctx-warn');
+    if (warn) warn.classList.add('hidden');
+    const tag = $('#agent-scenario-tag');
+    if (tag) { tag.textContent = ''; tag.classList.add('hidden'); }
+    agentRenderConvList();
+    const ta = $('#agent-input');
+    if (ta) ta.focus();
+  }
+  // 「开始对话」：多对话下等价于打开当前对话（有历史恢复、无历史引导），保留入口兼容
+  function agentStart() {
+    agentOpenConv();
+  }
+  // 新对话：列表头部插入空对话并切换（busy 时先中止在途请求）
+  function agentNewConversation() {
+    if (agentBusy) { toast('请先等待当前生成完成或停止'); return; }
+    if (agentAbort) { try { agentAbort.abort(); } catch (e) {} }
+    agentStopping = false;
+    const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const list = agentLoadConvs();
+    list.unshift({ id: id, title: '新对话', messages: [], updatedAt: Date.now() });
+    agentSaveConvs(list);
+    agentSetCurrentId(id);
+    agentOpenConv();
+  }
+  // 切换对话：更新当前 id 并重渲染（busy 时先中止在途请求）
+  function agentSwitchConversation(id) {
+    if (id === agentGetCurrentId()) return;
+    if (agentBusy) { toast('请先等待当前生成完成或停止'); return; }
+    if (agentAbort) { try { agentAbort.abort(); } catch (e) {} }
+    agentStopping = false;
+    agentSetCurrentId(id);
+    agentOpenConv();
+  }
+  // 删除对话：确认后移除；若删的是当前对话，切到剩余第一条（列表空则留空待新建）
+  function agentDeleteConversation(id) {
+    if (agentBusy) { toast('请先等待当前生成完成或停止'); return; }
+    const c = agentFindConv(id);
+    const label = c ? (c.title || '该对话') : '该对话';
+    if (!confirm('确定删除对话「' + label + '」？此操作不可恢复。')) return;
+    const list = agentLoadConvs().filter(x => x.id !== id);
+    agentSaveConvs(list);
+    if (agentGetCurrentId() === id) {
+      if (list.length) agentSetCurrentId(list[0].id);
+      else agentSetCurrentId('');
+    }
+    agentOpenConv();
+  }
+  // 渲染左侧对话列表（新建/删除/切换/当前高亮）
+  function agentRenderConvList() {
+    const listEl = $('#agent-conv-list');
+    if (!listEl) return;
+    const list = agentLoadConvs();
+    const cur = agentGetCurrentId();
+    listEl.innerHTML = '';
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'agent-conv-empty';
+      empty.textContent = '暂无对话';
+      listEl.appendChild(empty);
+      return;
+    }
+    list.forEach(function (c) {
+      const item = document.createElement('div');
+      item.className = 'agent-conv-item' + (c.id === cur ? ' active' : '');
+      item.title = c.title || '新对话';
+      const title = document.createElement('span');
+      title.className = 'agent-conv-title';
+      title.textContent = c.title || '新对话';
+      item.appendChild(title);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'agent-conv-del';
+      del.title = '删除对话';
+      del.textContent = '×';
+      del.addEventListener('click', function (e) { e.stopPropagation(); agentDeleteConversation(c.id); });
+      item.appendChild(del);
+      item.addEventListener('click', function () { agentSwitchConversation(c.id); });
+      listEl.appendChild(item);
+    });
+  }
+  // 上下文过长弱提醒：当前对话消息总字符 > 30000 时显示提示条（可关闭，会话级；与 §14 自动压缩阈值一致）
+  function agentMaybeWarnCtxLength(hist) {
+    if (agentCtxWarnDismissed) return;
+    const total = (hist || []).reduce(function (s, m) { return s + String((m && m.content) || '').length; }, 0);
+    if (total < 30000) return;
+    const warn = $('#agent-ctx-warn');
+    if (warn) warn.classList.remove('hidden');
+  }
+  function openAgent() {
+    if (!window.Agent) { toast('Agent 模块未加载'); return; }
+    if (!window.AI) { toast('AI 模块未加载'); return; }
+    const settings = window.AI.loadSettings();
+    if (!settings.key) { toast('请先在「设置 → AI 编剧 → 模型与密钥」填写 Deepseek API Key'); openSettings('ai'); return; }
+    agentBindEvents();
+    $('#agent-assistant').classList.remove('hidden');
+    agentOpenConv(); // 多对话：直接渲染当前对话（有历史恢复、无历史给引导），左侧列表同步
+  }
+  // 面板事件绑定（一次）：元素在 Task 14 的 index.html 中已存在，openAgent 首次调用时绑定
+  function agentBindEvents() {
+    if (agentBound) return;
+    agentBound = true;
+    $('#agent-close').addEventListener('click', function () {
+      if (agentAbort) { try { agentAbort.abort(); } catch (e) {} } // 关闭即中止在途生成
+      $('#agent-assistant').classList.add('hidden');
+    });
+    $('#agent-start').addEventListener('click', agentStart);
+    $('#agent-send').addEventListener('click', agentSend);
+    $('#agent-stop').addEventListener('click', function () {
+      agentStopping = true;
+      if (agentAbort) { try { agentAbort.abort(); } catch (e) {} }
+    });
+    $('#agent-clear').addEventListener('click', agentClear);
+    $('#agent-new-conv').addEventListener('click', agentNewConversation);
+    $('#agent-ctx-warn-close').addEventListener('click', function () {
+      agentCtxWarnDismissed = true;
+      const warn = $('#agent-ctx-warn');
+      if (warn) warn.classList.add('hidden');
+    });
+    const input = $('#agent-input');
+    if (input) input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); agentSend(); }
+    });
+  }
+  function agentClear() {
+    if (agentBusy) { toast('请先停止当前生成'); return; }
+    agentSaveHistory([]); // 清空当前对话消息（对话条目保留，标题回「新对话」）
+    agentOpenConv();
+  }
+  function agentSetBusy(on) {
+    agentBusy = on;
+    const send = $('#agent-send'); if (send) send.disabled = on;
+    const input = $('#agent-input'); if (input) input.disabled = on;
+    const stop = $('#agent-stop'); if (stop) stop.classList.toggle('hidden', !on);
+  }
+  // 发送：进 runLoop（意图路由 + 工具循环）。runLoop 不抛错（内部 catch），收尾统一恢复 UI 态。
+  async function agentSend() {
+    if (agentBusy) return;
+    agentUsageReset(); // 每次发送独立统计本次对话的 token/缓存命中
+    const myGen = agentSessionGen;
+    const ta = $('#agent-input');
+    const userText = (ta.value || '').trim();
+    if (!userText) return;
+    ta.value = '';
+    agentAppendBubble('user', userText);
+    agentCaretRef = captureAgentCaret(); // 用户说话那一刻的光标/选区快照（Agent「这里/这段」指代 + replace_selection）
+    const hist = await agentMaybeCompressHistory(agentLoadHistory()); // §14：超阈值先压缩早期对话（存档原文+摘要前置）
+    hist.push({ role: 'user', content: userText });
+    agentSaveHistory(hist);
+    agentMaybeWarnCtxLength(hist); // 上下文过长弱提醒（推荐创建新对话）
+    // 回复气泡惰性创建：意图轮/工具轮全部走完后才开始流式输出时才创建。
+    // 此前在 runLoop 前预创建占位，导致回复气泡 DOM 位置排在工具气泡之前（视觉"先回答后工具"）。
+    let replyBubble = null;
+    const ensureReplyBubble = () => {
+      if (!replyBubble || !replyBubble.isConnected) replyBubble = agentAppendBubble('assistant', '');
+      return replyBubble;
+    };
+    agentStopping = false;
+    agentAbort = new AbortController();
+    agentSetBusy(true);
+    try {
+      await window.Agent.runLoop({
+        userText: userText,
+        history: hist.slice(0, -1), // hist 已含刚 push 的当前 userText（:7606），runLoop 还会把 userText 拼到历史末尾——去掉末条避免当前请求重复发两次
+        activeScenario: undefined, // 每轮都走意图识别（polish/rewrite/design/vars/general）
+        callbacks: {
+          onStatus: (s) => {
+            if (myGen !== agentSessionGen) return;
+            if (typeof s === 'string' && s.indexOf('scenario:') === 0) agentShowScenario(s.slice('scenario:'.length));
+            // 'thinking' 每轮 request 前发出；意图轮已非流式、工具轮 content 为空，轮间不再有残留文本进回复气泡——
+            // 回复气泡只在最终答复开始流式时才创建（ensureReplyBubble），此分支现为防御性保留
+            if (s === 'thinking' && replyBubble) { replyBubble.textContent = ''; replyBubble._streamNode = null; }
+            // 工具轮结束信号：本轮模型在 tool_calls 前吐的过程性文本（如"好的，我先查看当前块"）已流进回复气泡，
+            // 立即移除并置空——最终答复轮会惰性重建（ensureReplyBubble），消除"先文本后工具"的视觉错序
+            if (s === 'turn:tool' && replyBubble) { replyBubble.remove(); replyBubble = null; }
+            // 'loop_limit'/'error' 由 onReply 收尾
+          },
+          onTool: (t) => {
+            if (myGen !== agentSessionGen) return;
+            agentToolBubble(t);
+          },
+          onWrite: (rec) => {
+            if (myGen !== agentSessionGen) return;
+            if (!rec || rec.block == null || rec.after == null) return;
+            if (rec.level === 'auto') {
+              // 小改：立即落盘 + 可撤销气泡
+              commitAgentWrite(rec.block, rec.after);
+              const lines = agentCountLines(rec.before, rec.after); // 变更行数
+              const b = agentAppendToolBubble('✏️ 已改《' + rec.block + '》' + (lines > 0 ? ' 变更 ' + lines + ' 行' : ''));
+              agentAttachUndo(b, rec);
+            } else if (rec.level === 'preview') {
+              // 大改：diff 预览卡片，应用/忽略
+              const card = agentDiffCard(rec);
+              // 应用 → 落盘 + 撤销；忽略 → 从会话记录移除
+              card.querySelector('.agent-diff-apply').addEventListener('click', () => {
+                commitAgentWrite(rec.block, rec.after);
+                const b = agentAppendToolBubble('✅ 已应用对《' + rec.block + '》的修改');
+                agentAttachUndo(b, rec);
+                card.remove();
+              });
+              card.querySelector('.agent-diff-ignore').addEventListener('click', () => {
+                // 多张 diff 卡待定时，sessionWrites[0] 未必是这张卡的 rec——按引用定位移除，不能 shift 顶部
+                const list = window.Agent.sessionWrites;
+                const idx = list.indexOf(rec);
+                if (idx >= 0) list.splice(idx, 1);
+                card.remove();
+                agentAppendToolBubble('🗑️ 已忽略对《' + rec.block + '》的修改');
+              });
+              // 注：破坏性（destructive）语义由 onConfirm 全权处理——删除类工具不产 resultText，
+              // onWrite 永远不会收到 destructive 级别（曾经的防御分支为死代码，已删除）。
+            }
+          },
+          onReply: (text) => {
+            if (myGen !== agentSessionGen) return;
+            let shown = text;
+            if (agentStopping && String(text || '').indexOf('出错了：') === 0) shown = '已停止';
+            const rb = ensureReplyBubble();
+            rb.textContent = shown; // 覆盖流式内容（同 FTA 收尾语义），工具气泡留在 DOM 原位
+            agentAppendUsage(rb, agentCtxStatus); // 用量/缓存命中/全文状态小字行
+            if (shown !== '已停止') { // 停止/中止提示不入历史，避免下轮当正文回喂模型
+              const h = agentLoadHistory();
+              h.push({ role: 'assistant', content: shown });
+              agentSaveHistory(h);
+            }
+            agentStopping = false;
+          },
+          onConfirm: async (info) => {
+            if (myGen !== agentSessionGen) return false;
+            // 真实二次确认：渲染确认气泡到消息区，await 用户点按
+            const name = info && info.name;
+            const args = (info && info.args) || {};
+            const result = (info && info.result) || {};
+            const el = agentAppendBubble('assistant', '');
+            el.className = 'fta-msg assistant'; // 确认卡片样式
+            // 影响面引用列表渲染（用户安全阀要求：任何删除都须明确「删掉哪些部分、影响哪些部分」）
+            const refLines = (refs) => {
+              if (!Array.isArray(refs) || !refs.length) return '';
+              return '<div class="agent-confirm-refs">' + refs.map((r) =>
+                '· ' + escapeHtml(r.block === '__MAIN__' ? '主剧情' : (r.block || '')) +
+                (r.lineNo ? ' 第' + escapeHtml(r.lineNo) + '行' : '') +
+                '：' + escapeHtml((r.snippet || '').slice(0, 60))
+              ).join('<br>') + '</div>';
+            };
+            const refs = Array.isArray(result.references) ? result.references : [];
+            let html = '';
+            if (name === 'delete_block') {
+              html = '⚠️ 确认删除剧情块《' + escapeHtml(args.blockName || '') + '》？' +
+                '<div class="agent-confirm-danger">此操作不可撤销。删除后，其他块中对它的跳转引用将失效。</div>' +
+                refLines(refs);
+            } else if (name === 'delete_var') {
+              html = '⚠️ 确认删除变量「' + escapeHtml(args.name || '') + '」？' +
+                '<div class="agent-confirm-danger">此操作不可撤销。删除后正文中对该变量的引用将不再生效。</div>' +
+                (refs.length ? '<div class="agent-confirm-refs">正文 ' + refs.length + ' 处引用：<br>' +
+                  refs.map((r) => '· ' + escapeHtml(r.block === '__MAIN__' ? '主剧情' : (r.block || '')) + ' 第' + escapeHtml(r.lineNo) + '行：' + escapeHtml((r.snippet || '').slice(0, 60))).join('<br>') + '</div>' : '<div class="agent-confirm-refs">正文中未发现直接引用</div>');
+            } else if (name === 'delete_asset') {
+              html = '⚠️ 确认删除素材「' + escapeHtml(args.name || '') + '」？' +
+                '<div class="agent-confirm-danger">此操作不可撤销。删除后正文中的召唤指令将失效，素材库中将移除该素材。</div>' +
+                (refs.length ? '<div class="agent-confirm-refs">' + refs.length + ' 处引用：<br>' +
+                  refs.map((r) => '· ' + escapeHtml(r.block === '__MAIN__' ? '主剧情' : (r.block || '')) + (r.lineNo ? ' 第' + escapeHtml(r.lineNo) + '行' : '') + '：' + escapeHtml((r.snippet || '').slice(0, 60))).join('<br>') + '</div>' : '<div class="agent-confirm-refs">正文中未发现召唤引用</div>');
+            } else {
+              html = '⚠️ 确认执行 ' + escapeHtml(name || '') + '？';
+            }
+            el.innerHTML = html;
+            const bar = document.createElement('div');
+            bar.className = 'agent-confirm-bar';
+            const ok = document.createElement('button'); ok.type = 'button'; ok.className = 'btn btn-danger btn-sm'; ok.textContent = '确认';
+            const no = document.createElement('button'); no.type = 'button'; no.className = 'btn btn-ghost btn-sm'; no.textContent = '取消';
+            bar.appendChild(ok); bar.appendChild(no); el.appendChild(bar);
+            const box = $('#agent-messages'); if (box) box.scrollTop = box.scrollHeight;
+            const decision = new Promise((resolve) => {
+              ok.addEventListener('click', () => { resolve(true); el.remove(); }, { once: true });
+              no.addEventListener('click', () => { resolve(false); el.remove(); }, { once: true });
+              // 用户点「停止」/关闭面板 → abort → 立即视为取消；否则停止后卡片仍存活，之后点确认会真的执行删除
+              if (agentAbort && agentAbort.signal) {
+                const onAbort = () => { resolve(false); el.remove(); };
+                if (agentAbort.signal.aborted) onAbort();
+                else agentAbort.signal.addEventListener('abort', onAbort, { once: true });
+              }
+              // 120s 超时视为取消：timer 必须在 executor 内定义（executor 外引用 resolve 会 ReferenceError、promise 悬挂）；句柄存 el 供外层 clearTimeout
+              el._agentTimer = setTimeout(() => { resolve(false); el.remove(); }, 120000);
+            });
+            const v = await decision;
+            clearTimeout(el._agentTimer);
+            return v;
+          },
+        },
+      }, {
+        request: (messages, toolOpts) => window.AI.callDeepseek(messages, Object.assign({}, toolOpts || {}, {
+          // 意图轮（runLoop 传 stream:false）非流式——意图 JSON 是内部结果，不逐字流入回复气泡；其余轮次（工具轮/答复轮）保持流式
+          stream: (toolOpts && toolOpts.stream === false) ? false : true,
+          signal: agentAbort ? agentAbort.signal : undefined,
+          onToken: (d) => { if (myGen !== agentSessionGen) return; agentStreamAppend(ensureReplyBubble(), d); },
+          // usage 透出（ai.js:777 callDeepseek）：意图轮 + 每轮工具轮各一次，全部累计到 agentUsageAgg
+          onUsage: (u) => { if (myGen !== agentSessionGen) return; agentAccumUsage(u); },
+        })),
+        buildCtx: () => agentBuildContext(),
+      });
+    } catch (e) {
+      // runLoop 内部已统一 catch（经 onReply 反馈），这里仅兜底防御意外路径
+      if (myGen !== agentSessionGen) return;
+      ensureReplyBubble().textContent = '已停止';
+      agentStopping = false;
+    }
+    if (myGen !== agentSessionGen) return;
+    agentAbort = null;
+    agentSetBusy(false);
+    const ta2 = $('#agent-input');
+    if (ta2) ta2.focus();
+  }
+  // buildCtx：runLoop 每轮调用一次，组装 Agent.buildMessages 需要的上下文（settings/fullText/outline/currentBlock/vars）
+  function agentBuildContext() {
+    const c = loadCreation();
+    const blkName = (typeof activeBlock !== 'undefined' && activeBlock) ? activeBlock : '主剧情';
+    let vars = [];
+    try { vars = (window.Storage.getVars ? window.Storage.getVars() : []) || []; } catch (e) {}
+    // 全文指纹（djb2）：全文没变 → 本轮的稳定前缀（system/settings/fullText）与上轮一致 → 可命中 DeepSeek 前缀缓存。
+    // 注意：不因"没变"而跳过喂全文——占位会破坏前缀缓存且模型本轮拿不到全文内容（缓存纪律：稳定内容保持恒定）。
+    const fullText = ftaCollectFullText();
+    const fullHash = agentHashStr(fullText);
+    agentCtxStatus = (agentCtxFullHash === null) ? '首次上下文' : (agentCtxFullHash === fullHash ? '全文未变' : '全文已更新');
+    agentCtxFullHash = fullHash;
+    return {
+      settings: agentSettingsText(),
+      fullText: fullText,
+      outline: c.outline || '',
+      currentBlock: { name: blkName, text: (storyText ? storyText.value : '') },
+      vars: vars,
+      caret: agentCaretRef, // 用户发送消息时的光标/选区快照（agentSend 开头捕获），buildMessages 拼进用户消息末尾
+    };
+  }
+  // 捕获「用户说话那一刻」的光标/选区快照：Agent 工具轮期间用户可能已移动光标/改文，
+  // 快照保证「给这里做什么」与 replace_selection 定位到用户发消息时的目标（语义：用户所指=说话时选中的）。
+  // 选区解析复用 getRange（实时光标选区优先，其次 lastTextSel 快照，移动端失焦也可靠）。
+  function captureAgentCaret() {
+    try {
+      const text = storyText ? storyText.value : '';
+      const r = getRange(storyText);
+      const selStart = r.start | 0, selEnd = r.end | 0;
+      const hasSel = selEnd > selStart;
+      const lines = text.split('\n');
+      const caretLine = text.slice(0, selStart).split('\n').length; // 1-based（光标所在行）
+      return {
+        blockName: (typeof activeBlock !== 'undefined' && activeBlock) ? activeBlock : '主剧情',
+        blockText: text,
+        start: selStart,
+        end: selEnd,
+        hasSel: hasSel,
+        selText: hasSel ? text.slice(selStart, selEnd) : '',
+        caretLine: caretLine,
+        lineText: lines[caretLine - 1] != null ? lines[caretLine - 1] : '',
+      };
+    } catch (e) { return null; }
+  }
+  // 创作设定拼接（大纲/简介/世界观/文风/线索），供 toolsDeps.settings 与 buildCtx.settings 共用
+  function agentSettingsText() {
+    const c = loadCreation();
+    const parts = [];
+    if (c.outline) parts.push('【大纲】\n' + c.outline);
+    if (c.intro) parts.push('【简介】\n' + c.intro);
+    if (c.world) parts.push('【世界观】\n' + c.world);
+    if (c.style) parts.push('【文风】\n' + c.style);
+    if (c.clues) parts.push('【关键线索】\n' + c.clues);
+    return parts.join('\n\n');
+  }
+  // Agent 写回唯一入口：程序化改文统一走 pushHistory + commitEdit，保证可撤销、可落盘
+  function commitAgentWrite(block, text) {
+    // 创作设定字段写回（Agent update_creation_setting 工具：block='creation:outline' 等；复用 preview/撤销管线）
+    if (block && block.indexOf('creation:') === 0) {
+      const CREATION_FIELDS = ['outline', 'intro', 'world', 'style', 'clues'];
+      const CREATION_FIELD_NAMES = { outline: '大纲', intro: '简介', world: '世界观', style: '文风', clues: '关键线索' };
+      const field = block.slice(9);
+      if (CREATION_FIELDS.indexOf(field) === -1) return;
+      const c = loadCreation();
+      if (c[field] === text) return; // 无变化不动作（也不提示）
+      c[field] = text;
+      saveCreation(c);
+      toast('已更新创作设定「' + (CREATION_FIELD_NAMES[field] || field) + '」');
+      return;
+    }
+    const curBlock = (StoryEditorApi.getActiveBlock && StoryEditorApi.getActiveBlock()) || '主剧情';
+    if (block === curBlock) {
+      if (storyText.value === text) return; // 无变化不动作（也不入撤销栈）
+      pushHistory(); // 程序化改文前必须入栈，否则不可撤销
+      storyText.value = text; // 触发 value 钩子（刷新行号 editor.js:1617）
+      commitEdit(); // deviation from plan snippet：.value 赋值不会触发 input 事件，必须手动 commit 才会保存当前块
+    } else {
+      // 非当前块：不入编辑器 undo 栈（pushHistory 的快照是当前块文本，会污染 Ctrl+Z 恢复目标）；
+      // 该写入的撤销由 Agent.sessionWrites 覆盖（agentAttachUndo → undoWrite）
+      window.Storage.setBlockText(block, text);
+      // 若该块当前在编辑器打开则刷新（按需，最小实现：不强制刷新其它块）
+    }
+  }
+  // 工具依赖注入（一次性）：契约见 agent.js toolsDeps 注释；与 window.Storage 签名不一致处做了适配并注明
+  function agentWireToolsDeps() {
+    if (!window.Agent) return;
+    window.Agent.toolsDeps = {
+      getActiveBlock: () => StoryEditorApi.getActiveBlock ? { name: StoryEditorApi.getActiveBlock(), text: storyText.value } : { name: '主剧情', text: storyText.value },
+      listBlocks: () => StoryEditorApi.listBlockNames ? StoryEditorApi.listBlockNames() : [],
+      getBlockText: (n) => StoryEditorApi.getBlockText ? StoryEditorApi.getBlockText(n) : null,
+      fullText: () => { /* 拼接全部块，同 ftaCollectFullText (editor.js:6645) */ return ftaCollectFullText(); },
+      settings: () => agentSettingsText(),
+      getVars: () => window.Storage.getVars(),
+      saveVars: (a) => window.Storage.saveVars(a),
+      searchHistoryArchives: () => agentLoadArchive(), // §14：search_history 工具的归档数据源（agent-history-archive:<pid>）
+      getCreation: () => loadCreation(),        // §16：update_creation_setting 读取（meta.creation）
+      saveCreation: (c) => saveCreation(c),     // §16：update_creation_setting 落盘
+      getAppearance: () => getAppearance(),     // §16：read_appearance / update_appearance 读取
+      saveAppearance: (p) => saveAppearance(p), // §16：update_appearance 落盘（立即生效）
+      appearanceFields: Object.keys(DEFAULT_APPEARANCE), // §16：外观字段白名单（fontSize/titleFont/bodyFont/dividerFont/galBoxColor/titleColor）
+      blocksDoc: () => {
+        // {块名: 文本} 块对象视图（Agent 结构组工具契约）；主剧情用 MAIN_BLOCK 键
+        const doc = (window.Storage.loadBlocks ? window.Storage.loadBlocks() : null) || { main: '', blocks: {} };
+        const out = {};
+        out[MAIN_BLOCK] = doc.main || '';
+        const bs = doc.blocks || {};
+        for (const k in bs) { if (Object.prototype.hasOwnProperty.call(bs, k)) out[k] = bs[k]; }
+        return out;
+      },
+      saveBlocks: (b) => {
+        // adaptation（deviation from plan snippet）：window.Storage.saveBlocks 期望 {main, blocks} 结构，
+        // 而 Agent 传入的是 {块名: 文本} 扁平映射（blocksDocObj 契约）——必须转回存储结构，
+        // 否则扁平 map 会被 loadBlocks 解析成空工程、清空全部剧情块。
+        // 注意：b 由 blocksDoc() 完整读取生成，是「目标态」——被删除的键必须真的消失
+        // （delete_block 的 confirmDelete / rename_block 改名都依赖删除语义，spec review 发现原 preserve-loop 会复活已删键）。
+        // 因此直接由 b 构建 next，不做任何 prev 键保留。
+        const next = { main: '', blocks: {} };
+        for (const k in b) {
+          if (!Object.prototype.hasOwnProperty.call(b, k)) continue;
+          if (k === MAIN_BLOCK) next.main = b[k] == null ? '' : String(b[k]);
+          else next.blocks[k] = b[k] == null ? '' : String(b[k]);
+        }
+        window.Storage.saveBlocks(next);
+      },
+      mainBlock: () => window.Storage.MAIN_BLOCK,
+      extractClues: async (o) => {
+        try {
+          const opts = {};
+          if (o && o.blockName) {
+            const t = StoryEditorApi.getBlockText ? StoryEditorApi.getBlockText(o.blockName) : null;
+            if (t != null) opts.body = t;
+          } else {
+            opts.body = ftaCollectFullText(); // 缺省全文（与 fullText deps 同源，editor.js:6645）
+          }
+          opts.incremental = !!(o && o.incremental);
+          try { const c = loadCreation(); opts.existing = (c && c.clues) || ''; } catch (e) { opts.existing = ''; }
+          const r = await window.AI.extractClues(opts);
+          return { ok: true, clues: (r && (r.clues || r.text)) || '', summary: (r && r.summary) || '' };
+        } catch (e) { return { error: (e && e.message) || '提取失败' }; }
+      },
+      applyGeneratedBlocks: (options) => {
+        const block = (StoryEditorApi.getActiveBlock && StoryEditorApi.getActiveBlock()) || '主剧情';
+        const cur = StoryEditorApi.getBlockText ? StoryEditorApi.getBlockText(block) : null;
+        const curText = (cur != null) ? cur : storyText.value;
+        const text = options.join('\n');
+        commitAgentWrite(block, curText.endsWith('\n') ? curText + text : curText + '\n' + text);
+        return { ok: true };
+      },
+      getAllAssets: async () => {
+        const out = [];
+        for (const lib of ['background', 'item', 'overlay', 'music', 'sound']) {
+          try { out.push.apply(out, await window.Storage.getAllAssets(lib)); } catch (e) { /* 跳过该库 */ }
+        }
+        return out;
+      },
+      renameAsset: async (name, newName) => {
+        for (const lib of ['background', 'item', 'overlay', 'music', 'sound']) {
+          const recs = await window.Storage.getAllAssets(lib).catch(() => []);
+          const rec = recs.find(r => r.name === name);
+          if (rec) { await window.Storage.renameAsset(lib, rec.id, newName); return { ok: true }; }
+        }
+        return { error: '素材不存在' };
+      },
+      deleteAsset: async (name) => {
+        for (const lib of ['background', 'item', 'overlay', 'music', 'sound']) {
+          const recs = await window.Storage.getAllAssets(lib).catch(() => []);
+          const rec = recs.find(r => r.name === name);
+          if (rec) { await window.Storage.deleteAsset(lib, rec.id); return { ok: true }; }
+        }
+        return { error: '素材不存在' };
+      },
+      // 开场设置按名称引用素材（开场背景/开场音乐）——delete_asset 影响面报告的一部分
+      openingRefs: () => {
+        const out = [];
+        try {
+          if (globalSettings.openingBg) out.push({ name: globalSettings.openingBg, setting: '开场背景：' + globalSettings.openingBg });
+          if (globalSettings.openingMusic) out.push({ name: globalSettings.openingMusic, setting: '开场音乐：' + globalSettings.openingMusic });
+        } catch (e) { /* 读取失败则忽略开场设置引用 */ }
+        return out;
+      },
+      exportProject: async () => await window.Storage.exportProject(window.Storage.getCurrentProjectId()),
+      getCaretRef: () => agentCaretRef, // 用户发送消息时的光标/选区快照（replace_selection 原文来源；agentSend 开头捕获）
+      applyReviewMarker: (o) => {
+        // 审阅标记写入（agent.js apply_review_marker 接线，Task 15 落地）：复用审阅管线
+        // （findAnchored/getReviewMarkers/maxReviewN/storeAiSuggestion/storeUnanchoredSuggestion，
+        // 同 ftDoWraps 语义），支持任意块——当前编辑块走 storyText.value+commitEdit，
+        // 其他块按持久化态读改写回（仅变更目标块，其余键原样，不碰 storyText 草稿）。
+        const block = (o && o.blockName) || activeBlock;
+        const current = o && o.current;
+        const suggestion = o && o.suggestion;
+        if (typeof current !== 'string' || !current.trim()) return { error: 'current（当前原文片段）不能为空' };
+        let txt;
+        if (block === activeBlock) txt = storyText.value;
+        else txt = StoryEditorApi.getBlockText ? StoryEditorApi.getBlockText(block) : null;
+        if (txt == null) return { error: '未找到剧情块「' + block + '」' };
+        const markers = getReviewMarkers(txt);
+        let idx = findAnchored(txt, current);
+        let n = -1;
+        while (idx >= 0) {
+          const inside = markers.some(function (mk) { return idx >= mk.start && idx < mk.end; });
+          const cross = markers.some(function (mk) { return idx < mk.end && idx + current.length > mk.start; });
+          if (!inside && !cross) { n = maxReviewN(txt) + 1; break; }
+          const next = txt.indexOf(current, idx + current.length);
+          idx = next >= 0 ? next : -1;
+        }
+        if (n < 0) {
+          // 锚定不上不丢弃：存为未锚定建议，由用户人工定位
+          storeUnanchoredSuggestion(block, current, suggestion || '');
+          return { ok: true, wrapped: 0, unanchored: true, note: '未在《' + block + '》中找到可锚定的原文片段，已存为未锚定建议，请人工定位' };
+        }
+        const tag = '<审阅:' + n + '>';
+        const len = current.length;
+        const nextTxt = txt.slice(0, idx) + tag + current + '</审阅>' + txt.slice(idx + len);
+        if (block === activeBlock) {
+          storyText.value = nextTxt; commitEdit();
+        } else {
+          // 非当前块：经扁平 {块名:文本} 契约写回（saveBlocks 适配与 blocksDoc 同源）
+          const doc = (window.Storage.loadBlocks ? window.Storage.loadBlocks() : null) || { main: '', blocks: {} };
+          const flat = {};
+          flat[MAIN_BLOCK] = doc.main || '';
+          const bs = doc.blocks || {};
+          for (const k in bs) { if (Object.prototype.hasOwnProperty.call(bs, k)) flat[k] = bs[k]; }
+          flat[block] = nextTxt;
+          if (window.Agent && window.Agent.toolsDeps && typeof window.Agent.toolsDeps.saveBlocks === 'function') {
+            window.Agent.toolsDeps.saveBlocks(flat);
+          } else {
+            const nxt = { main: '', blocks: {} };
+            for (const k in flat) {
+              if (!Object.prototype.hasOwnProperty.call(flat, k)) continue;
+              if (k === MAIN_BLOCK) nxt.main = flat[k] == null ? '' : String(flat[k]);
+              else nxt.blocks[k] = flat[k] == null ? '' : String(flat[k]);
+            }
+            window.Storage.saveBlocks(nxt);
+          }
+        }
+        storeAiSuggestion(block, n, suggestion || '');
+        return { ok: true, n: n, block: block, wrapped: 1 };
+      },
+      getGlobalSettings: () => {
+        // 全局设置可写字段快照（icon/fontName 只读透出：icon 兼容旧版 dataURL，font 是二进制上传，均不适合 Agent 写）
+        const g = globalSettings;
+        return {
+          gameName: g.gameName || '', subtitle: g.subtitle || '', authorId: g.authorId || '',
+          playMode: g.playMode || 'longform', textContrast: g.textContrast || 'auto',
+          openingBg: g.openingBg || '', openingMusic: g.openingMusic || '',
+          watermark: Object.assign({ text: '', pos: '右下', opacity: 40 }, g.watermark || {}),
+          icon: g.icon || '', fontName: (g.font && g.font.name) || '',
+        };
+      },
+      saveGlobalSettings: async (patch) => {
+        // 白名单与取值校验在 agent.js 工具侧完成；这里只做素材存在性校验 + 合并落盘
+        for (const k in patch) {
+          if (!Object.prototype.hasOwnProperty.call(patch, k)) continue;
+          if (k === 'openingBg' || k === 'openingMusic') {
+            const val = patch[k] == null ? '' : String(patch[k]);
+            if (val) {
+              const lib = k === 'openingBg' ? 'background' : 'music';
+              const recs = await window.Storage.getAllAssets(lib).catch(() => []);
+              const hit = recs.some(function (r) { return r.name === val; });
+              if (!hit) return { error: (k === 'openingBg' ? '背景' : '音乐') + '素材不存在：' + val + '（可先用 list_assets 查看可用素材）' };
+            }
+            globalSettings[k] = val;
+          } else if (k === 'watermark') {
+            globalSettings.watermark = Object.assign({}, globalSettings.watermark || {}, patch[k]);
+          } else {
+            globalSettings[k] = patch[k];
+          }
+        }
+        await saveGlobal();
+        return { ok: true };
+      },
+    };
+  }
+
   // ============ 关键线索提取 ============
   // 隐藏所有 AI 功能开关：在 body 上挂 class，CSS 据此隐藏编辑器/素材待办里的 AI 按钮（设置内不受影响）
   function applyHideAllAI() {
     if (!window.AI) return;
     const on = !!window.AI.loadSettings().hideAllAI;
     document.body.classList.toggle('ai-hidden', on);
+    // Agent 面板随「隐藏所有 AI 功能」一并隐藏（只加不减，避免在未打开时被误显示；菜单按钮 #btn-ai-quick 已由 CSS 隐藏）
+    const agentModal = $('#agent-assistant');
+    if (agentModal && on) agentModal.classList.add('hidden');
   }
   function setCluesStatus(msg, cls) {
     const el = $('#clues-status');
@@ -7552,12 +9193,87 @@ self.onmessage = function (e) {
     refreshSettingsForms();
   }
   function closeSettings() { $('#settings-drawer').classList.add('hidden'); }
+  function confirmTimeMachineRestore(stamp) {
+    return new Promise(resolve => {
+      const dialog = document.createElement('dialog'); dialog.className = 'time-machine-confirm';
+      dialog.innerHTML = '<h3>恢复历史版本</h3><p>将当前完整项目恢复到 ' + escapeHtml(stamp) + '。</p><p>恢复前会自动备份当前内容，之后也可从时光机找回。</p><div class="time-machine-confirm-actions"><button type="button" class="btn btn-ghost" data-answer="cancel">取消</button><button type="button" class="btn btn-primary" data-answer="restore">确认恢复</button></div>';
+      function finish(answer) { dialog.close(); dialog.remove(); resolve(answer); }
+      dialog.querySelector('[data-answer="cancel"]').onclick = () => finish(false);
+      dialog.querySelector('[data-answer="restore"]').onclick = () => finish(true);
+      dialog.addEventListener('cancel', event => { event.preventDefault(); finish(false); });
+      document.body.appendChild(dialog); dialog.showModal();
+    });
+  }
+  async function renderTimeMachine() {
+    const box = $('#settings-time-machine');
+    if (!box) return;
+    const pid = window.Storage.getCurrentProjectId();
+    const generation = ++timeMachineRenderGeneration;
+    box.innerHTML = '<h4>时光机</h4><div class="ai-hint">正在读取备份…</div>';
+    try {
+      const entries = await window.Storage.listTimeMachineBackups(pid);
+      if (generation !== timeMachineRenderGeneration || window.Storage.getCurrentProjectId() !== pid) return;
+      box.innerHTML = '<h4>时光机</h4><div class="ai-hint">编辑期间后台每 3 分钟备份当前完整项目，保留最近 30 条。包含全部剧情块、变量、设置和素材。恢复前会额外备份当前版本。</div>'
+        + '<div class="ai-hint">备份保存在当前浏览器；关闭页面后暂停。浏览器休眠或限制后台计时后，返回页面会补一次备份。</div>'
+        + '<button type="button" class="btn btn-ghost" id="time-machine-backup-now">立即备份</button>'
+        + '<p class="ai-status" role="status">' + escapeHtml(timeMachineError ? '最近备份失败：' + timeMachineError : '已保存 ' + entries.length + ' / 30 条备份') + '</p>';
+      const backupButton = box.querySelector('#time-machine-backup-now');
+      backupButton.disabled = timeMachineRestoring;
+      backupButton.onclick = async () => {
+        backupButton.disabled = true;
+        const result = await timeMachineController.backupNow();
+        if (result) toast('时光机备份已保存');
+        renderTimeMachine();
+      };
+      const list = document.createElement('div'); list.className = 'time-machine-list';
+      if (!entries.length) list.textContent = '还没有备份。首次进入项目会自动保存一条。';
+      const reasons = { open: '进入项目', auto: '自动备份', manual: '手动备份', 'before-restore': '恢复前备份' };
+      entries.forEach(entry => {
+        const row = document.createElement('div'); row.className = 'time-machine-row';
+        const detail = document.createElement('div');
+        const stamp = new Date(entry.createdAt).toLocaleString('zh-CN', { hour12: false });
+        detail.textContent = stamp + ' · ' + (reasons[entry.reason] || '自动备份') + '\n' + entry.blockCount + ' 个剧情块 · ' + entry.assetCount + ' 个素材';
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-ghost'; button.textContent = '恢复'; button.disabled = timeMachineRestoring;
+        button.onclick = async () => {
+          if (timeMachineRestoring || window.Storage.getCurrentProjectId() !== pid) return;
+          if (!await confirmTimeMachineRestore(stamp)) return;
+          if (timeMachineRestoring || window.Storage.getCurrentProjectId() !== pid) return;
+          saveNow();
+          if (visualController) visualController.resetContext();
+          timeMachineRestoring = true;
+          const blocker = document.createElement('div'); blocker.className = 'modal time-machine-restoring'; blocker.setAttribute('role', 'status'); blocker.textContent = '正在备份当前内容并恢复历史版本，请稍候…'; document.body.appendChild(blocker);
+          clearTimeout(saveTimer); clearTimeout(histTimer); clearTimeout(pvTimer);
+          ftResetSession(); agentResetSession();
+          try {
+            await timeMachineController.stop();
+            await window.Storage.restoreTimeMachineBackup(pid, entry.id);
+            await openProject(pid);
+            refreshSettingsForms();
+            toast('已恢复历史版本；恢复前内容已备份');
+          } catch (error) {
+            timeMachineError = error.message || String(error);
+            toast('时光机恢复失败：' + timeMachineError);
+            timeMachineController.start(pid);
+          } finally {
+            timeMachineRestoring = false;
+            blocker.remove();
+            renderTimeMachine();
+          }
+        };
+        row.append(detail, button); list.appendChild(row);
+      });
+      box.appendChild(list);
+    } catch (error) {
+      if (generation === timeMachineRenderGeneration) box.innerHTML = '<h4>时光机</h4><p role="alert">无法读取备份：' + escapeHtml(error.message || String(error)) + '</p>';
+    }
+  }
   function switchSettingsSub(sub) {
     document.querySelectorAll('.settings-subnav').forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
     document.querySelectorAll('.settings-sub').forEach(p => p.classList.toggle('hidden', p.dataset.sub !== sub));
     if (sub === 'general') renderSettingsGeneral();
     else if (sub === 'appearance') renderAppearance();
     else if (sub === 'toy') renderToy();
+    else if (sub === 'time-machine') renderTimeMachine();
   }
   function refreshSettingsForms() {
     loadAISettings();
@@ -8141,6 +9857,7 @@ self.onmessage = function (e) {
     const article = currentProjectMode === 'article';
     const items = [
       { mode: 'ft', special: 'openFulltext', label: '<svg class="ico" aria-hidden="true"><use href="#ic-brain"/></svg> 全文助理（对话式 AI，可全文改写）' },
+      { special: 'openAgent', label: '<svg class="ico" aria-hidden="true"><use href="#ic-brain"/></svg> Agent 对话（新功能，耗费可能较高）' },
       { mode: 'hook', label: '<svg class="ico" aria-hidden="true"><use href="#ic-fish"/></svg> 生成文章开头（6 选 1）', rec: isBlank },
       { mode: 'continue', label: article ? '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg> AI 续写文章（按设定 / 上下文）' : '<svg class="ico" aria-hidden="true"><use href="#ic-pencil"/></svg> AI 生成剧情（按设定 / 上下文）', rec: !hasSel },
       { mode: 'expand', label: '<svg class="ico" aria-hidden="true"><use href="#ic-redo"/></svg> AI 重写选中文字', rec: hasSel },
@@ -8159,6 +9876,7 @@ self.onmessage = function (e) {
       b.addEventListener('click', () => {
         menu.classList.add('hidden');
         if (b.dataset.special === 'openFulltext') openFulltextAssistant();
+        else if (b.dataset.special === 'openAgent') openAgent();
         else prepareMode(b.dataset.mode);
       });
     });

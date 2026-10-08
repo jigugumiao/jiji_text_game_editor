@@ -445,6 +445,11 @@ loadModel();
 
 // ============ 物品查看器外壳 ============
 // 占位符：__VIEWER_SCRIPT__ __MODEL_NAME_ESC__ __BODY_BG__
+// ⚠ 陷阱：本模板（及 RUNTIME_TEMPLATE）是 String.raw 模板，其中所有 script 结束标签
+// 必须写成 ${'</scr' + 'ipt>'} 插值形式，禁止改回裸 </script> 或 \<\/script>：
+// build_inline.py 会把 </script> 替换成 <\/script>，普通字符串会还原，但 String.raw
+// 不处理转义会保留字面反斜杠 → 生成的试玩/导出 HTML 缺真结束标签 → 整个脚本语法
+// 错误一行不执行 → 永久卡「加载：0.00 / 0.00 MB」（历史复发两次，详见 AGENTS.md 已知陷阱）。
 const ITEM_VIEWER_WRAP = String.raw`<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -461,16 +466,18 @@ const ITEM_VIEWER_WRAP = String.raw`<!DOCTYPE html>
 <div id="viewer"></div>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
-</script>
+${'</scr' + 'ipt>'}
 <script type="module">
 __VIEWER_SCRIPT__
-</script>
+${'</scr' + 'ipt>'}
 </body>
 </html>
 `;
 
 // ============ 运行时模板（玩家看到的成品页） ============
 // 占位符：__SRC__ __WRAP__ __STORY_DATA__ __STORY_SCRIPT_TAG__ __TITLE__
+// ⚠ String.raw 陷阱：结尾 script 结束标签必须保持 ${'</scr' + 'ipt>'} 插值形式，
+// 禁止改回裸 </script>（build_inline 替换 + String.raw 不还原转义 → 卡加载，见上）。
 const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -528,6 +535,15 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
     scroll-behavior: auto;
     /* 永不滚动上移：超长段落由 fitGalgameContent 纵向缩放字号适配，而不是滚上去 */
     overflow: hidden;
+  }
+  /* 项目内嵌的九宫格快照加载成功后才启用图片边框；默认始终保留纯色框回退。 */
+  body.galgame.gal-panel-image #message-list {
+    border-style: solid;
+    border-width: var(--gal-panel-top) var(--gal-panel-right) var(--gal-panel-bottom) var(--gal-panel-left);
+    border-image-source: var(--gal-panel-image);
+    border-image-slice: var(--gal-panel-slice) fill;
+    border-image-repeat: stretch;
+    background: transparent;
   }
   /* 字号由运行时按框高动态计算（目标 3 行，见 fitGalgameFont），CSS 变量兜底 20px */
   body.galgame .message { width: 92%; max-width: 900px; margin: 0 auto 10px; padding: 0 26px; font-size: var(--gal-font-size, 20px); }
@@ -597,7 +613,7 @@ const RUNTIME_TEMPLATE = String.raw`<!DOCTYPE html>
   }
   #options-bar .opt-btn:hover { background: rgba(58,134,255,0.34); border-color: #5a9bff; transform: translateY(-2px); }
   #options-bar .opt-btn:active { transform: translateY(0); }
-  /* 条件不满足的选项已在 presentOptions 直接隐藏（不渲染），不再需要置灰样式 */
+  #options-bar .opt-btn.is-disabled, #options-bar .opt-btn.is-disabled:hover { opacity: .52; cursor: not-allowed; filter: grayscale(.4); transform: none; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.22); }
   @keyframes optIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
   #item-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); backdrop-filter: blur(2px); z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.3s ease-out; }
   #item-overlay.open { opacity: 1; pointer-events: auto; }
@@ -1055,15 +1071,20 @@ __STORY_DATA__
   };
   // 初始化水印
   (function(){
-    const g = DATA.global || {};
-    const wm = g.watermark;
-    if (!wm || !wm.text) return;
-    const el = document.getElementById('watermark');
-    el.style.display = 'block';
-    el.style.opacity = (wm.opacity || 40) / 100;
-    el.textContent = wm.text;
-    const posMap = { '左上':'top:12px;left:16px', '右上':'top:12px;right:16px', '左下':'bottom:12px;left:16px', '右下':'bottom:12px;right:16px' };
-    el.style.cssText += ';' + (posMap[wm.pos] || posMap['右下']);
+    try {
+      const g = DATA.global || {};
+      const wm = g.watermark;
+      if (!wm || !wm.text) return;
+      const el = document.getElementById('watermark');
+      if (!el) return;
+      el.style.display = 'block';
+      el.style.opacity = (wm.opacity || 40) / 100;
+      el.textContent = wm.text;
+      const posMap = { '左上':'top:12px;left:16px', '右上':'top:12px;right:16px', '左下':'bottom:12px;left:16px', '右下':'bottom:12px;right:16px' };
+      el.style.cssText += ';' + (posMap[wm.pos] || posMap['右下']);
+    } catch (e) {
+      try { console.log('[runtime] 水印初始化异常（已忽略，不影响加载）：' + (e && e.message ? e.message : e)); } catch (e2) {}
+    }
   })();
 
     // 解析开场背景：支持「背景库素材名」（按名解析 src / 纯色）与旧版直链（data:/http(s)）
@@ -1098,6 +1119,9 @@ __STORY_DATA__
 
   // 初始化开始界面
   (function(){
+    // 标题屏初始化整体兜底：任何异常（如 openingMusic/authorId 等元数据非字符串导致 .trim() 抛错）
+    // 只记录日志，绝不阻断下方 preloadAll —— 否则加载层会永久停在初始文本「加载：0.00 / 0.00 MB」。
+    try {
     const g = DATA.global || {};
     const title = g.gameName || '';
     document.getElementById('start-title').textContent = title;
@@ -1125,7 +1149,7 @@ __STORY_DATA__
     // 开场标题界面音乐：循环播放，直到点「开始游戏」时停止
     function startOpeningMusic() {
       if (openingAudio) return;
-      const name = (g.openingMusic || '').trim();
+      const name = String(g.openingMusic || '').trim();
       if (!name) return;
       const a = findAsset('music', { name: name });
       if (a && a.src) {
@@ -1158,10 +1182,13 @@ __STORY_DATA__
     startOpeningMusic();
     if (!openingAudio) document.addEventListener('pointerdown', onFirstGesture, true);
     // 作者信息：仅以文字展示在开始游戏下方（不再提供跳转个人空间的按钮）
-    const authorId = (g.authorId || '').trim();
+    const authorId = String(g.authorId || '').trim();
     if (authorId) {
       const aEl = document.getElementById('start-author');
       if (aEl) aEl.textContent = '作者：' + authorId;
+    }
+    } catch (e) {
+      try { console.log('[runtime] 标题屏初始化异常（已忽略，不影响加载）：' + (e && e.message ? e.message : e)); } catch (e2) {}
     }
     // 估算 dataURL 解码后的字节数（用于加载进度 MB 显示）；外置相对路径无法估算返回 0
     function b64Bytes(url){
@@ -1702,8 +1729,52 @@ __STORY_DATA__
       if (APPEAR.titleColor) document.body.style.setProperty('--title-color', APPEAR.titleColor);
       if (APPEAR.fontSize) document.body.style.setProperty('--body-font-size', (APPEAR.fontSize | 0) + 'px');
       if (APPEAR.galBoxColor) document.body.style.setProperty('--gal-box-color', APPEAR.galBoxColor);
+      if (APPEAR.overlayShadow && APPEAR.overlayShadow.enabled) {
+        var _ovLayer = document.getElementById('overlay-layer');
+        if (_ovLayer) {
+          var _os = APPEAR.overlayShadow;
+          var _blur = (typeof _os.blur === 'number' ? _os.blur : 18) + 'px';
+          var _dist = (typeof _os.dist === 'number' ? _os.dist : 10) + 'px';
+          var _op = (typeof _os.opacity === 'number' ? _os.opacity : 45) / 100;
+          _ovLayer.style.filter = 'drop-shadow(' + _dist + ' ' + _dist + ' ' + _blur + ' rgba(0,0,0,' + _op + '))';
+        }
+      }
     }
   } catch (e) {}
+
+  function clearGalPanelImage() {
+    document.body.classList.remove('gal-panel-image');
+    ['--gal-panel-image', '--gal-panel-slice', '--gal-panel-top', '--gal-panel-right', '--gal-panel-bottom', '--gal-panel-left']
+      .forEach(function(name) { document.body.style.removeProperty(name); });
+  }
+  function applyGalPanelAppearance(panel) {
+    clearGalPanelImage();
+    if (!GALGAME || !panel || !panel.enabled || !/^data:image\//i.test(String(panel.imageSrc || ''))) return;
+    const width = Number(panel.imageWidth);
+    const height = Number(panel.imageHeight);
+    if (!Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1) return;
+    const slices = panel.slices || {};
+    const values = [slices.top, slices.right, slices.bottom, slices.left].map(Number);
+    if (values.some(function(value) { return !Number.isInteger(value) || value < 0; })) return;
+    if (values[1] + values[3] >= width || values[0] + values[2] >= height) return;
+    const image = new Image();
+    image.onload = function() {
+      if (image.naturalWidth < 1 || image.naturalHeight < 1 || image.naturalWidth !== width || image.naturalHeight !== height) {
+        clearGalPanelImage();
+        return;
+      }
+      const escapedSrc = String(panel.imageSrc).replace(/["\\\n\r\f]/g, '\\$&');
+      document.body.style.setProperty('--gal-panel-image', 'url("' + escapedSrc + '")');
+      document.body.style.setProperty('--gal-panel-slice', values.join(' '));
+      ['top', 'right', 'bottom', 'left'].forEach(function(side, index) {
+        document.body.style.setProperty('--gal-panel-' + side, values[index] + 'px');
+      });
+      document.body.classList.add('gal-panel-image');
+    };
+    image.onerror = clearGalPanelImage;
+    image.src = panel.imageSrc;
+  }
+  applyGalPanelAppearance(APPEAR.galPanel);
   const _bgCanvas = document.createElement('canvas');
   const _bgCtx = _bgCanvas.getContext('2d', { willReadFrequently: true });
   let _bgData = null, _bgReady = false;
@@ -1915,7 +1986,7 @@ __STORY_DATA__
     else if (stack.length){ doReturn(); }   // 没有历史选项则退化为普通跳回
     else { finish(); }
   }
-  // 选项 UI：底部排列按钮（最多 6 个）；条件不满足的选项直接隐藏（不渲染），仅保留满足条件的
+  // 选项 UI：条件不满足默认隐藏；作者可要求保留为不可点击的禁用项。
   function presentOptions(n){
     awaitingClick = false; hint.style.display = 'none';
     hideOptions();
@@ -1926,12 +1997,17 @@ __STORY_DATA__
     let anyEnabled = false;
     let shown = 0;
     opts.forEach(function(opt, ci){
-      // 条件不满足：直接隐藏该选项（不渲染按钮），对玩家完全不可见
-      if (opt.condition && !evalCond(opt.condition)) return;
-      anyEnabled = true;
+      const unmet = !!(opt.condition && !evalCond(opt.condition));
+      if (unmet && opt.unmetBehavior !== 'disable') return;
+      if (!unmet) anyEnabled = true;
       const btn = document.createElement('button');
       btn.className = 'opt-btn';
       btn.textContent = opt.text || ('选项' + (shown + 1));
+      if (unmet) {
+        btn.classList.add('is-disabled');
+        btn.disabled = true;
+        if (opt.unmetMessage) { btn.title = opt.unmetMessage; btn.setAttribute('aria-label', btn.textContent + '：' + opt.unmetMessage); btn.textContent += '（' + opt.unmetMessage + '）'; }
+      }
       btn.style.animationDelay = (shown * 0.05) + 's';
       shown++;
       // 注意：ci 是原始选项下标，用于 recordedChoices 存档 / 读档重放还原选择路径
@@ -1943,13 +2019,21 @@ __STORY_DATA__
         // galgame 模式：点击选项即视为进入新场景/新段，标记段已结束；
         // 下一次 typeText / showDivider 登场前 beginSegmentIfNeeded() 会清空旧文字，进入新对话框
         markSegmentEnd();
+        // Empty blocks are still valid targets.  Check that the block key
+        // exists instead of treating an empty node list as a missing block.
+        if (opt.effects && opt.effects.length && (!opt.block || Object.prototype.hasOwnProperty.call(DATA.blocks || {}, opt.block))) {
+          const snapshot = Object.assign({}, vars);
+          const selectedEffects = StoryOptions.selectEffects(opt.effects, function(name){ return snapshot[name]; });
+          if (selectedEffects.length) applyVarOps(selectedEffects);
+        }
         if (opt.block){ callBlock(opt.block); execCur(); }
         else { curIdx++; execCur(); }
       });
       bar.appendChild(btn);
     });
-    // 同行所有选项条件都不满足：本行自动跳过，继续推进（避免卡死）
-    if (!anyEnabled) {
+    // 同行所有选项都被隐藏时自动跳过；若作者要求展示禁用项，
+    // 必须留在此处让玩家能读到提示，而不能把它们立即跳过。
+    if (!anyEnabled && shown === 0) {
       hideOptions();
       curIdx++;
       if (curIdx >= nodesOf(curBlock).length) doReturn();
@@ -1984,66 +2068,19 @@ __STORY_DATA__
   }
   // 读档重放：按已记录的选项序列快进到存档点（不打字、不等待点击）
   // ===== 变量运行时 =====
+  // 实现由 js/story-vars.js 统一提供，构建时注入下方占位处（见 buildRuntimeHTML），
+  // 保证导出游戏与编辑器预览的解析/求值行为完全同源。
+  __STORY_VARS_RUNTIME__
+  __STORY_OPTIONS_RUNTIME__
   // 把 {名} / {名:是|否} 替换为当前变量值；未定义变量保留原样；{{名}} 转义保留
   function interpolateVars(s){
-    return String(s).replace(/\{\{?\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*(?::\s*([^}\s|]*)\s*\|\s*([^}]*))?\s*\}/g, function(m, name, t, f){
-      if (m.charAt(1) === '{') return m; // 双花括号转义
-      let val = vars[name];
-      if (val === undefined) return m;
-      if (t !== undefined && f !== undefined){
-        const isTrue = (val === true || val === 'true' || val === 1 || val === '1');
-        return isTrue ? t : f;
-      }
-      if (val === true) return '真';
-      if (val === false) return '假';
-      return String(val);
-    });
-  }
-  function truthy(v){ return v === true || v === 'true' || v === 1 || v === '1' || v === '是' || (typeof v === 'number' && v !== 0) || (typeof v === 'string' && v.length > 0 && v !== 'false' && v !== '否' && v !== '0'); }
-  function evalOneCond(e){
-    if (e.charAt(0) === '!') { const nm = e.slice(1).trim(); return !truthy(vars[nm]); }
-    if (/^[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*$/.test(e)) { return truthy(vars[e]); }
-    const m = e.match(/^([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*(>=|<=|==|!=|>|<|=)\s*(.+)$/);
-    if (!m) return false;
-    const name = m[1], op = m[2], rv = m[3].trim();
-    const lv = vars[name];
-    let rvv;
-    if (rv === 'true') rvv = true; else if (rv === 'false') rvv = false;
-    else if (/^-?\d+(\.\d+)?$/.test(rv)) rvv = Number(rv);
-    else rvv = rv;
-    switch (op){
-      case '>': return Number(lv) > Number(rvv);
-      case '<': return Number(lv) < Number(rvv);
-      case '>=': return Number(lv) >= Number(rvv);
-      case '<=': return Number(lv) <= Number(rvv);
-      case '==': case '=': return lv == rvv;
-      case '!=': return lv != rvv;
-    }
-    return false;
+    return StoryVars.interpolate(s, function(n){ return vars[n]; });
   }
   function evalCond(expr){
-    if (!expr) return true;
-    if (expr.indexOf('&&') >= 0) return expr.split('&&').every(function(p){ return evalOneCond(p.trim()); });
-    if (expr.indexOf('||') >= 0) return expr.split('||').some(function(p){ return evalOneCond(p.trim()); });
-    return evalOneCond(expr.trim());
+    return StoryVars.evalCondition(expr, function(n){ return vars[n]; });
   }
   function applyVarOps(ops){
-    (ops || []).forEach(function(o){
-      const cur = vars[o.name];
-      if (o.op === '='){
-        let v = o.val;
-        if (v === 'true') vars[o.name] = true;
-        else if (v === 'false') vars[o.name] = false;
-        else if (/^-?\d+(\.\d+)?$/.test(v)) vars[o.name] = Number(v);
-        else vars[o.name] = v;
-      } else if (o.op === '+'){
-        const base = (typeof cur === 'number') ? cur : (Number(cur) || 0);
-        vars[o.name] = base + (Number(o.val) || 0);
-      } else if (o.op === '-'){
-        const base = (typeof cur === 'number') ? cur : (Number(cur) || 0);
-        vars[o.name] = base - (Number(o.val) || 0);
-      }
-    });
+    StoryVars.applyOps(vars, ops);
   }
 
   function fastReplay(choices, targetBlock, targetIdx){
@@ -2529,7 +2566,7 @@ __STORY_DATA__
     scrollToBottom();
   });
 })();
-</script>
+${'</scr' + 'ipt>'}
 </body>
 </html>
 `;
@@ -2569,41 +2606,6 @@ function parseStoryForExport(src) {
   const RE_RANDOM_TEXT = /^<随机句子:([\s\S]*?)>$/;
   const RE_RETURN = /^<跳回>$/;
   const RE_RETURN_RECHOOSE = /^<跳回重选>$/;
-  // 解析一行内所有 <选项:"文字",块名,条件:...> 指令，返回 [{text, extra, index, close, ok}]。
-  // 条件表达式允许出现 >、<、>=、<= 等运算符（如 条件:力量>=20、条件:金币<=5），
-  // 因此「闭合 >」不能取表达式里碰到的第一个 >，而是取下一个 <选项: 之前（或行尾前）的最后一个 >。
-  function extractOptionLine(line) {
-    const TAG = '<选项:';
-    const out = [];
-    let from = 0;
-    while (from <= line.length) {
-      const start = line.indexOf(TAG, from);
-      if (start < 0) break;
-      const next = line.indexOf(TAG, start + TAG.length);
-      const endB = next < 0 ? line.length : next;
-      let close = -1;
-      for (let k = start + TAG.length; k < endB; k++) { if (line[k] === '>') close = k; }
-      from = start + TAG.length;
-      if (close < 0) continue; // 无闭合 >，交给编辑器的「未闭合」校验报错
-      const body = line.slice(start + TAG.length, close);
-      const m = body.match(/^\s*"([^"]*)"\s*(?:,\s*([\s\S]*))?$/);
-      out.push({ text: m ? m[1] : '', extra: (m && m[2] ? m[2] : '').trim(), index: start, close: close, ok: !!m });
-    }
-    return out;
-  }
-  // 把选项的 extra 段（块名[,条件:…]）拆成 { block, condition }
-  function splitOptionExtra(extra) {
-    const e = (extra || '').trim();
-    if (!e) return { block: null, condition: null };
-    const ci = e.indexOf('条件:');
-    if (ci >= 0) {
-      return {
-        block: e.slice(0, ci).replace(/,\s*$/, '').trim() || null,
-        condition: e.slice(ci + 3).replace(/,\s*$/, '').trim() || null
-      };
-    }
-    return { block: e, condition: null };
-  }
   const RE_PLAYER_INPUT = /^<玩家输入变量:\s*([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*,\s*"([\s\S]*?)"\s*>$/;
   const CN = { '背景': 'background', '物品': 'item', '叠层': 'overlay', '音乐': 'music', '音效': 'sound' };
   const lines = (src || '').split(/\r?\n/);
@@ -2632,15 +2634,14 @@ function parseStoryForExport(src) {
     else if ((m = t.match(RE_DIVIDER))) { flush(); story.push({ type: 'divider', text: (m[1] || '').trim() }); }
     else if (t === '<停止音乐>') { flush(); story.push({ type: 'stopmusic' }); }
     else if (t === '<清除叠层>') { flush(); story.push({ type: 'clearoverlay' }); }
-    else if ((m = t.match(/^<变量:([\s\S]*)>$/))) {
+    else if (t.indexOf('<变量:') === 0 && t.charAt(t.length - 1) === '>') {
+      // 统一走 StoryVars.parseVarLine：逐标签提取（修复旧版整行贪婪匹配把
+      // <变量:a=1><变量:b=2> 解析成一个操作的 bug），值允许空格；
+      // 无法识别的行按普通文本保留（与编辑器一致，不再静默吞掉）
       flush();
-      const ops = [];
-      m[1].split(';').forEach(function (seg) {
-        seg = seg.trim(); if (!seg) return;
-        const am = seg.match(/^([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\u4e00-\u9fa5]*)\s*([=+\-])\s*([^\s]+)$/);
-        if (am) ops.push({ name: am[1], op: am[2], val: am[3] });
-      });
-      if (ops.length) story.push({ type: 'varop', ops: ops });
+      const pr = window.StoryVars.parseVarLine(t);
+      if (pr.ops.length) story.push({ type: 'varop', ops: pr.ops });
+      else buf.push(line);
     }
     else if ((m = t.match(RE_PLAYER_INPUT))) { flush(); story.push({ type: 'playerinput', name: m[1], prompt: m[2] }); }
     else if ((m = t.match(RE_BLOCK))) { flush(); story.push({ type: 'block', name: m[1].trim() }); }
@@ -2651,10 +2652,9 @@ function parseStoryForExport(src) {
     else if (t.indexOf('<选项:') >= 0) {
       flush();
       const options = [];
-      for (const o of extractOptionLine(t)) {
+      for (const o of window.StoryOptions.extractOptionLine(t)) {
         if (!o.ok) continue;
-        const sp = splitOptionExtra(o.extra);
-        options.push({ text: o.text, block: sp.block, condition: sp.condition });
+        options.push(o.option);
       }
       if (options.length) story.push({ type: 'options', options });
     }
@@ -2826,6 +2826,16 @@ function buildRuntimeHTML(data, mode) {
   let html = RUNTIME_TEMPLATE
     .replace('__FONT_FACE__', fontFace)
     .replace('__FONT_FAMILY__', fontFamily)
+    // 变量运行时同源注入：把编辑端加载的 StoryVars 实现序列化进导出产物
+    // （用函数形式的 replacement，避免序列化源码中的 $ 字符被当作替换模式）
+    .replace('__STORY_VARS_RUNTIME__', (function () {
+      try { return (window.StoryVars && window.StoryVars.buildRuntimeSource) ? window.StoryVars.buildRuntimeSource() : ''; }
+      catch (e) { return ''; }
+    })())
+    .replace('__STORY_OPTIONS_RUNTIME__', (function () {
+      try { return (window.StoryOptions && window.StoryOptions.buildRuntimeSource) ? window.StoryOptions.buildRuntimeSource() : ''; }
+      catch (e) { return ''; }
+    })())
     .replace('__SRC__', safe(ITEM_VIEWER_SOURCE))
     .replace('__WRAP__', safe(ITEM_VIEWER_WRAP))
     .replace('__TITLE__', data.title || '互动剧情')

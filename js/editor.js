@@ -1453,7 +1453,7 @@
     history = []; histIndex = -1;
     showProjectsScreen(false);
     // 注意：示例工程只在「新建项目」时灌入，此处不再自动播种，避免改动已有项目
-    renderLibrary();
+    renderLibrary({ resetScroll: true }); // 换项目：列表从顶部开始
     updateBlockChip();
     renderOutline();
     applyEditorFont();
@@ -2771,10 +2771,23 @@
     }
   }
   function renderLibrary(options) {
-    // 切剧情块会重建列表，先保存实际滚动容器的位置；换库/换项目仍从顶部开始。
-    const oldScroll = libPanel.querySelector('.lib-scroll');
-    const scrollTop = options && options.preserveScroll && activeLib === 'dialogueblock'
-      && activeLib === _lastRenderedLib && oldScroll ? oldScroll.scrollTop : 0;
+    // 统一保留滚动：同一个库内的任何重渲（重命名/删除/保存/刷新/切块…）都复用
+    // 已有的 .lib-scroll 滚动容器，只刷新列表内容，滚动位置自然不动；换库、首次
+    // 渲染或显式 resetScroll（换项目等）才整体重建，从顶部开始。
+    // 注意：renderLibList 的重试按钮以 rb.onclick = renderLibrary 直接当事件处理器
+    // 调用，此时 options 是 MouseEvent——resetScroll 必须写成 options && 的安全判断。
+    const existingScroll = libPanel.querySelector('.lib-scroll');
+    if (activeLib === _lastRenderedLib && existingScroll && !(options && options.resetScroll)) {
+      const existingHead = libPanel.querySelector('.lib-head');
+      const tools = existingHead && existingHead.querySelector('.lib-tools');
+      const countEl = existingScroll.querySelector('.lib-count');
+      const list = existingScroll.querySelector('.asset-list');
+      if (tools && countEl && list) {
+        renderLibList(list, countEl, tools);
+        applyLibFilter(list);
+        return;
+      }
+    }
     // 切换到其它库时自动清空筛选
     if (activeLib !== _lastRenderedLib) { libFilter = ''; _lastRenderedLib = activeLib; }
     libPanel.innerHTML = '';
@@ -2818,7 +2831,6 @@
     libPanel.appendChild(scroll);
     renderLibList(list, countEl, tools);
     applyLibFilter(list);
-    scroll.scrollTop = scrollTop;
   }
   // 渲染当前库的工具条 + 列表（筛选框输入时仅重渲此部分，避免焦点丢失）
   function renderLibList(list, countEl, tools) {
@@ -3621,7 +3633,7 @@
 
   // 切换到某个剧情块编辑（先提交当前块文本）
   function switchBlock(name) {
-    if (name === activeBlock) { renderLibrary({ preserveScroll: true }); updateBlockChip(); return; }
+    if (name === activeBlock) { renderLibrary(); updateBlockChip(); return; }
     if (visualController) visualController.commitFocusedEditor();
     if (visualController) visualController.resetContext();
     clearTimeout(saveTimer); clearTimeout(histTimer);
@@ -3635,7 +3647,7 @@
     pushHistory();
     updateBlockChip();
     updateUndoButtons();
-    renderLibrary({ preserveScroll: true });
+    renderLibrary();
     refreshTodo();
     refreshBlockReviewLine();
     renderReviewPanel();
@@ -5957,7 +5969,7 @@ self.onmessage = function (e) {
     activeLib = kind;
     const tabs = document.querySelectorAll('#lib-tabs [data-lib]');
     tabs.forEach((x) => x.classList.toggle('active', x.dataset.lib === kind));
-    renderLibrary();
+    renderLibrary({ resetScroll: true }); // 上传后要让新条目立即可见，故回到顶部
   }
 
   // ---- 背景待办：悬停 + Ctrl+V 粘贴上传 ----

@@ -2282,7 +2282,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.117-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.118-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -13470,7 +13470,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     history = []; histIndex = -1;
     showProjectsScreen(false);
     // 注意：示例工程只在「新建项目」时灌入，此处不再自动播种，避免改动已有项目
-    renderLibrary();
+    renderLibrary({ resetScroll: true }); // 换项目：列表从顶部开始
     updateBlockChip();
     renderOutline();
     applyEditorFont();
@@ -14788,10 +14788,23 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     }
   }
   function renderLibrary(options) {
-    // 切剧情块会重建列表，先保存实际滚动容器的位置；换库/换项目仍从顶部开始。
-    const oldScroll = libPanel.querySelector('.lib-scroll');
-    const scrollTop = options && options.preserveScroll && activeLib === 'dialogueblock'
-      && activeLib === _lastRenderedLib && oldScroll ? oldScroll.scrollTop : 0;
+    // 统一保留滚动：同一个库内的任何重渲（重命名/删除/保存/刷新/切块…）都复用
+    // 已有的 .lib-scroll 滚动容器，只刷新列表内容，滚动位置自然不动；换库、首次
+    // 渲染或显式 resetScroll（换项目等）才整体重建，从顶部开始。
+    // 注意：renderLibList 的重试按钮以 rb.onclick = renderLibrary 直接当事件处理器
+    // 调用，此时 options 是 MouseEvent——resetScroll 必须写成 options && 的安全判断。
+    const existingScroll = libPanel.querySelector('.lib-scroll');
+    if (activeLib === _lastRenderedLib && existingScroll && !(options && options.resetScroll)) {
+      const existingHead = libPanel.querySelector('.lib-head');
+      const tools = existingHead && existingHead.querySelector('.lib-tools');
+      const countEl = existingScroll.querySelector('.lib-count');
+      const list = existingScroll.querySelector('.asset-list');
+      if (tools && countEl && list) {
+        renderLibList(list, countEl, tools);
+        applyLibFilter(list);
+        return;
+      }
+    }
     // 切换到其它库时自动清空筛选
     if (activeLib !== _lastRenderedLib) { libFilter = ''; _lastRenderedLib = activeLib; }
     libPanel.innerHTML = '';
@@ -14835,7 +14848,6 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     libPanel.appendChild(scroll);
     renderLibList(list, countEl, tools);
     applyLibFilter(list);
-    scroll.scrollTop = scrollTop;
   }
   // 渲染当前库的工具条 + 列表（筛选框输入时仅重渲此部分，避免焦点丢失）
   function renderLibList(list, countEl, tools) {
@@ -15638,7 +15650,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
 
   // 切换到某个剧情块编辑（先提交当前块文本）
   function switchBlock(name) {
-    if (name === activeBlock) { renderLibrary({ preserveScroll: true }); updateBlockChip(); return; }
+    if (name === activeBlock) { renderLibrary(); updateBlockChip(); return; }
     if (visualController) visualController.commitFocusedEditor();
     if (visualController) visualController.resetContext();
     clearTimeout(saveTimer); clearTimeout(histTimer);
@@ -15652,7 +15664,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
     pushHistory();
     updateBlockChip();
     updateUndoButtons();
-    renderLibrary({ preserveScroll: true });
+    renderLibrary();
     refreshTodo();
     refreshBlockReviewLine();
     renderReviewPanel();
@@ -17974,7 +17986,7 @@ self.onmessage = function (e) {
     activeLib = kind;
     const tabs = document.querySelectorAll('#lib-tabs [data-lib]');
     tabs.forEach((x) => x.classList.toggle('active', x.dataset.lib === kind));
-    renderLibrary();
+    renderLibrary({ resetScroll: true }); // 上传后要让新条目立即可见，故回到顶部
   }
 
   // ---- 背景待办：悬停 + Ctrl+V 粘贴上传 ----
@@ -22068,7 +22080,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.117</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.118</span></div>
         </div>
       </div>
     </div>

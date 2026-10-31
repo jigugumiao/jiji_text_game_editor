@@ -3926,7 +3926,7 @@
         '<h4 style="margin-top:14px"><svg class="ico" aria-hidden="true"><use href="#ic-type"/></svg> 字体设置</h4>' +
         '<div class="field"><label>自定义字体</label><input type="file" id="gs-font" accept=".ttf,.otf,.woff,.woff2">' +
           (globalSettings.font ? ' <span style="font-size:12px;color:#88c0ff">已设置：' + escapeHtml(globalSettings.font.name) + '</span>' : ' <span style="font-size:12px;color:#8b96a8">（留空=系统默认字体）</span>') + '</div>' +
-        (globalSettings.font ? '<div class="field"><button type="button" id="gs-font-remove" style="padding:5px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.08);color:#fff;cursor:pointer">移除字体</button></div>' : '') +
+        (globalSettings.font ? '<div class="field"><button type="button" id="gs-font-remove" class="btn btn-danger-ghost btn-sm">移除字体</button></div>' : '') +
       '</div>';
     box.querySelector('#gs-name').addEventListener('input', function() { globalSettings.gameName = this.value; saveGlobal(); });
     box.querySelector('#gs-subtitle').addEventListener('input', function() { globalSettings.subtitle = this.value; saveGlobal(); });

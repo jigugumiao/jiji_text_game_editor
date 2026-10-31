@@ -2825,7 +2825,7 @@ function buildRuntimeHTML(data, mode) {
   }
   let html = RUNTIME_TEMPLATE
     .replace('__FONT_FACE__', fontFace)
-    .replace('__FONT_FAMILY__', fontFamily)
+    .split('__FONT_FAMILY__').join(fontFamily)
     // 变量运行时同源注入：把编辑端加载的 StoryVars 实现序列化进导出产物
     // （用函数形式的 replacement，避免序列化源码中的 $ 字符被当作替换模式）
     .replace('__STORY_VARS_RUNTIME__', (function () {

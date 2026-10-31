@@ -2282,7 +2282,7 @@ body.dark .projects-spinner .spinner { border-color: #3a4150; border-top-color: 
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.118-TEST · 测试版</span></div>
+  <div class="brand"><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg>剧情编辑器<span class="ver" id="app-version">v25.4.119-TEST · 测试版</span></div>
   <button id="btn-projects" class="btn btn-ghost" title="返回项目列表"><svg class="ico" aria-hidden="true"><use href="#ic-folder"/></svg>项目</button>
   <button id="btn-settings" class="btn btn-ghost" title="设置（含 AI 编剧）"><svg class="ico" aria-hidden="true"><use href="#ic-settings"/></svg>设置</button>
   <button id="btn-theme" class="btn btn-ghost" title="暗色模式"><svg class="ico" aria-hidden="true"><use href="#ic-moon"/></svg></button>
@@ -9232,7 +9232,7 @@ function buildRuntimeHTML(data, mode) {
   }
   let html = RUNTIME_TEMPLATE
     .replace('__FONT_FACE__', fontFace)
-    .replace('__FONT_FAMILY__', fontFamily)
+    .split('__FONT_FAMILY__').join(fontFamily)
     // 变量运行时同源注入：把编辑端加载的 StoryVars 实现序列化进导出产物
     // （用函数形式的 replacement，避免序列化源码中的 $ 字符被当作替换模式）
     .replace('__STORY_VARS_RUNTIME__', (function () {
@@ -15943,7 +15943,7 @@ a.length>D&&(D=a.length,p=0|1.25*D+7200,r=new Int8Array(p));a=u.lame_encode_buff
         '<h4 style="margin-top:14px"><svg class="ico" aria-hidden="true"><use href="#ic-type"/></svg> 字体设置</h4>' +
         '<div class="field"><label>自定义字体</label><input type="file" id="gs-font" accept=".ttf,.otf,.woff,.woff2">' +
           (globalSettings.font ? ' <span style="font-size:12px;color:#88c0ff">已设置：' + escapeHtml(globalSettings.font.name) + '</span>' : ' <span style="font-size:12px;color:#8b96a8">（留空=系统默认字体）</span>') + '</div>' +
-        (globalSettings.font ? '<div class="field"><button type="button" id="gs-font-remove" style="padding:5px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.08);color:#fff;cursor:pointer">移除字体</button></div>' : '') +
+        (globalSettings.font ? '<div class="field"><button type="button" id="gs-font-remove" class="btn btn-danger-ghost btn-sm">移除字体</button></div>' : '') +
       '</div>';
     box.querySelector('#gs-name').addEventListener('input', function() { globalSettings.gameName = this.value; saveGlobal(); });
     box.querySelector('#gs-subtitle').addEventListener('input', function() { globalSettings.subtitle = this.value; saveGlobal(); });
@@ -22080,7 +22080,7 @@ self.onmessage = function (e) {
           <div class="about-divider"></div>
           <h4><svg class="ico" aria-hidden="true"><use href="#ic-book"/></svg> 关于本工具</h4>
           <div class="about-tool">剧情编辑器是一个纯前端、可离线运行的互动剧情制作工具：用一行行文字推进剧情，支持背景 / 物品 / 音乐 / 音效素材，导出单 HTML 即可发布到 B 站 Toy。数据仅存本机，不上传服务器。</div>
-          <div class="about-version">当前版本 <span id="about-version">v25.4.118</span></div>
+          <div class="about-version">当前版本 <span id="about-version">v25.4.119</span></div>
         </div>
       </div>
     </div>

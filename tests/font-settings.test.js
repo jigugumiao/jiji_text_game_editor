@@ -22,4 +22,18 @@ assert.ok(html.includes("--body-font: 'StoryCustomFont'"), '--body-font 默认�
 assert.ok(html.includes("--title-font: 'StoryCustomFont'"), '--title-font 默认值必须为自定义字体');
 assert.ok(html.includes("--divider-font: 'StoryCustomFont'"), '--divider-font 默认值必须为自定义字体');
 
+// 3) 外观-正文字体必须作用于编辑器正文（历史 bug：只改设置里的预览小框，编辑器正文不跟随，看起来“选哪个都没变化”）
+assert.match(editorSrc, /const apFont = getAppearance\(\)\.bodyFont \|\| '';/, 'applyEditorFont 必须读取外观正文字体');
+assert.match(editorSrc, /storyText\.style\.fontFamily = apFont \?/, '外观正文字体必须优先于自定义字体作用于编辑区');
+assert.match(editorSrc, /saveAppearance\(\{ bodyFont: this\.value \}\); applyPreview\(\); applyEditorFont\(\);/, '选择正文字体后必须立即刷新编辑区');
+assert.match(editorSrc, /try \{ applyEditorFont\(\); \} catch \(e\) \{\}/, '刷新页面后必须立即套用已保存字体');
+
+// 4) 运行时以外观字体覆盖自定义字体，保证编辑器预览与导出游戏表现一致
+const data2 = {
+  title: '字体覆盖', blocks: {}, start: '__MAIN__', assets: {}, variables: {},
+  global: { font: { name: 'x', src: 'data:font/ttf;base64,AA==', ext: 'ttf' }, appearance: { bodyFont: "'SimSun', serif" } },
+};
+const html2 = Exporter.buildRuntimeHTML(data2, 'single');
+assert.ok(html2.includes("if (APPEAR.bodyFont) document.body.style.setProperty('--body-font', APPEAR.bodyFont)"), '运行时外观正文字体必须覆盖兜底值');
+
 console.log('font-settings test passed');

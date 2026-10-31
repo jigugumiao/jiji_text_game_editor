@@ -52,6 +52,8 @@
   (async function loadGlobal() {
     const meta = (window.Storage.loadMeta && window.Storage.loadMeta()) || {};
     syncGlobalFromMeta(meta);
+    // 刷新后立刻套用已保存的自定义字体/外观字体，不必等打开项目
+    try { applyEditorFont(); } catch (e) {}
   })();
   async function saveGlobal() {
     const meta = (window.Storage.loadMeta && window.Storage.loadMeta()) || {};
@@ -3889,14 +3891,17 @@
   function applyEditorFont() {
     let style = document.getElementById('custom-font-style');
     const fallback = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif";
-    if (globalSettings.font && globalSettings.font.src) {
+    const hasCustom = !!(globalSettings.font && globalSettings.font.src);
+    if (hasCustom) {
       if (!style) { style = document.createElement('style'); style.id = 'custom-font-style'; document.head.appendChild(style); }
       style.textContent = "@font-face{font-family:'StoryCustomFont';src:url('" + globalSettings.font.src + "');font-display:swap;}";
-      storyText.style.fontFamily = "'StoryCustomFont', " + fallback;
-    } else {
-      if (style) style.remove();
-      storyText.style.fontFamily = fallback;
+    } else if (style) {
+      style.remove();
     }
+    // 与导出游戏保持一致：外观-正文字体一旦选择就优先于自定义字体（导出运行时同样用 APPEAR.bodyFont 覆盖 --body-font）
+    const apFont = getAppearance().bodyFont || '';
+    const customStack = hasCustom ? "'StoryCustomFont', " : '';
+    storyText.style.fontFamily = apFont ? (apFont + (hasCustom ? ", 'StoryCustomFont'" : '') + ', ' + fallback) : (customStack + fallback);
   }
   // 通用设置：渲染进设置抽屉的「通用」子项（#settings-general）
   function renderSettingsGeneral() {
@@ -4380,7 +4385,7 @@
     function setGal(r,g,b,a){ return 'rgba(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ',' + a + ')'; }
     box.querySelector('#ap-fontsize').addEventListener('input', function() { $('#ap-fs-val').textContent = this.value + 'px'; saveAppearance({ fontSize: parseInt(this.value, 10) }); applyPreview(); });
     box.querySelector('#ap-titlefont').addEventListener('change', function() { saveAppearance({ titleFont: this.value }); applyPreview(); });
-    box.querySelector('#ap-bodyfont').addEventListener('change', function() { saveAppearance({ bodyFont: this.value }); applyPreview(); });
+    box.querySelector('#ap-bodyfont').addEventListener('change', function() { saveAppearance({ bodyFont: this.value }); applyPreview(); applyEditorFont(); });
     box.querySelector('#ap-dividerfont').addEventListener('change', function() { saveAppearance({ dividerFont: this.value }); applyPreview(); });
     const tcColor = box.querySelector('#ap-titlecolor');
     const tcText = box.querySelector('#ap-titlecolor-text');

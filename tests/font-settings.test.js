@@ -36,4 +36,9 @@ const data2 = {
 const html2 = Exporter.buildRuntimeHTML(data2, 'single');
 assert.ok(html2.includes("if (APPEAR.bodyFont) document.body.style.setProperty('--body-font', APPEAR.bodyFont)"), '运行时外观正文字体必须覆盖兜底值');
 
+// 3) appearance 为 null 时运行时不得崩溃（历史 bug：试玩 iframe 顶层 applyGalPanelAppearance(APPEAR.galPanel) 直接读 null，
+// 顶层抛错后整个运行时脚本中断 → 点试玩不出字，并连锁产生 _bgData TDZ / StoryVars 未定义等报错）
+assert.match(html, /if \(APPEAR\) applyGalPanelAppearance\(APPEAR\.galPanel\);/, 'APPEAR 为空时必须跳过九宫格外观应用');
+assert.ok(!/\n  applyGalPanelAppearance\(APPEAR\.galPanel\);/.test(html), '不得存在无守护的 APPEAR.galPanel 顶层调用');
+
 console.log('font-settings test passed');

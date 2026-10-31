@@ -1774,7 +1774,7 @@ __STORY_DATA__
     image.onerror = clearGalPanelImage;
     image.src = panel.imageSrc;
   }
-  applyGalPanelAppearance(APPEAR.galPanel);
+  if (APPEAR) applyGalPanelAppearance(APPEAR.galPanel);
   const _bgCanvas = document.createElement('canvas');
   const _bgCtx = _bgCanvas.getContext('2d', { willReadFrequently: true });
   let _bgData = null, _bgReady = false;
